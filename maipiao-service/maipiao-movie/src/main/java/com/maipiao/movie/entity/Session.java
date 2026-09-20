@@ -67,6 +67,15 @@ public class Session {
 
     private LocalDateTime rushStartTime;
 
+    /**
+     * Who picks the seat: 0 = the buyer, 1 = the system.
+     *
+     * <p>Distinct from the venue's {@code seating_mode}, which says whether the
+     * place has fixed seats at all. A seated stadium both has seats and
+     * assigns them - it is a sales policy, so it belongs to the screening.
+     */
+    private Integer seatMode;
+
     // ---- admission controls ----
     //
     // A performance opens at a fixed time and limits how many one person can
