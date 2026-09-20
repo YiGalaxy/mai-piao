@@ -61,6 +61,7 @@
     <module>maipiao-common/common-web</module>
     <module>maipiao-gateway</module>
     <module>maipiao-service/maipiao-user</module>
+    <module>maipiao-service/maipiao-movie</module>
   </modules>
 
   <dependencyManagement>
