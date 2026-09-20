@@ -1,61 +1,59 @@
 <template>
-  <div class="coupon-page">
-    <van-nav-bar title="我的优惠券" left-arrow fixed placeholder @click-left="router.back()" />
+  <div class="mp-container coupon-page">
+    <div class="mp-card panel">
+      <h2>我的优惠券</h2>
 
-    <van-skeleton v-if="loading" title :row="4" style="padding: 16px" />
+      <el-skeleton v-if="loading" :rows="5" animated style="padding: 24px" />
 
-    <template v-else>
-      <van-empty v-if="coupons.length === 0" description="还没有优惠券" />
+      <el-empty v-else-if="coupons.length === 0" description="还没有优惠券" />
 
-      <div v-else class="coupon-list">
+      <div v-else class="coupon-grid">
         <div
           v-for="coupon in coupons"
           :key="coupon.id"
           class="coupon"
-          :class="{ 'coupon-inactive': coupon.status !== 0 }"
+          :class="{ inactive: coupon.status !== 0 }"
         >
-          <div class="amount">
-            <span class="symbol">¥</span>
-            <span class="value">{{ formatAmount(coupon.amount) }}</span>
-            <span class="threshold">满{{ formatAmount(coupon.threshold) }}可用</span>
+          <div class="left">
+            <div class="amount">
+              <span class="symbol">¥</span>{{ formatAmount(coupon.amount) }}
+            </div>
+            <div class="threshold">满 {{ formatAmount(coupon.threshold) }} 可用</div>
           </div>
 
-          <div class="detail">
-            <p class="expire">有效期至 {{ formatDate(coupon.expireTime) }}</p>
-            <van-tag :type="statusTag(coupon.status).type" plain>
+          <div class="right">
+            <div class="expire">有效期至 {{ formatDate(coupon.expireTime) }}</div>
+            <el-tag :type="statusTag(coupon.status).type" size="small" effect="plain">
               {{ statusTag(coupon.status).text }}
-            </van-tag>
+            </el-tag>
           </div>
         </div>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { fetchMyCoupons } from '../api/user'
-
-const router = useRouter()
 
 const coupons = ref([])
 const loading = ref(true)
 
 /**
- * Mirrors the server's status enum on t_user_coupon:
+ * Mirrors the server's enum on t_user_coupon:
  * 0 unused, 1 locked by an order, 2 used, 3 expired.
  */
 const STATUS_MAP = {
   0: { text: '未使用', type: 'primary' },
   1: { text: '已锁定', type: 'warning' },
-  2: { text: '已使用', type: 'default' },
+  2: { text: '已使用', type: 'info' },
   3: { text: '已过期', type: 'danger' }
 }
 
 onMounted(async () => {
   try {
-    coupons.value = await fetchMyCoupons()
+    coupons.value = (await fetchMyCoupons()) || []
   } catch {
     coupons.value = []
   } finally {
@@ -64,86 +62,95 @@ onMounted(async () => {
 })
 
 function statusTag(status) {
-  return STATUS_MAP[status] || { text: '未知', type: 'default' }
+  return STATUS_MAP[status] || { text: '未知', type: 'info' }
 }
 
-/** Drops a trailing `.00` so ¥30 reads as "30" and ¥30.5 stays "30.5". */
+/** Drops a trailing .00 so ¥30 reads as "30" and ¥30.5 stays "30.5". */
 function formatAmount(amount) {
   const value = Number(amount)
   return Number.isInteger(value) ? String(value) : value.toFixed(2)
 }
 
 function formatDate(value) {
-  if (!value) {
-    return '-'
-  }
-  // Backend sends ISO-ish "2026-10-20T19:31:10.001"; only the date matters here.
-  return String(value).slice(0, 10)
+  return value ? String(value).slice(0, 10) : '-'
 }
 </script>
 
 <style scoped>
-.coupon-list {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.coupon-page {
+  padding-top: 24px;
+}
+
+.panel {
+  padding-bottom: 8px;
+}
+
+.panel h2 {
+  margin: 0;
+  padding: 18px 24px;
+  font-size: 18px;
+  border-bottom: 1px solid var(--mp-border);
+  color: var(--mp-text-strong);
+}
+
+.coupon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding: 20px;
 }
 
 .coupon {
   display: flex;
-  align-items: center;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--mp-border);
+  border-left: 4px solid var(--mp-primary);
+  border-radius: 6px;
   overflow: hidden;
-  border-left: 4px solid var(--van-primary-color);
 }
 
-.coupon-inactive {
-  border-left-color: #dcdee0;
+.inactive {
+  border-left-color: #ddd;
   opacity: 0.6;
 }
 
-.amount {
-  width: 116px;
-  flex-shrink: 0;
-  padding: 16px 8px;
+.left {
+  padding: 16px;
   text-align: center;
-  color: var(--van-primary-color);
+  min-width: 130px;
 }
 
-.coupon-inactive .amount {
+.amount {
+  color: var(--mp-primary);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.inactive .amount {
   color: var(--mp-text-muted);
 }
 
 .symbol {
-  font-size: 14px;
-}
-
-.value {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 15px;
 }
 
 .threshold {
-  display: block;
   font-size: 12px;
   color: var(--mp-text-muted);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-.detail {
+.right {
   flex: 1;
-  padding: 16px 14px;
+  padding: 16px;
+  border-left: 1px dashed var(--mp-border);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 8px;
-  align-items: flex-start;
 }
 
 .expire {
-  margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--mp-text-muted);
 }
 </style>

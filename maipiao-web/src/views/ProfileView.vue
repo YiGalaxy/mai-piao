@@ -1,54 +1,41 @@
 <template>
-  <div class="profile page-with-tabbar">
-    <van-nav-bar title="我的" fixed placeholder />
-
-    <div class="user-card">
-      <template v-if="userStore.isLoggedIn">
+  <div class="mp-container profile-page">
+    <div class="profile-layout">
+      <aside class="side mp-card">
         <div class="avatar">{{ avatarText }}</div>
-        <div class="user-meta">
-          <h3>{{ userStore.displayName }}</h3>
-          <p class="mp-muted">{{ userStore.maskedPhone }}</p>
+        <h3>{{ userStore.displayName }}</h3>
+        <p class="mp-muted">{{ userStore.maskedPhone }}</p>
+
+        <el-button v-if="userStore.isLoggedIn" class="logout" @click="onLogout">
+          退出登录
+        </el-button>
+      </aside>
+
+      <section class="main">
+        <div class="mp-card panel">
+          <h2>我的</h2>
+          <el-menu :default-active="activeMenu" router class="menu">
+            <el-menu-item index="/coupons">我的优惠券</el-menu-item>
+            <el-menu-item index="/orders" disabled>我的订单（待接入）</el-menu-item>
+            <el-menu-item index="/history" disabled>观影历史（待接入）</el-menu-item>
+          </el-menu>
         </div>
-      </template>
-      <template v-else>
-        <div class="avatar avatar-guest">?</div>
-        <div class="user-meta">
-          <h3>未登录</h3>
-          <p class="mp-muted">登录后可购票和查看订单</p>
-        </div>
-        <van-button size="small" type="primary" round @click="router.push('/login')">
-          去登录
-        </van-button>
-      </template>
+      </section>
     </div>
-
-    <van-cell-group inset>
-      <van-cell title="我的优惠券" is-link to="/coupons" icon="coupon-o" />
-      <van-cell title="我的订单" is-link icon="orders-o" @click="notYet('我的订单')" />
-      <van-cell title="观影历史" is-link icon="clock-o" @click="notYet('观影历史')" />
-    </van-cell-group>
-
-    <van-cell-group inset v-if="userStore.isLoggedIn">
-      <van-cell title="退出登录" class="logout-cell" @click="onLogout" />
-    </van-cell-group>
-
-    <van-tabbar route>
-      <van-tabbar-item to="/" icon="video-o">热映</van-tabbar-item>
-      <van-tabbar-item to="/profile" icon="user-o">我的</van-tabbar-item>
-    </van-tabbar>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { showConfirmDialog, showToast } from 'vant'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../store/user'
 
-defineOptions({ name: 'ProfileView' })
-
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
+
+const activeMenu = ref(route.path)
 
 const avatarText = computed(() => {
   const name = userStore.profile?.nickname
@@ -56,9 +43,9 @@ const avatarText = computed(() => {
 })
 
 onMounted(() => {
-  // The stored profile can be stale (nickname changed elsewhere, or the
-  // account was disabled). Refresh it in the background; a failure here is
-  // handled by the interceptor and must not block the page from rendering.
+  // The stored profile can be stale - the nickname may have changed elsewhere,
+  // or the account disabled. Refresh in the background; a failure is handled
+  // by the interceptor and must not stop the page from rendering.
   if (userStore.isLoggedIn) {
     userStore.refreshProfile().catch(() => {})
   }
@@ -66,67 +53,77 @@ onMounted(() => {
 
 async function onLogout() {
   try {
-    await showConfirmDialog({ title: '退出登录', message: '确定要退出当前账号吗？' })
+    await ElMessageBox.confirm('确定要退出当前账号吗？', '退出登录', {
+      confirmButtonText: '退出',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
   } catch {
-    return // user cancelled
+    return // cancelled
   }
   await userStore.logout()
-  showToast('已退出登录')
-  router.replace('/')
-}
-
-function notYet(name) {
-  showToast(`${name}功能待接入`)
+  ElMessage.success('已退出登录')
+  router.push('/')
 }
 </script>
 
 <style scoped>
-.user-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 24px 16px;
-  background: #fff;
-  margin-bottom: 12px;
+.profile-page {
+  padding-top: 24px;
+}
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
+}
+
+.side {
+  padding: 32px 20px;
+  text-align: center;
+  height: fit-content;
 }
 
 .avatar {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  background: var(--van-primary-color);
+  margin: 0 auto 14px;
+  background: var(--mp-primary);
   color: #fff;
-  font-size: 22px;
+  font-size: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 
-.avatar-guest {
-  background: #dcdee0;
-}
-
-.user-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.user-meta h3 {
+.side h3 {
   margin: 0 0 4px;
   font-size: 17px;
 }
 
-.user-meta p {
+.side p {
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
+.logout {
+  width: 100%;
+}
+
+.panel {
+  padding: 8px 0 16px;
+}
+
+.panel h2 {
   margin: 0;
+  padding: 18px 24px;
+  font-size: 18px;
+  border-bottom: 1px solid var(--mp-border);
+  color: var(--mp-text-strong);
 }
 
-.logout-cell {
-  color: var(--van-danger-color);
-  justify-content: center;
-}
-
-.logout-cell :deep(.van-cell__title) {
-  text-align: center;
+.menu {
+  border-right: none;
 }
 </style>

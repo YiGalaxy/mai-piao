@@ -1,210 +1,237 @@
 <template>
-  <div class="home page-with-tabbar">
-    <van-nav-bar title="正在热映" fixed placeholder />
+  <div class="home">
+    <div class="mp-container">
+      <!-- Banner: the top-rated few, sized as a hero rather than a grid tile. -->
+      <el-carousel
+        v-if="bannerFilms.length"
+        height="340px"
+        :interval="5000"
+        class="banner"
+        indicator-position="none"
+      >
+        <el-carousel-item v-for="film in bannerFilms" :key="film.id">
+          <div class="banner-slide" :style="posterStyle(film)" @click="goFilm(film)">
+            <div class="banner-info">
+              <h2>{{ film.name }}</h2>
+              <p class="banner-meta">
+                {{ film.enName }}
+              </p>
+              <p class="banner-meta">
+                {{ film.filmType }} · {{ film.duration }}分钟 · 导演 {{ film.director }}
+              </p>
+              <div class="banner-score" v-if="film.score > 0">
+                <span class="num">{{ film.score.toFixed(1) }}</span>
+                <span class="label">分</span>
+              </div>
+              <el-button type="primary" size="large" @click.stop="goFilm(film)">
+                选座购票
+              </el-button>
+            </div>
+          </div>
+        </el-carousel-item>
+      </el-carousel>
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-skeleton v-if="initialLoading" title :row="3" style="padding: 16px" />
+      <!-- Now showing -->
+      <div class="mp-section-head">
+        <h2>正在热映</h2>
+        <span class="mp-more" @click="router.push('/films')">全部 {{ nowShowing.length }} 部 &gt;</span>
+      </div>
 
-      <template v-else>
-        <van-empty
-          v-if="films.length === 0"
-          image="search"
-          description="暂无正在热映的影片"
-        />
+      <el-skeleton v-if="loading" :rows="6" animated />
 
-        <div v-else class="film-list">
-          <div
-            v-for="film in films"
-            :key="film.id"
-            class="film-card"
-            @click="goDetail(film)"
-          >
-            <!--
-              The seed data points at /img/poster/*.jpg, which this project
-              does not ship. Rather than link out to a placeholder service,
-              the poster falls back to a colour block derived from the film
-              name, so the list still looks composed offline.
-            -->
-            <div class="poster" :style="posterStyle(film)">
+      <el-empty v-else-if="nowShowing.length === 0" description="暂无正在热映的影片" />
+
+      <div v-else class="mp-film-grid">
+        <div
+          v-for="film in nowShowing"
+          :key="film.id"
+          class="mp-film-card"
+          @click="goFilm(film)"
+        >
+          <div class="mp-poster" :style="posterStyle(film)">
+            <img
+              v-if="film.posterUrl && isPosterUsable(film.id)"
+              :src="film.posterUrl"
+              :alt="film.name"
+              @error="markPosterBroken(film.id)"
+            />
+            <span v-else class="mp-poster-fallback">{{ film.name.slice(0, 2) }}</span>
+
+            <div v-if="film.score > 0" class="mp-score">
+              评分 <b>{{ film.score.toFixed(1) }}</b>
+            </div>
+            <div v-else class="mp-score mp-score-none">暂无评分</div>
+          </div>
+
+          <div class="mp-film-body">
+            <h3 class="mp-film-title">{{ film.name }}</h3>
+            <p class="mp-film-sub">{{ film.filmType }} · {{ film.duration }}分钟</p>
+            <div class="mp-film-action">
+              <el-button type="primary" size="small" @click.stop="goFilm(film)">
+                选座购票
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Coming soon -->
+      <template v-if="upcoming.length">
+        <div class="mp-section-head">
+          <h2>即将上映</h2>
+          <span class="mp-more" @click="router.push({ path: '/films', query: { status: 0 } })">
+            全部 {{ upcoming.length }} 部 &gt;
+          </span>
+        </div>
+
+        <div class="mp-film-grid">
+          <div v-for="film in upcoming" :key="film.id" class="mp-film-card">
+            <div class="mp-poster" :style="posterStyle(film)">
               <img
                 v-if="film.posterUrl && isPosterUsable(film.id)"
                 :src="film.posterUrl"
                 :alt="film.name"
                 @error="markPosterBroken(film.id)"
               />
-              <span v-else class="poster-fallback">{{ film.name.slice(0, 2) }}</span>
+              <span v-else class="mp-poster-fallback">{{ film.name.slice(0, 2) }}</span>
+              <div class="mp-score mp-score-none">待映</div>
             </div>
 
-            <div class="info">
-              <div class="title-row">
-                <h3>{{ film.name }}</h3>
-                <span v-if="film.score > 0" class="score">{{ film.score.toFixed(1) }}</span>
-                <span v-else class="score score-none">暂无评分</span>
+            <div class="mp-film-body">
+              <h3 class="mp-film-title">{{ film.name }}</h3>
+              <p class="mp-film-sub">上映日期 {{ film.releaseDate }}</p>
+              <div class="mp-film-action">
+                <el-button size="small" plain disabled>预约</el-button>
               </div>
-              <p class="mp-muted">{{ film.enName }}</p>
-              <p class="mp-muted">{{ film.filmType }} · {{ film.duration }}分钟</p>
-              <p class="mp-muted">导演：{{ film.director }}</p>
             </div>
           </div>
         </div>
       </template>
-    </van-pull-refresh>
-
-    <van-tabbar route>
-      <van-tabbar-item to="/" icon="video-o">热映</van-tabbar-item>
-      <van-tabbar-item to="/profile" icon="user-o">我的</van-tabbar-item>
-    </van-tabbar>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchFilms } from '../api/movie'
 
-defineOptions({ name: 'HomeView' })
-
 const router = useRouter()
 
-const films = ref([])
-const initialLoading = ref(true)
-const refreshing = ref(false)
-const imageOk = ref({})
+const nowShowing = ref([])
+const upcoming = ref([])
+const loading = ref(true)
+const brokenPosters = ref({})
 
-// Status 1 = now showing.
-const NOW_SHOWING = 1
+// The banner shows the best-rated few of what is actually on sale.
+const bannerFilms = computed(() =>
+  [...nowShowing.value]
+    .filter((f) => f.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+)
 
-onMounted(loadFilms)
+const STATUS_UPCOMING = 0
+const STATUS_NOW_SHOWING = 1
 
-async function loadFilms() {
+onMounted(async () => {
   try {
-    films.value = await fetchFilms({ status: NOW_SHOWING })
-  } catch {
-    // request.js already showed a message; leave the list empty so the page
-    // renders its empty state instead of a broken one.
-    films.value = []
+    // Two statuses, two calls. There is no combined endpoint because the two
+    // lists are rendered independently and a partial failure should not blank
+    // both sections.
+    const [showing, soon] = await Promise.all([
+      fetchFilms({ status: STATUS_NOW_SHOWING }),
+      fetchFilms({ status: STATUS_UPCOMING })
+    ])
+    nowShowing.value = showing || []
+    upcoming.value = soon || []
   } finally {
-    initialLoading.value = false
-    refreshing.value = false
+    loading.value = false
   }
-}
+})
 
-function onRefresh() {
-  refreshing.value = true
-  loadFilms()
-}
-
-function goDetail(film) {
-  // Detail route belongs to the schedule flow, which lands with movie-service.
-  // Until then, keep the tap responsive rather than doing nothing.
-  router.push({ name: 'home', query: { filmId: film.id } })
+function goFilm(film) {
+  router.push(`/films/${film.id}`)
 }
 
 /**
- * Posters are assumed usable until the browser tells us otherwise.
+ * Posters are assumed usable until the browser reports otherwise.
  *
- * The set records failures only. The first version of this seeded the set from
- * inside the :style binding, which mutated reactive state during render and
- * re-triggered the render - an infinite loop. Nothing that reads reactive state
- * may also write it.
+ * Failures are recorded only. An earlier version seeded this set from inside
+ * the :style binding, which wrote reactive state during render and looped.
  */
 function isPosterUsable(filmId) {
-  return imageOk.value[filmId] !== false
+  return brokenPosters.value[filmId] !== false
 }
 
 function markPosterBroken(filmId) {
-  imageOk.value = { ...imageOk.value, [filmId]: false }
+  brokenPosters.value = { ...brokenPosters.value, [filmId]: false }
 }
 
-/** Deterministic colour per film, so a poster never changes between renders. */
+/** Deterministic colour per film, so the fallback never changes between renders. */
 function posterStyle(film) {
   const hue = (film.id * 47) % 360
   return {
-    background: `linear-gradient(135deg, hsl(${hue} 62% 58%), hsl(${(hue + 40) % 360} 58% 42%))`
+    background: `linear-gradient(135deg, hsl(${hue} 58% 46%), hsl(${(hue + 40) % 360} 62% 30%))`
   }
 }
 </script>
 
 <style scoped>
-.film-list {
-  padding: 8px 0;
+.home {
+  padding-top: 20px;
 }
 
-.film-card {
+.banner {
+  border-radius: var(--mp-radius);
+  overflow: hidden;
+}
+
+.banner-slide {
+  height: 100%;
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  margin-bottom: 8px;
+  align-items: center;
+  padding: 0 64px;
   cursor: pointer;
 }
 
-.film-card:active {
-  background: #fafafa;
-}
-
-.poster {
-  width: 76px;
-  height: 106px;
-  border-radius: 6px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.poster img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.poster-fallback {
+.banner-info {
   color: #fff;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 2px;
+  max-width: 560px;
 }
 
-.info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.banner-info h2 {
+  font-size: 40px;
+  margin: 0 0 12px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-.info p {
-  margin: 0;
-}
-
-.title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.title-row h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.score {
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--van-primary-color);
-  font-weight: 600;
+.banner-meta {
+  margin: 0 0 6px;
   font-size: 15px;
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.score-none {
-  color: var(--mp-text-muted);
-  font-weight: 400;
-  font-size: 13px;
+.banner-score {
+  margin: 16px 0 20px;
+  color: #fff;
+}
+
+.banner-score .num {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--mp-primary);
+}
+
+.banner-score .label {
+  font-size: 14px;
+  margin-left: 4px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Five per row keeps the poster aspect ratio close to a real ticket site
+   at the 1200px container width. */
+.mp-film-grid {
+  grid-template-columns: repeat(5, 1fr);
 }
 </style>
