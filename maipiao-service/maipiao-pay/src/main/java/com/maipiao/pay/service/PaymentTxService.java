@@ -71,6 +71,48 @@ public class PaymentTxService {
         return true;
     }
 
+    /**
+     * G3: the provider has given the money back, so the order says so.
+     *
+     * <p>Three writes that describe one fact, and they commit or fail
+     * together:
+     *
+     * <ol>
+     *   <li>the refund row moves to settled, guarded on the amount so a
+     *       mismatched confirmation cannot close out a different refund;</li>
+     *   <li>the order moves REFUNDING to REFUNDED, and its seat ledger rows go
+     *       from sold back to available;</li>
+     *   <li>the sold counter comes down, which is what puts the seats back on
+     *       sale rather than merely marking them free.</li>
+     * </ol>
+     *
+     * <p>Redis is not touched here. Clearing the hold is the caller's step,
+     * after this commits - see {@code OrderRefundService.clearSeatHold}. A
+     * bitmap cleared inside the transaction would survive a rollback and leave
+     * seats on sale against an order that still reads as paid.
+     *
+     * <p>Idempotent: a refund already settled returns without doing anything,
+     * because the retry sweep and the original request can both arrive here.
+     */
+    @GlobalTransactional(name = "refund-settle", rollbackFor = Exception.class, timeoutMills = 30000)
+    public void settleRefund(Refund refund, String channelRefundNo) {
+        int rows = refundMapper.casRefundSuccess(
+                refund.getRefundNo(), channelRefundNo, refund.getRefundAmount());
+
+        if (rows == 0) {
+            log.info("refund already settled, nothing to do: refundNo={}", refund.getRefundNo());
+            return;
+        }
+
+        // The order side. One call, because the order reaching REFUNDED and
+        // its seats going back on sale are the same fact - splitting them is
+        // how a paid order ends up with seats somebody else can buy.
+        orderClient.markRefunded(refund.getOrderNo(), refund.getRefundAmount());
+
+        log.info("refund settled: refundNo={}, orderNo={}, amount={}",
+                refund.getRefundNo(), refund.getOrderNo(), refund.getRefundAmount());
+    }
+
     /** Applies a failed callback. Never overwrites a success. */
     @Transactional(rollbackFor = Exception.class)
     public boolean markFailed(PaymentChannel.NotifyResult notify) {

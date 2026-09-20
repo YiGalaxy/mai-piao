@@ -42,7 +42,14 @@ public interface SeatClient {
      * was already cancelled - frees nothing extra.
      */
     @PostMapping("/release")
-    R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo);
+    R<Integer> release(@RequestParam Long sessionId,
+                       @RequestParam String orderNo,
+                       @RequestParam boolean includeSold);
+
+    /** The hold-release used everywhere except refunds. */
+    default R<Integer> release(Long sessionId, String orderNo) {
+        return release(sessionId, orderNo, false);
+    }
 
     /**
      * Whether this order still holds the seats its token names, and what they

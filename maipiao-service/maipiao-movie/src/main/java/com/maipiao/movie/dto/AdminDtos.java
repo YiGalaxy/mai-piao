@@ -208,6 +208,42 @@ public final class AdminDtos {
     ) {
     }
 
+    /**
+     * 场地，但还没有归属的场馆。
+     *
+     * <p>和 {@link PlaceRequest} 的唯一区别就是没有 {@code venueId}，而这个区别是
+     * 真的：嵌在「建场馆」请求里的场地，它属于哪个场馆是**服务端刚建出来的那个**，
+     * 请求方根本无从知道。让这个字段必填然后传个占位值，是在用校验规则掩盖一个
+     * 本来就不存在的字段。
+     */
+    public record PlaceSpec(
+            @NotBlank(message = "名称不能为空") String name,
+            @NotBlank(message = "场地类型不能为空") String placeType,
+            @NotBlank(message = "座位形式不能为空") String seatingMode,
+            @NotNull(message = "行数不能为空") @Positive Integer rowCount,
+            @NotNull(message = "列数不能为空") @Positive Integer colCount,
+            String seatTemplate,
+            Integer seatCount,
+            Integer status
+    ) {
+    }
+
+    /**
+     * 一次建好一个场馆和它下面的场地。
+     *
+     * <p>分开两次调用看起来更小，但会留下一个中间状态：场馆建好了、场地没建成。
+     * 那种场馆排不了任何演出、也卖不了票，只能靠人去发现并重试 —— 而它跟「场地本身
+     * 填错了」在界面上长得一模一样。
+     *
+     * <p>场馆就是它的场地。一次建完，要么都有要么都没有。
+     */
+    public record CreateVenueWithPlacesRequest(
+            @Valid @NotNull(message = "场馆信息不能为空") VenueRequest venue,
+            /** 可以为空：先把场馆建出来、场地稍后再加，也是合理的用法。 */
+            @Valid List<PlaceSpec> places
+    ) {
+    }
+
     /** What creating a session produced, so the caller can check it. */
     public record SessionCreated(
             Long sessionId,

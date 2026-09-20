@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Creating performances, as opposed to generating demo ones.
@@ -204,13 +205,56 @@ public class AdminPerformanceService {
         log.info("venue updated: id={}, name={}", venueId, venue.getName());
     }
 
+    /**
+     * 一次建好一个场馆和它下面的场地。
+     *
+     * <p>一个事务。分成两次调用会留下「场馆建好了、场地没建成」的中间状态，
+     * 那种场馆排不了演出也卖不了票，而在界面上它和「场地填错了」长得一模一样。
+     *
+     * @return 场馆 id 和建好的场地 id，顺序与请求一致
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> createVenueWithPlaces(AdminDtos.CreateVenueWithPlacesRequest request) {
+        Long venueId = createVenue(request.venue());
+
+        List<Long> placeIds = new ArrayList<>();
+        if (request.places() != null) {
+            for (AdminDtos.PlaceSpec place : request.places()) {
+                // 前端可能只填了场馆、场地留空；空名字的整条跳过，不当成错误。
+                if (place.name() == null || place.name().isBlank()) {
+                    continue;
+                }
+                placeIds.add(createPlace(venueId, place));
+            }
+        }
+
+        return Map.of("venueId", venueId, "placeIds", placeIds);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public Long createPlace(AdminDtos.PlaceRequest request) {
-        if (cinemaMapper.selectById(request.venueId()) == null) {
+        return createPlace(request.venueId(), new AdminDtos.PlaceSpec(
+                request.name(), request.placeType(), request.seatingMode(),
+                request.rowCount(), request.colCount(), request.seatTemplate(),
+                request.seatCount(), request.status()));
+    }
+
+    /** 建一个场地。场馆 id 由调用方给出，因为嵌套调用时它才刚被建出来。 */
+    @Transactional(rollbackFor = Exception.class)
+    public Long createPlace(Long venueId, AdminDtos.PlaceSpec request) {
+        if (cinemaMapper.selectById(venueId) == null) {
             throw new BizException(ErrorCode.PARAM_ERROR, "所属场馆不存在");
         }
         Hall place = new Hall();
-        applyPlace(place, request);
+        place.setVenueId(venueId);
+        place.setName(request.name());
+        place.setPlaceType(request.placeType());
+        place.setSeatingMode(request.seatingMode());
+        place.setRowCount(request.rowCount());
+        place.setColCount(request.colCount());
+        place.setSeatTemplate(request.seatTemplate() == null ? "" : request.seatTemplate());
+        place.setSeatCount(request.seatCount() == null ? 0 : request.seatCount());
+        place.setStatus(request.status() == null ? Hall.STATUS_ACTIVE : request.status());
         hallMapper.insert(place);
 
         // Say out loud what the template actually yields. A declared seat_count

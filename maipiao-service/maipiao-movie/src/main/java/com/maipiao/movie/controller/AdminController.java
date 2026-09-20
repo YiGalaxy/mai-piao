@@ -195,6 +195,18 @@ public class AdminController {
         return R.ok(adminService.createVenue(request));
     }
 
+    /**
+     * 一次建好场馆和它的场地。
+     *
+     * <p>界面走的是这一个。分开两次调用会留下「场馆在、场地没建成」的中间状态，
+     * 那种场馆排不了演出也卖不了票。
+     */
+    @PostMapping("/venues/full")
+    public R<Map<String, Object>> createVenueWithPlaces(
+            @Valid @RequestBody AdminDtos.CreateVenueWithPlacesRequest request) {
+        return R.ok(adminService.createVenueWithPlaces(request));
+    }
+
     @PutMapping("/venues/{venueId}")
     public R<Void> updateVenue(@PathVariable Long venueId,
                                @Valid @RequestBody AdminDtos.VenueRequest request) {

@@ -24,6 +24,16 @@ export function createVenue(payload) {
   return request.post('/movie/admin/venues', payload)
 }
 
+/**
+ * 一次建好场馆和它下面的场地。
+ *
+ * 界面走的是这一个。分成两次调用会留下「场馆建好了、场地没建成」的中间状态，
+ * 那种场馆排不了演出也卖不了票 —— 而在界面上它和「场地填错了」长得一模一样。
+ */
+export function createVenueWithPlaces(payload) {
+  return request.post('/movie/admin/venues/full', payload)
+}
+
 export function updateVenue(venueId, payload) {
   return request.put(`/movie/admin/venues/${venueId}`, payload)
 }
