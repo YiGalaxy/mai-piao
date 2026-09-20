@@ -1,5 +1,6 @@
 package com.maipiao.common.web.config;
 
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.maipiao.common.core.config.JwtProperties;
 import com.maipiao.common.core.util.JwtUtil;
 import com.maipiao.common.web.context.UserContextInterceptor;
@@ -7,6 +8,7 @@ import com.maipiao.common.web.exception.GlobalExceptionHandler;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -51,6 +53,34 @@ public class CommonWebAutoConfiguration implements WebMvcConfigurer {
     @ConditionalOnMissingBean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * Serialises every {@code Long} as a JSON string.
+     *
+     * <p>Snowflake ids are 19 digits. JavaScript numbers are IEEE-754 doubles,
+     * so anything above 2^53-1 loses precision on parse -
+     * {@code 2101643262211633153} arrives in the browser as
+     * {@code 2101643262211633200}. The client then sends that back and the
+     * lookup fails with "not found" for a row that plainly exists, which reads
+     * like a routing or permissions problem rather than a number-format one.
+     *
+     * <p>Serialising as a string moves the value through JSON intact. The cost
+     * is that every id is a string in the frontend, including small ones like
+     * seat indexes - worth it, because the alternative is silent corruption of
+     * exactly the values used to address things.
+     *
+     * <p>The alternative, annotating every id field with
+     * {@code @JsonSerialize(using = ToStringSerializer.class)}, is easy to
+     * forget on the next field someone adds - and forgetting it produces this
+     * same silent corruption.
+     */
+    @Bean
+    public Jackson2ObjectMapperBuilderCustomizer longToStringCustomizer() {
+        return builder -> {
+            builder.serializerByType(Long.class, ToStringSerializer.instance);
+            builder.serializerByType(Long.TYPE, ToStringSerializer.instance);
+        };
     }
 
     /**
