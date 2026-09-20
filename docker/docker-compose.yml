@@ -220,6 +220,17 @@ services:
     environment:
       SEATA_PORT: 8091
       TZ: Asia/Shanghai
+      # Advertise 127.0.0.1 rather than the container's own address.
+      #
+      # Seata registers itself in Nacos with whichever IP it detects, which
+      # inside a container is the Docker-internal one (172.x.x.x). The services
+      # run on the host, cannot route to that address, and fail at startup with
+      #     can not connect to [172.28.0.8:8091]
+      # which reads like the server is down when it is actually healthy.
+      #
+      # If the services are ever moved into Docker too, this must become the
+      # seata container's name so they resolve it over the compose network.
+      SEATA_IP: 127.0.0.1
     volumes:
       - ./config/seata/application.yml:/seata-server/resources/application.yml:ro
       # Bind mount for the same reason as RocketMQ: a root-owned named volume

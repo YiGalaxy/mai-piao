@@ -46,8 +46,9 @@
           </div>
 
           <ul v-else class="picked">
-            <li v-for="seat in selectedSeats" :key="seat.seatIndex">
-              <span>{{ labelOf(seat) }}</span>
+            <li v-for="(seat, index) in selectedSeats" :key="seat.seatIndex">
+              <span class="face">{{ SEAT_FACES[index % SEAT_FACES.length] }}</span>
+              <span class="label">{{ labelOf(seat) }}</span>
               <span class="price">¥{{ seatMap.price }}</span>
             </li>
           </ul>
@@ -103,6 +104,9 @@ const GAP = 6
 const OFFSET_X = 44
 const OFFSET_Y = 20
 const MAX_SELECT = 6
+
+/** One per selected seat, in selection order. */
+const SEAT_FACES = ['🐱', '🐶', '🦊', '🐼', '🐨', '🐯']
 
 const canvasWidth = computed(() => {
   if (!seatMap.value) return 600
@@ -166,14 +170,16 @@ function draw() {
     const w = seat.type === 1 ? SEAT_W + GAP - 2 : SEAT_W
 
     if (seat.status === 1) {
-      ctx.fillStyle = '#e0e0e0'
-      ctx.strokeStyle = '#d0d0d0'
+      // Taken seats are filled with the page background colour, so they read
+      // as "not part of the map" rather than as a different kind of choice.
+      ctx.fillStyle = '#f0f0f0'
+      ctx.strokeStyle = '#e8e8e8'
     } else if (selectedIndexes.has(seat.seatIndex)) {
-      ctx.fillStyle = '#ff5f2e'
-      ctx.strokeStyle = '#e54d1f'
+      ctx.fillStyle = '#ff6700'
+      ctx.strokeStyle = '#e05a00'
     } else if (seat.type === 1) {
-      ctx.fillStyle = '#fff4f0'
-      ctx.strokeStyle = '#ffc4b0'
+      ctx.fillStyle = '#fff3ea'
+      ctx.strokeStyle = '#ffc9a3'
     } else {
       ctx.fillStyle = '#ffffff'
       ctx.strokeStyle = '#c8c9cc'
@@ -183,6 +189,22 @@ function draw() {
     ctx.fill()
     ctx.lineWidth = 1
     ctx.stroke()
+
+    // A character on each chosen seat.
+    //
+    // This is the one piece of pure decoration in the app, and it earns its
+    // place: a wall of identical orange rectangles makes it hard to see at a
+    // glance which seats are yours, and the seats that were already taken look
+    // almost the same as the ones you picked. A distinct face per seat makes
+    // "these are mine" instant, and it gives the screen some warmth at the
+    // moment the user has just committed to spending money.
+    if (selectedIndexes.has(seat.seatIndex)) {
+      const picked = selected.value.findIndex((s) => s.seatIndex === seat.seatIndex)
+      ctx.font = '15px "Apple Color Emoji", "Segoe UI Emoji", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(SEAT_FACES[picked % SEAT_FACES.length], x + w / 2, y + SEAT_H / 2 + 1)
+    }
   }
 
   // Row numbers down the left edge, so people can find their row.
@@ -442,14 +464,27 @@ function formatDate(value) {
 
 .picked li {
   display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--mp-divider);
   font-size: 14px;
+}
+
+/* Matches the marker drawn on the canvas, so the list and the map can be
+   read against each other. */
+.picked .face {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.picked .label {
+  flex: 1;
 }
 
 .picked .price {
   color: var(--mp-primary);
+  font-weight: 600;
 }
 
 .total {

@@ -19,12 +19,7 @@
       </nav>
 
       <div class="search">
-        <el-input
-          v-model="keyword"
-          placeholder="搜索影片、影院"
-          clearable
-          @keyup.enter="onSearch"
-        >
+        <el-input v-model="keyword" placeholder="搜索影片、影院、演员" clearable @keyup.enter="onSearch">
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
@@ -35,7 +30,7 @@
         <template v-if="userStore.isLoggedIn">
           <el-dropdown @command="onCommand">
             <span class="user-name">
-              <el-icon><User /></el-icon>
+              <span class="avatar">{{ avatarText }}</span>
               {{ userStore.displayName }}
               <el-icon class="caret"><ArrowDown /></el-icon>
             </span>
@@ -60,10 +55,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Location, Search, User } from '@element-plus/icons-vue'
+import { ArrowDown, Location, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '../store/user'
 
 const router = useRouter()
@@ -72,13 +67,14 @@ const userStore = useUserStore()
 
 const keyword = ref('')
 
+const avatarText = computed(() => {
+  const name = userStore.profile?.nickname
+  return name ? name.slice(0, 1) : '我'
+})
+
 function onSearch() {
   const value = keyword.value.trim()
-  if (!value) {
-    return
-  }
-  // Search lands on the film list, which is the only searchable catalogue
-  // today. Cinemas join it once the cinema page exists.
+  if (!value) return
   router.push({ path: '/films', query: { q: value } })
 }
 
@@ -95,7 +91,7 @@ async function onCommand(command) {
         type: 'warning'
       })
     } catch {
-      return // cancelled
+      return
     }
     await userStore.logout()
     ElMessage.success('已退出登录')
@@ -105,10 +101,17 @@ async function onCommand(command) {
 </script>
 
 <style scoped>
+/**
+ * White bar, not a dark one.
+ *
+ * The category's headers are red-and-white: a white surface carrying the brand
+ * colour in the logo and in the selected nav item. A dark bar reads as a
+ * developer console, which is not what this is.
+ */
 .app-header {
-  background: var(--mp-header-bg);
-  color: #fff;
-  height: 60px;
+  background: #fff;
+  border-bottom: 1px solid var(--mp-border);
+  height: 64px;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -130,21 +133,24 @@ async function onCommand(command) {
 }
 
 .logo-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--mp-primary);
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #ff8a33, var(--mp-primary));
+  box-shadow: 0 3px 8px rgba(255, 103, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #fff;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 21px;
+  font-weight: 700;
   letter-spacing: 1px;
+  color: var(--mp-text-strong);
 }
 
 .city {
@@ -152,46 +158,76 @@ async function onCommand(command) {
   align-items: center;
   gap: 4px;
   font-size: 14px;
-  color: #ddd;
+  color: var(--mp-text-muted);
   flex-shrink: 0;
+  cursor: pointer;
+}
+
+.city:hover {
+  color: var(--mp-primary);
 }
 
 .nav {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   font-size: 15px;
   flex-shrink: 0;
 }
 
+/**
+ * Selected nav: coloured text plus a short coloured rule under it.
+ *
+ * A short rule rather than a full-width underline - the bar reads as one
+ * continuous surface, and the marker reads as attached to the word.
+ */
 .nav a {
-  color: #ddd;
-  padding: 4px 0;
-  border-bottom: 2px solid transparent;
+  position: relative;
+  color: var(--mp-text);
+  padding: 4px 0 8px;
+  transition: color 0.2s;
 }
 
-.nav a:hover,
+.nav a::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%) scaleX(0);
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--mp-primary);
+  transition: transform 0.22s ease;
+}
+
+.nav a:hover {
+  color: var(--mp-primary);
+}
+
 .nav a.active {
-  color: #fff;
-  border-bottom-color: var(--mp-primary);
+  color: var(--mp-primary);
+  font-weight: 600;
+}
+
+.nav a.active::after {
+  transform: translateX(-50%) scaleX(1);
 }
 
 .search {
   flex: 1;
-  max-width: 320px;
+  max-width: 340px;
 }
 
 .search :deep(.el-input__wrapper) {
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--mp-radius-pill);
+  background: #f5f5f5;
   box-shadow: none;
+  padding: 1px 14px;
 }
 
-.search :deep(.el-input__inner) {
-  color: #fff;
-}
-
-.search :deep(.el-input__inner::placeholder) {
-  color: #999;
+.search :deep(.el-input__wrapper.is-focus) {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--mp-primary) inset;
 }
 
 .user {
@@ -201,25 +237,30 @@ async function onCommand(command) {
   flex-shrink: 0;
 }
 
-.user :deep(.el-button) {
-  color: #ddd;
-}
-
-.user :deep(.el-button:hover) {
-  color: #fff;
-}
-
 .user-name {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: #ddd;
+  gap: 6px;
+  color: var(--mp-text);
   cursor: pointer;
   outline: none;
 }
 
 .user-name:hover {
-  color: #fff;
+  color: var(--mp-primary);
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--mp-primary-soft);
+  color: var(--mp-primary);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .caret {
