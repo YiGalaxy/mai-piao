@@ -9,6 +9,7 @@
 -- KEYS[2] = seat:owner:{scheduleId}
 -- KEYS[3] = seat:delay:{scheduleId}
 -- KEYS[4] = seat:order:{orderNo}
+-- KEYS[5] = sold_out:{scheduleId}
 --
 -- ARGV[1] = orderNo
 -- ARGV[2] = '1' to force-release seats with no owner (reconciliation repair
@@ -21,6 +22,7 @@ local mapKey   = KEYS[1]
 local ownerKey = KEYS[2]
 local delayKey = KEYS[3]
 local orderKey = KEYS[4]
+local soldKey  = KEYS[5]
 
 local orderNo = ARGV[1]
 local force   = ARGV[2] == '1'
@@ -43,6 +45,17 @@ for _, raw in ipairs(seats) do
         redis.call('HDEL', ownerKey, seatIndex)
         released = released + 1
     end
+end
+
+-- Freeing a seat un-sells-out the screening.
+--
+-- The flag is set the moment the last bit goes, and without this it would
+-- never come back: one cancelled order is enough to leave a screening that
+-- still has seats reading as sold out for as long as the key lives. Clearing
+-- is unconditional rather than re-derived from BITCOUNT, because at this point
+-- the seats have demonstrably been freed.
+if released > 0 then
+    redis.call('DEL', soldKey)
 end
 
 redis.call('DEL', orderKey)

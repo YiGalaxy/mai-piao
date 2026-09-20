@@ -44,6 +44,20 @@ public class SeatController {
     }
 
     /**
+     * Assigns seats from a price band, for a session that does not offer a map.
+     *
+     * <p>The alternative to {@link #lock}, not a variant of it: the buyer sends
+     * a band and a quantity, and the seats come back chosen. Everything after
+     * this point - the order transaction, the payment, the refund - cannot tell
+     * the two apart, because both produce the same held seats and the same
+     * token.
+     */
+    @PostMapping("/assign")
+    public R<SeatDtos.LockSeatResponse> assign(@Valid @RequestBody SeatDtos.AssignSeatRequest request) {
+        return R.ok(seatMapService.assignSeats(request, UserContext.require()));
+    }
+
+    /**
      * Gives a hold back when the user leaves without paying.
      *
      * <p>Not the main path - the lock expires on its own - but without it a
