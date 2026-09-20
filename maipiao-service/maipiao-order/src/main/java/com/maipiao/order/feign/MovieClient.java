@@ -35,7 +35,7 @@ public interface MovieClient {
      * @param expireTime ISO-8601 local date-time, e.g. 2026-09-20T20:31:00
      */
     @PostMapping("/schedule/occupy")
-    R<Void> occupy(@RequestParam Long scheduleId,
+    R<Void> occupy(@RequestParam Long sessionId,
                    @RequestParam String orderNo,
                    @RequestParam Long userId,
                    @RequestParam int count,
@@ -44,7 +44,7 @@ public interface MovieClient {
 
     /** G2 branch: locked seats become sold. */
     @PostMapping("/schedule/sold")
-    R<Void> confirmSold(@RequestParam Long scheduleId,
+    R<Void> confirmSold(@RequestParam Long sessionId,
                         @RequestParam String orderNo,
                         @RequestParam int count);
 
@@ -56,12 +56,12 @@ public interface MovieClient {
      *                      again would corrupt the sold counter
      */
     @PostMapping("/schedule/release")
-    R<Void> release(@RequestParam Long scheduleId,
+    R<Void> release(@RequestParam Long sessionId,
                     @RequestParam String orderNo,
                     @RequestParam int count,
                     @RequestParam boolean releaseToPool);
 
     /** Screening snapshot for building an order. */
-    @org.springframework.web.bind.annotation.GetMapping("/schedule/{scheduleId}/snapshot")
-    R<Map<String, Object>> scheduleSnapshot(@org.springframework.web.bind.annotation.PathVariable Long scheduleId);
+    @org.springframework.web.bind.annotation.GetMapping("/schedule/{sessionId}/snapshot")
+    R<Map<String, Object>> scheduleSnapshot(@org.springframework.web.bind.annotation.PathVariable Long sessionId);
 }

@@ -1,12 +1,12 @@
 package com.maipiao.movie.controller;
 
 import com.maipiao.common.core.result.R;
-import com.maipiao.movie.dto.ScheduleVO;
+import com.maipiao.movie.dto.SessionVO;
 import com.maipiao.movie.entity.Cinema;
 import com.maipiao.movie.entity.Film;
 import com.maipiao.movie.service.CinemaService;
 import com.maipiao.movie.service.FilmService;
-import com.maipiao.movie.service.ScheduleService;
+import com.maipiao.movie.service.SessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,7 +36,7 @@ public class MovieController {
 
     private final FilmService filmService;
     private final CinemaService cinemaService;
-    private final ScheduleService scheduleService;
+    private final SessionService sessionService;
 
     /** @param status 0 upcoming, 1 now showing, 2 offline; omit for all */
     @GetMapping("/film/list")
@@ -44,9 +44,9 @@ public class MovieController {
         return R.ok(filmService.list(status));
     }
 
-    @GetMapping("/film/{filmId}")
-    public R<Film> filmDetail(@PathVariable Long filmId) {
-        return R.ok(filmService.detail(filmId));
+    @GetMapping("/film/{projectId}")
+    public R<Film> filmDetail(@PathVariable Long projectId) {
+        return R.ok(filmService.detail(projectId));
     }
 
     @GetMapping("/cinema/list")
@@ -62,16 +62,16 @@ public class MovieController {
      * something useful rather than an error.
      */
     @GetMapping("/schedule/list")
-    public R<List<ScheduleVO>> scheduleList(
-            @RequestParam(required = false) Long filmId,
-            @RequestParam(required = false) Long cinemaId,
+    public R<List<SessionVO>> scheduleList(
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Long venueId,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate showDate) {
-        return R.ok(scheduleService.list(filmId, cinemaId, showDate));
+        return R.ok(sessionService.list(projectId, venueId, showDate));
     }
 
-    @GetMapping("/schedule/{scheduleId}")
-    public R<ScheduleVO> scheduleDetail(@PathVariable Long scheduleId) {
-        return R.ok(scheduleService.detail(scheduleId));
+    @GetMapping("/schedule/{sessionId}")
+    public R<SessionVO> scheduleDetail(@PathVariable Long sessionId) {
+        return R.ok(sessionService.detail(sessionId));
     }
 }

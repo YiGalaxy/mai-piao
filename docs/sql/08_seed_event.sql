@@ -1,0 +1,92 @@
+-- ============================================================
+-- Seed data part two : performance venues and projects
+--
+-- Films get their data from 05_seed_base.sql. This file adds the other
+-- categories, which is what makes the unified model worth having - the same
+-- listing page, the same seat map, the same order flow, with the differences
+-- expressed as data rather than as branches.
+--
+-- The interesting contrasts against films:
+--   - a stadium is not a cinema: different venue_type, and a place that
+--     seats thousands rather than a few hundred
+--   - a concert has tiered pricing, so its sessions carry several tiers
+--     where a film session carries exactly one
+--   - a talk show may be standing-only, in which case the "seat map" is an
+--     admission counter
+--
+-- Fixed id ranges: projects 1101-1112, venues 2101-2106, places 3101-3112
+-- ============================================================
+
+SET NAMES utf8mb4;
+
+USE maipiao_event;
+
+-- ------------------------------------------------------------
+-- venues
+-- ------------------------------------------------------------
+INSERT INTO t_event_venue (id, name, venue_type, address, district, phone, longitude, latitude, status) VALUES
+(2101, '市体育中心体育馆', 'GYMNASIUM', '体育中心路1号', '福田区', '0755-66660001', 114.057000, 22.541000, 1),
+(2102, '大剧院歌剧厅', 'THEATER', '文化路88号大剧院', '罗湖区', '0755-66660002', 114.120000, 22.548000, 1),
+(2103, 'Livehouse 星空店', 'LIVEHOUSE', '南头古城文创街12号', '南山区', '0755-66660003', 113.925000, 22.539000, 1),
+(2104, '国际会展中心1号馆', 'STADIUM', '福华三路会展中心', '福田区', '0755-66660004', 114.032000, 22.535000, 1),
+(2105, '喜剧中心小剧场', 'THEATER', '华强北路200号7层', '福田区', '0755-66660005', 114.085000, 22.545000, 1),
+(2106, '滨江露天音乐广场', 'STADIUM', '滨江大道999号', '南山区', '0755-66660006', 113.940000, 22.520000, 1);
+
+-- ------------------------------------------------------------
+-- places
+--
+-- Stand names, because that is what the actual business calls them.
+-- seating_mode is the column that makes standing-only events expressible:
+--   STANDING -> the trip is sold without a seat map
+-- Two layouts are used across these venues:
+--   arena   24 x 32, aisles [9,24] -> 24*32 - 2*24 - 4 = 716
+--   studio   12 x 16, aisles [6,11] -> 12*16 - 2*12 - 4 = 164
+-- ------------------------------------------------------------
+INSERT INTO t_event_place (id, venue_id, name, place_type, seating_mode, row_count, col_count, seat_template, seat_count, status) VALUES
+(3101, 2101, '主馆内场', 'ARENA', 'SEATED', 24, 32,
+ '{"rows":24,"cols":32,"aisleCols":[9,24],"brokenSeats":["1-1","1-32","24-1","24-32"],"coupleSeats":[]}', 716, 1),
+(3102, 2102, '歌剧厅', 'THEATER', 'SEATED', 12, 16,
+ '{"rows":12,"cols":16,"aisleCols":[6,11],"brokenSeats":["1-1","1-16","12-1","12-16"],"coupleSeats":[]}', 164, 1),
+(3103, 2103, '星空站席区', 'STANDING', 'STANDING', 1, 300,
+ '{"rows":1,"cols":300,"aisleCols":[],"brokenSeats":[],"coupleSeats":[]}', 300, 1),
+(3104, 2104, '1号馆内场', 'ARENA', 'SEATED', 24, 32,
+ '{"rows":24,"cols":32,"aisleCols":[9,24],"brokenSeats":["1-1","1-32","24-1","24-32"],"coupleSeats":[]}', 716, 1),
+(3105, 2105, '喜剧小剧场', 'STUDIO', 'SEATED', 12, 16,
+ '{"rows":12,"cols":16,"aisleCols":[6,11],"brokenSeats":["1-1","1-16","12-1","12-16"],"coupleSeats":[]}', 164, 1),
+(3106, 2106, '露天站席区', 'STANDING', 'STANDING', 1, 500,
+ '{"rows":1,"cols":500,"aisleCols":[],"brokenSeats":[],"coupleSeats":[]}', 500, 1);
+
+-- ------------------------------------------------------------
+-- projects : concerts, talk shows, theatre
+--
+-- Note what is null. A concert has an artist and an organizer and no
+-- director; a film has the reverse. The columns exist for both, and which
+-- ones carry data is what category determines.
+-- ------------------------------------------------------------
+INSERT INTO t_event_project
+(id, category, title, en_title, poster_url, duration, tags, show_date, score, status,
+ director, actors, artist, organizer, description) VALUES
+(1101, 'CONCERT', '夏日回声巡回演唱会·深圳站', 'Summer Echo Tour', '/img/poster/1101.jpg', 150, '流行,现场',
+ '2026-10-05', 9.2, 1, '', '', '陈以辰', '麦浪文化', '2026 夏日回声巡演深圳站，含全新编曲与舞台设计。'),
+(1102, 'CONCERT', '深海乐队十周年专场', 'Deep Sea 10th Anniversary', '/img/poster/1102.jpg', 180, '摇滚,纪念专场',
+ '2026-10-12', 8.8, 1, '', '', '深海乐队', '声浪演出', '成军十年，完整演绎三张专辑曲目。'),
+(1103, 'TALK_SHOW', '脱口秀大会·城市漫游', 'Stand-up City Tour', '/img/poster/1103.jpg', 100, '脱口秀,喜剧',
+ '2026-09-28', 8.5, 1, '', '', '老鲁 / 小鹿 / 阿祖', '笑声工场', '三位演员拼场，每场内容不同。'),
+(1104, 'TALK_SHOW', '周末开放麦', 'Weekend Open Mic', '/img/poster/1104.jpg', 90, '脱口秀,开放麦',
+ '2026-09-26', 7.9, 1, '', '', '多位演员', '喜剧中心', '新人试段子，票价低，内容不可预期。'),
+(1105, 'THEATER', '话剧《暗涌》', 'Undercurrent', '/img/poster/1105.jpg', 130, '话剧,悬疑',
+ '2026-10-18', 9.0, 1, '', '刘敏,张成,王砚', '', '市话剧团', '三幕悬疑话剧，改编自同名小说。'),
+(1106, 'MUSICAL', '音乐剧《星空之下》', 'Beneath the Stars', '/img/poster/1106.jpg', 160, '音乐剧,原创',
+ '2026-11-02', 8.7, 0, '', '李思,周琳,陈昊', '', '星海制作', '原创音乐剧，现场乐队伴奏。'),
+(1107, 'CONCERT', '爵士夜·小剧场', 'Jazz Night', '/img/poster/1107.jpg', 120, '爵士,器乐',
+ '2026-09-25', 8.3, 1, '', '', '南方爵士五重奏', '星空现场', '每周固定场次，曲目随演出调整。'),
+(1108, 'TALK_SHOW', '相声专场·笑声不停', 'Crosstalk Night', '/img/poster/1108.jpg', 110, '相声,传统',
+ '2026-10-08', 8.1, 1, '', '', '德云社青年队', '曲艺社', '传统段子与新活结合。'),
+(1109, 'CONCERT', '电子音乐节·滨江', 'Riverside Electronic', '/img/poster/1109.jpg', 300, '电子,音乐节',
+ '2026-11-15', 0.0, 0, '', '', '多位DJ', '滨江文化', '露天音乐节，站席，全天演出。'),
+(1110, 'THEATER', '儿童剧《小熊的旅行》', 'Little Bear''s Journey', '/img/poster/1110.jpg', 70, '儿童剧,亲子',
+ '2026-10-01', 8.6, 1, '', '', '麦苗剧团', '麦苗文化', '适合 3-10 岁儿童，互动式演出。'),
+(1111, 'CONCERT', '民谣之夜·古城', 'Folk Night', '/img/poster/1111.jpg', 130, '民谣,不插电',
+ '2026-10-22', 8.4, 1, '', '', '周野,林小满', '古城音乐', '不插电编制，小场地近距离演出。'),
+(1112, 'TALK_SHOW', '即兴喜剧专场', 'Improv Night', '/img/poster/1112.jpg', 95, '即兴,喜剧',
+ '2026-10-15', 8.2, 1, '', '', '即兴小组', '笑声工场', '观众出题，演员即兴表演。');

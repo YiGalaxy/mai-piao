@@ -18,11 +18,11 @@
         <h2>影片信息</h2>
         <div class="info-row">
           <span class="label">影片</span>
-          <span>{{ order.filmName }}</span>
+          <span>{{ order.projectTitle }}</span>
         </div>
         <div class="info-row">
           <span class="label">影院</span>
-          <span>{{ order.cinemaName }} · {{ order.hallName }}</span>
+          <span>{{ order.venueName }} · {{ order.placeName }}</span>
         </div>
         <div class="info-row">
           <span class="label">场次</span>

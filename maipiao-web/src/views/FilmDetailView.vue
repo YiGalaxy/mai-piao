@@ -14,22 +14,22 @@
             <img
               v-if="film.posterUrl && posterUsable"
               :src="film.posterUrl"
-              :alt="film.name"
+              :alt="film.title"
               @error="posterUsable = false"
             />
-            <span v-else class="poster-fallback">{{ film.name.slice(0, 2) }}</span>
+            <span v-else class="poster-fallback">{{ film.title.slice(0, 2) }}</span>
           </div>
 
           <div class="hero-info">
-            <h1>{{ film.name }}</h1>
-            <p class="en-name">{{ film.enName }}</p>
+            <h1>{{ film.title }}</h1>
+            <p class="en-name">{{ film.enTitle }}</p>
 
             <div class="meta-line">
-              <span>{{ film.filmType }}</span>
+              <span>{{ film.tags }}</span>
               <el-divider direction="vertical" />
               <span>{{ film.duration }}分钟</span>
               <el-divider direction="vertical" />
-              <span>{{ film.releaseDate }} 上映</span>
+              <span>{{ film.showDate }} 上映</span>
             </div>
 
             <div class="meta-line">导演：{{ film.director }}</div>
@@ -71,13 +71,13 @@
         <div v-else class="cinema-groups">
           <div v-for="group in groupedSchedules" :key="group.cinemaId" class="cinema-group mp-card">
             <div class="cinema-head">
-              <h3>{{ group.cinemaName }}</h3>
+              <h3>{{ group.venueName }}</h3>
             </div>
 
             <div class="show-list">
               <div v-for="show in group.shows" :key="show.id" class="show-item">
                 <div class="show-time">{{ formatTime(show.startTime) }}</div>
-                <div class="show-hall mp-muted">{{ show.hallName }} · {{ show.hallType }}</div>
+                <div class="show-hall mp-muted">{{ show.placeName }} · {{ show.placeType }}</div>
                 <div class="show-price">
                   <span class="price">¥{{ show.price }}</span>
                 </div>
@@ -153,7 +153,7 @@ const groupedSchedules = computed(() => {
     if (!groups.has(show.cinemaId)) {
       groups.set(show.cinemaId, {
         cinemaId: show.cinemaId,
-        cinemaName: show.cinemaName,
+        venueName: show.venueName,
         shows: []
       })
     }

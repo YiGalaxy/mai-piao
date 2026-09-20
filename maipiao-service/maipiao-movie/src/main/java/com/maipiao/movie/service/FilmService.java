@@ -26,12 +26,12 @@ public class FilmService {
                 .eq(status != null, Film::getStatus, status)
                 // Newest releases first. Unrated (score 0) films are not
                 // sorted out here - an upcoming film legitimately has no score.
-                .orderByDesc(Film::getReleaseDate)
+                .orderByDesc(Film::getShowDate)
                 .orderByDesc(Film::getId));
     }
 
-    public Film detail(Long filmId) {
-        Film film = filmMapper.selectById(filmId);
+    public Film detail(Long projectId) {
+        Film film = filmMapper.selectById(projectId);
         if (film == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "影片不存在");
         }

@@ -16,7 +16,7 @@ public final class SeatDtos {
 
     public record LockSeatRequest(
             @NotNull(message = "场次不能为空")
-            Long scheduleId,
+            Long sessionId,
 
             @NotEmpty(message = "请选择座位")
             @Size(max = 6, message = "一次最多选择 6 个座位")
@@ -36,7 +36,7 @@ public final class SeatDtos {
      */
     public record LockSeatResponse(
             String lockToken,
-            Long scheduleId,
+            Long sessionId,
             List<Integer> seatIndexes,
             List<String> seatLabels,
             BigDecimal amount,
@@ -55,6 +55,6 @@ public final class SeatDtos {
     @Data
     public static class ReleaseSeatRequest {
         @NotNull(message = "场次不能为空")
-        private Long scheduleId;
+        private Long sessionId;
     }
 }

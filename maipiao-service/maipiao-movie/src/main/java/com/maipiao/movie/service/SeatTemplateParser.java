@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.maipiao.common.core.exception.BizException;
 import com.maipiao.common.core.result.ErrorCode;
 import com.maipiao.movie.dto.SeatTemplate;
-import com.maipiao.movie.entity.ScheduleSeat;
+import com.maipiao.movie.entity.SessionSeat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -84,8 +84,8 @@ public class SeatTemplateParser {
                     continue;
                 }
                 int seatType = couple.contains(seatId)
-                        ? ScheduleSeat.TYPE_COUPLE
-                        : ScheduleSeat.TYPE_NORMAL;
+                        ? SessionSeat.TYPE_COUPLE
+                        : SessionSeat.TYPE_NORMAL;
 
                 // `index` advances only for seats that exist, which is what
                 // keeps the bitmap dense.

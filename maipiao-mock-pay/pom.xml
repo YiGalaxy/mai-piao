@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.maipiao</groupId>
+    <artifactId>maipiao-ticket</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>maipiao-mock-pay</artifactId>
+  <name>maipiao-mock-pay</name>
+  <description>Stand-in for a payment provider: cashier page plus controllable callbacks</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.maipiao</groupId>
+      <artifactId>common-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!--
+      Deliberately NOT a Nacos client.
+
+      This service plays the part of an outside payment provider. A real one
+      does not register in our service registry and does not know our service
+      names - it knows a callback URL we gave it. Keeping it outside discovery
+      keeps that boundary honest, and means the callback path exercised in
+      development is the same shape as the one used in production: a plain
+      HTTP POST to a configured URL.
+    -->
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

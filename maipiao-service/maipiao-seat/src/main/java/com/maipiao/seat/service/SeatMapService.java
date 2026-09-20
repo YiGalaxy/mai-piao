@@ -54,17 +54,17 @@ public class SeatMapService {
     // seat map
     // ------------------------------------------------------------
 
-    public SeatMapVO getSeatMap(Long scheduleId) {
-        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(scheduleId);
+    public SeatMapVO getSeatMap(Long sessionId) {
+        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(sessionId);
         if (schedule == null) {
             throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
         }
 
         int totalSeat = toInt(schedule.get("totalSeat"));
 
-        Set<Integer> occupied = new HashSet<>(loadOccupiedIndexes(scheduleId, totalSeat));
+        Set<Integer> occupied = new HashSet<>(loadOccupiedIndexes(sessionId, totalSeat));
 
-        List<Map<String, Object>> layout = seatQueryMapper.selectSeatLayout(scheduleId);
+        List<Map<String, Object>> layout = seatQueryMapper.selectSeatLayout(sessionId);
         List<SeatMapVO.SeatItem> seats = new ArrayList<>(layout.size());
 
         for (Map<String, Object> row : layout) {
@@ -75,25 +75,52 @@ public class SeatMapService {
                     toInt(row.get("rowNum")),
                     toInt(row.get("colNum")),
                     toInt(row.get("seatType")),
-                    occupied.contains(seatIndex) ? 1 : 0));
+                    occupied.contains(seatIndex) ? 1 : 0,
+                    toLong(row.get("tierId"))));
         }
 
         SeatMapVO vo = new SeatMapVO();
-        vo.setScheduleId(scheduleId);
-        vo.setFilmName(str(schedule.get("filmName")));
-        vo.setCinemaName(str(schedule.get("cinemaName")));
-        vo.setHallName(str(schedule.get("hallName")));
-        vo.setHallType(str(schedule.get("hallType")));
+        vo.setSessionId(sessionId);
+        vo.setProjectTitle(str(schedule.get("projectTitle")));
+        vo.setVenueName(str(schedule.get("venueName")));
+        vo.setPlaceName(str(schedule.get("placeName")));
+        vo.setPlaceType(str(schedule.get("placeType")));
         vo.setStartTime((LocalDateTime) schedule.get("startTime"));
         vo.setPrice((BigDecimal) schedule.get("price"));
         vo.setRowCount(toInt(schedule.get("rowCount")));
         vo.setColCount(toInt(schedule.get("colCount")));
         vo.setAisleCols(parseAisleCols(str(schedule.get("seatTemplate"))));
         vo.setSeats(seats);
+        vo.setTiers(loadTiers(sessionId));
         vo.setTotalSeat(totalSeat);
         vo.setRemainingSeat(Math.max(0, totalSeat - occupied.size()));
         vo.setRushMode(toInt(schedule.get("rushMode")));
+        vo.setSeatingMode(str(schedule.get("seatingMode")));
+        vo.setPurchaseLimit(toInt(schedule.get("purchaseLimit")));
+        vo.setRequireRealName(toInt(schedule.get("requireRealName")));
+        vo.setSaleStartTime((LocalDateTime) schedule.get("saleStartTime"));
         return vo;
+    }
+
+    /**
+     * Price bands for the session.
+     *
+     * <p>A film has exactly one covering every seat; a performance has several
+     * and the map is coloured by them. Sending the list rather than a price
+     * per seat keeps the payload small - hundreds of seats sharing three bands
+     * would otherwise repeat the same three values hundreds of times.
+     */
+    private List<SeatMapVO.TierItem> loadTiers(Long sessionId) {
+        List<Map<String, Object>> rows = seatQueryMapper.selectTiers(sessionId);
+        List<SeatMapVO.TierItem> tiers = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            tiers.add(new SeatMapVO.TierItem(
+                    toLong(row.get("id")),
+                    str(row.get("name")),
+                    (BigDecimal) row.get("price"),
+                    str(row.get("color"))));
+        }
+        return tiers;
     }
 
     /**
@@ -104,28 +131,28 @@ public class SeatMapService {
      * like. Rebuilding on first read means there is no separate warm-up step
      * to forget, and no window where a screening shows as entirely free.
      */
-    private List<Integer> loadOccupiedIndexes(Long scheduleId, int totalSeat) {
-        if (seatBitmapService.isInitialised(scheduleId)) {
-            return seatBitmapService.findOccupiedIndexes(scheduleId, totalSeat);
+    private List<Integer> loadOccupiedIndexes(Long sessionId, int totalSeat) {
+        if (seatBitmapService.isInitialised(sessionId)) {
+            return seatBitmapService.findOccupiedIndexes(sessionId, totalSeat);
         }
 
         if (!rebuildOnMiss) {
             throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE, "座位数据尚未就绪");
         }
 
-        return rebuildFromLedger(scheduleId, totalSeat);
+        return rebuildFromLedger(sessionId, totalSeat);
     }
 
     /**
      * Rebuilds the bitmap and the owner markers from
-     * {@code t_movie_schedule_seat}.
+     * {@code t_event_session_seat}.
      *
      * <p>The owner markers matter as much as the bits: the release script
      * refuses to clear a seat whose owner does not match, so a bitmap rebuilt
      * without them would be permanently unable to free a sold seat.
      */
-    private List<Integer> rebuildFromLedger(Long scheduleId, int totalSeat) {
-        List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(scheduleId);
+    private List<Integer> rebuildFromLedger(Long sessionId, int totalSeat) {
+        List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(sessionId);
 
         List<Integer> indexes = new ArrayList<>(rows.size());
         List<String> soldIndexes = new ArrayList<>();
@@ -139,11 +166,11 @@ public class SeatMapService {
             }
         }
 
-        seatBitmapService.rebuild(scheduleId, indexes);
-        seatBitmapService.markSoldOwners(scheduleId, soldIndexes, "REBUILT");
+        seatBitmapService.rebuild(sessionId, indexes);
+        seatBitmapService.markSoldOwners(sessionId, soldIndexes, "REBUILT");
 
         log.info("seat bitmap rebuilt from ledger: schedule={}, total={}, occupied={}, sold={}",
-                scheduleId, totalSeat, indexes.size(), soldIndexes.size());
+                sessionId, totalSeat, indexes.size(), soldIndexes.size());
 
         return indexes;
     }
@@ -153,10 +180,10 @@ public class SeatMapService {
     // ------------------------------------------------------------
 
     public SeatDtos.LockSeatResponse lockSeats(SeatDtos.LockSeatRequest request, Long userId) {
-        Long scheduleId = request.scheduleId();
+        Long sessionId = request.sessionId();
         List<Integer> seatIndexes = request.seatIndexes();
 
-        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(scheduleId);
+        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(sessionId);
         if (schedule == null) {
             throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
         }
@@ -168,17 +195,17 @@ public class SeatMapService {
 
         // Ensure the bitmap exists before locking against it, otherwise the
         // lock script would happily claim seats that the ledger says are sold.
-        loadOccupiedIndexes(scheduleId, toInt(schedule.get("totalSeat")));
+        loadOccupiedIndexes(sessionId, toInt(schedule.get("totalSeat")));
 
         String lockToken = SnowflakeIdGenerator.nextString();
         Duration ttl = Duration.ofMinutes(lockMinutes);
 
         SeatBitmapService.LockResult result =
-                seatBitmapService.lock(scheduleId, lockToken, seatIndexes, ttl);
+                seatBitmapService.lock(sessionId, lockToken, seatIndexes, ttl);
 
         if (!result.success()) {
-            String label = labelOfSeat(scheduleId, result.conflictSeatIndex());
-            log.info("lock rejected: schedule={}, user={}, conflict={}", scheduleId, userId, label);
+            String label = labelOfSeat(sessionId, result.conflictSeatIndex());
+            log.info("lock rejected: schedule={}, user={}, conflict={}", sessionId, userId, label);
             throw new BizException(ErrorCode.SEAT_OCCUPIED, "座位 " + label + " 已被选走，请重新选择");
         }
 
@@ -186,13 +213,13 @@ public class SeatMapService {
         BigDecimal amount = price.multiply(BigDecimal.valueOf(seatIndexes.size()));
 
         log.info("seats locked: schedule={}, user={}, token={}, count={}",
-                scheduleId, userId, lockToken, seatIndexes.size());
+                sessionId, userId, lockToken, seatIndexes.size());
 
         return new SeatDtos.LockSeatResponse(
                 lockToken,
-                scheduleId,
+                sessionId,
                 seatIndexes,
-                labelsOfSeats(scheduleId, seatIndexes),
+                labelsOfSeats(sessionId, seatIndexes),
                 amount,
                 (int) ttl.getSeconds());
     }
@@ -208,16 +235,16 @@ public class SeatMapService {
      * @return how many seats were actually freed; 0 means they had already
      *         been released or sold, which is not an error
      */
-    public int releaseSeats(Long scheduleId, String lockToken, boolean force) {
+    public int releaseSeats(Long sessionId, String lockToken, boolean force) {
         if (lockToken == null || lockToken.isBlank()) {
             return 0;
         }
-        return seatBitmapService.release(scheduleId, lockToken, force);
+        return seatBitmapService.release(sessionId, lockToken, force);
     }
 
     /** Called by order-service after payment succeeds (G2). */
-    public void confirmSeats(Long scheduleId, String orderNo) {
-        seatBitmapService.confirm(scheduleId, orderNo);
+    public void confirmSeats(Long sessionId, String orderNo) {
+        seatBitmapService.confirm(sessionId, orderNo);
     }
 
     // ------------------------------------------------------------
@@ -242,8 +269,8 @@ public class SeatMapService {
         }
     }
 
-    private List<String> labelsOfSeats(Long scheduleId, List<Integer> seatIndexes) {
-        Map<Integer, String> byIndex = seatLabelsByIndex(scheduleId);
+    private List<String> labelsOfSeats(Long sessionId, List<Integer> seatIndexes) {
+        Map<Integer, String> byIndex = seatLabelsByIndex(sessionId);
         List<String> labels = new ArrayList<>(seatIndexes.size());
         for (Integer index : seatIndexes) {
             labels.add(byIndex.getOrDefault(index, String.valueOf(index)));
@@ -251,14 +278,14 @@ public class SeatMapService {
         return labels;
     }
 
-    private String labelOfSeat(Long scheduleId, int seatIndex) {
-        return seatLabelsByIndex(scheduleId).getOrDefault(seatIndex, String.valueOf(seatIndex));
+    private String labelOfSeat(Long sessionId, int seatIndex) {
+        return seatLabelsByIndex(sessionId).getOrDefault(seatIndex, String.valueOf(seatIndex));
     }
 
     /** Builds "{row}排{col}座" labels for a screening. */
-    private Map<Integer, String> seatLabelsByIndex(Long scheduleId) {
+    private Map<Integer, String> seatLabelsByIndex(Long sessionId) {
         Map<Integer, String> labels = new java.util.HashMap<>();
-        for (Map<String, Object> row : seatQueryMapper.selectSeatLayout(scheduleId)) {
+        for (Map<String, Object> row : seatQueryMapper.selectSeatLayout(sessionId)) {
             int index = toInt(row.get("seatIndex"));
             labels.put(index, toInt(row.get("rowNum")) + "排" + toInt(row.get("colNum")) + "座");
         }
@@ -270,6 +297,14 @@ public class SeatMapService {
             return number.intValue();
         }
         return 0;
+    }
+
+    /** null-safe, because a seat outside every band is possible and must not throw. */
+    private Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return null;
     }
 
     private String str(Object value) {

@@ -29,13 +29,13 @@ public class Order {
 
     private Long userId;
 
-    private Long scheduleId;
-    private Long filmId;
-    private String filmName;
+    private Long sessionId;
+    private Long projectId;
+    private String projectTitle;
 
-    private Long cinemaId;
-    private String cinemaName;
-    private String hallName;
+    private Long venueId;
+    private String venueName;
+    private String placeName;
 
     private LocalDateTime showTime;
 

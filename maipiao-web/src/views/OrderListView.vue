@@ -26,9 +26,9 @@
 
           <div class="order-body">
             <div class="order-info">
-              <h3>{{ order.filmName }}</h3>
+              <h3>{{ order.projectTitle }}</h3>
               <p class="mp-muted">
-                {{ order.cinemaName }} · {{ order.hallName }}
+                {{ order.venueName }} · {{ order.placeName }}
               </p>
               <p class="mp-muted">
                 场次 {{ formatDateTime(order.showTime) }}

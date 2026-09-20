@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_movie.t_movie_schedule_seat} - one row per seat per
+ * Maps {@code maipiao_movie.t_event_session_seat} - one row per seat per
  * screening. This is the durable ledger; Redis holds live availability.
  *
  * <p>Status transitions and their guards, all of which must assert the
@@ -26,8 +26,8 @@ import java.time.LocalDateTime;
  * seat selection.
  */
 @Data
-@TableName("t_movie_schedule_seat")
-public class ScheduleSeat {
+@TableName("t_event_session_seat")
+public class SessionSeat {
 
     public static final int STATUS_AVAILABLE = 0;
     public static final int STATUS_LOCKED = 1;
@@ -40,7 +40,7 @@ public class ScheduleSeat {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    private Long scheduleId;
+    private Long sessionId;
 
     /** Human readable, "{row}_{col}". */
     private String seatId;
@@ -53,6 +53,16 @@ public class ScheduleSeat {
     private Integer colNum;
 
     private Integer seatType;
+
+    /**
+     * Price band this seat belongs to.
+     *
+     * <p>Assigned once, when the session is generated, and never recomputed
+     * from the row afterwards. The seat map colours by it and the order prices
+     * by it, so deriving it per request would mean the same seat could be
+     * priced differently depending on which code path asked.
+     */
+    private Long tierId;
 
     private Integer status;
 

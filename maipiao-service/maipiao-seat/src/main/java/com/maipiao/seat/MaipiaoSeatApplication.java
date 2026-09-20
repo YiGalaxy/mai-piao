@@ -10,7 +10,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * seat-service : the seat map, and the atomic locking behind it.
  *
  * <p>This service owns no database schema. Live seat availability lives in
- * Redis as one bitmap per screening; {@code maipiao_movie.t_movie_schedule_seat}
+ * Redis as one bitmap per screening; {@code maipiao_movie.t_event_session_seat}
  * is the durable ledger, read to rebuild a bitmap and compared against by the
  * reconciliation job.
  *

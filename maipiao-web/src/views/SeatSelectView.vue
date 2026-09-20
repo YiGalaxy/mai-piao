@@ -6,9 +6,9 @@
       <!-- Screening summary -->
       <div class="mp-card summary">
         <div>
-          <h2>{{ seatMap.filmName }}</h2>
+          <h2>{{ seatMap.projectTitle }}</h2>
           <p class="mp-muted">
-            {{ seatMap.cinemaName }} · {{ seatMap.hallName }}（{{ seatMap.hallType }}）
+            {{ seatMap.venueName }} · {{ seatMap.placeName }}（{{ seatMap.placeType }}）
           </p>
         </div>
         <div class="start-time">
@@ -29,7 +29,24 @@
             <canvas ref="canvasRef" :width="canvasWidth" :height="canvasHeight" @click="onCanvasClick"></canvas>
           </div>
 
-          <div class="legend">
+          <!--
+            With tiers, the legend shows the price bands and what they cost -
+            which is what a buyer actually needs to decide. Without them, it
+            falls back to the plain seat-state legend.
+          -->
+          <div v-if="tiers.length > 1" class="tier-legend">
+            <div v-for="tier in tiers" :key="tier.id" class="tier-item">
+              <i class="dot" :style="{ background: tier.color, opacity: 0.75 }"></i>
+              <span class="tier-name">{{ tier.name }}</span>
+              <span class="tier-price">¥{{ formatPrice(tier.price) }}</span>
+            </div>
+            <div class="tier-item">
+              <i class="dot sold"></i>
+              <span class="tier-name">已售</span>
+            </div>
+          </div>
+
+          <div v-else class="legend">
             <span><i class="dot available"></i>可选</span>
             <span><i class="dot selected"></i>已选</span>
             <span><i class="dot sold"></i>已售</span>
@@ -49,7 +66,7 @@
             <li v-for="(seat, index) in selectedSeats" :key="seat.seatIndex">
               <span class="face">{{ SEAT_FACES[index % SEAT_FACES.length] }}</span>
               <span class="label">{{ labelOf(seat) }}</span>
-              <span class="price">¥{{ seatMap.price }}</span>
+              <span class="price">¥{{ formatPrice(priceOf(seat)) }}</span>
             </li>
           </ul>
 
@@ -97,6 +114,15 @@ const locking = ref(false)
 const selected = ref([])
 const canvasRef = ref(null)
 
+/**
+ * Price bands for this session.
+ *
+ * A film has one, covering every seat, and the map is not tinted. A
+ * performance has several and the tint is what makes the sections readable -
+ * which is why the colouring only kicks in when there is more than one band.
+ */
+const tiers = computed(() => seatMap.value?.tiers || [])
+
 // Geometry. Sized so a 14x16 IMAX hall fits without scrolling.
 const SEAT_W = 30
 const SEAT_H = 26
@@ -120,10 +146,25 @@ const canvasHeight = computed(() => {
 
 const selectedSeats = computed(() => selected.value)
 
-const totalAmount = computed(() => {
-  const price = Number(seatMap.value?.price || 0)
-  return (price * selected.value.length).toFixed(2)
-})
+/**
+ * Price of one seat.
+ *
+ * Read from the seat's own band, not from the session's headline price. The
+ * session carries the "from" price for the listing; a seat in the VIP block
+ * costs more than one in the stands, and charging everybody the listing price
+ * would undercharge the front rows and overcharge the back.
+ */
+function priceOf(seat) {
+  if (seat?.tierId) {
+    const tier = tiers.value.find((t) => String(t.id) === String(seat.tierId))
+    if (tier) return Number(tier.price)
+  }
+  return Number(seatMap.value?.price || 0)
+}
+
+const totalAmount = computed(() =>
+  selected.value.reduce((sum, seat) => sum + priceOf(seat), 0).toFixed(2)
+)
 
 onMounted(async () => {
   try {
@@ -187,6 +228,8 @@ function draw() {
     // Couple seats are drawn slightly wider so the pairing is visible.
     const w = seat.type === 1 ? SEAT_W + GAP - 2 : SEAT_W
 
+    const tierColor = tierColorOf(seat.tierId)
+
     if (seat.status === 1) {
       // Taken seats are filled with the page background colour, so they read
       // as "not part of the map" rather than as a different kind of choice.
@@ -198,6 +241,12 @@ function draw() {
     } else if (seat.type === 1) {
       ctx.fillStyle = '#fff3ea'
       ctx.strokeStyle = '#ffc9a3'
+    } else if (tierColor) {
+      // Tinted by price band. A film has one band so every seat looks the
+      // same; a concert shows its sections at a glance, which is the whole
+      // reason the tier is carried onto the seat.
+      ctx.fillStyle = tint(tierColor, 0.14)
+      ctx.strokeStyle = tint(tierColor, 0.5)
     } else {
       ctx.fillStyle = '#ffffff'
       ctx.strokeStyle = '#c8c9cc'
@@ -234,6 +283,28 @@ function draw() {
     const y = (row - 1) * (SEAT_H + GAP) + OFFSET_Y + SEAT_H / 2
     ctx.fillText(String(row), OFFSET_X - 10, y)
   }
+}
+
+/**
+ * Colour for a price band, or null when the session has none.
+ *
+ * A session with a single tier is a film, and colouring every seat the same
+ * would make the map noisier for no information - so the tint is only applied
+ * when there is more than one band to tell apart.
+ */
+function tierColorOf(tierId) {
+  if (!tierId || tiers.value.length < 2) return null
+  const tier = tiers.value.find((t) => String(t.id) === String(tierId))
+  return tier?.color || null
+}
+
+/** Hex colour at the given alpha, for the soft fill and its outline. */
+function tint(hex, alpha) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -348,6 +419,11 @@ function labelOf(seat) {
   return `${seat.row}排${seat.col}座`
 }
 
+function formatPrice(value) {
+  const n = Number(value)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2)
+}
+
 function formatTime(value) {
   return String(value).slice(11, 16)
 }
@@ -358,6 +434,30 @@ function formatDate(value) {
 </script>
 
 <style scoped>
+.tier-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 28px;
+  font-size: 13px;
+}
+
+.tier-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tier-name {
+  color: var(--mp-text);
+}
+
+.tier-price {
+  color: var(--mp-primary);
+  font-weight: 600;
+}
+
 .seat-page {
   padding-top: 20px;
 }

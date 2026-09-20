@@ -1,0 +1,28 @@
+server:
+  port: 9007
+
+spring:
+  application:
+    name: maipiao-mock-pay
+  jackson:
+    default-property-inclusion: non_null
+
+maipiao:
+  mock-pay:
+    # Where callbacks are delivered. In production this is a public URL the
+    # provider was given at onboarding; here it points straight at pay-service.
+    notify-url: ${PAY_NOTIFY_URL:http://127.0.0.1:9005/pay/notify/MOCK}
+
+    # Shared secret for the fake signature. Both sides must agree, so a
+    # deliberately wrong value can be used to prove the verification path
+    # actually rejects bad input.
+    sign-key: ${MOCK_PAY_SIGN_KEY:maipiao-mock-pay-sign-key-2026}
+
+    # How long the fake cashier waits before calling back, so the UI has time
+    # to show a "processing" state.
+    callback-delay-ms: 800
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug

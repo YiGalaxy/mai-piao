@@ -10,14 +10,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_movie.t_movie_schedule} - one screening.
+ * Maps {@code maipiao_movie.t_event_session} - one screening.
  *
  * <p>Inventory model: {@code total_seat = locked_seat + sold_seat + remaining}.
  * The three are updated together, never read-then-written, and the
  * anti-oversell guard is a single conditional UPDATE:
  *
  * <pre>
- * UPDATE t_movie_schedule
+ * UPDATE t_event_session
  *    SET locked_seat = locked_seat + N
  *  WHERE id = ? AND status = 1
  *    AND locked_seat + sold_seat + N &lt;= total_seat
@@ -27,8 +27,8 @@ import java.time.LocalDateTime;
  * into Java first and deciding there would reintroduce the race this avoids.
  */
 @Data
-@TableName("t_movie_schedule")
-public class Schedule {
+@TableName("t_event_session")
+public class Session {
 
     public static final int STATUS_PENDING = 0;
     public static final int STATUS_ON_SALE = 1;
@@ -39,11 +39,11 @@ public class Schedule {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    private Long filmId;
+    private Long projectId;
 
-    private Long cinemaId;
+    private Long venueId;
 
-    private Long hallId;
+    private Long placeId;
 
     /** Future sharding key for order data. */
     private LocalDate showDate;
@@ -66,6 +66,31 @@ public class Schedule {
     private Integer rushMode;
 
     private LocalDateTime rushStartTime;
+
+    // ---- admission controls ----
+    //
+    // A performance opens at a fixed time and limits how many one person can
+    // buy; a film does neither. The defaults leave film behaviour unchanged,
+    // so nothing downstream has to check the category before acting.
+
+    /** When tickets open. NULL means already open. */
+    private LocalDateTime saleStartTime;
+
+    /** Max tickets per order. 0 means unlimited. */
+    private Integer purchaseLimit;
+
+    /** 1 = every ticket must name an attendee. */
+    private Integer requireRealName;
+
+    /** True when tickets are not on sale yet. */
+    public boolean isSaleNotStarted() {
+        return saleStartTime != null && saleStartTime.isAfter(LocalDateTime.now());
+    }
+
+    /** True when real-name information is required at checkout. */
+    public boolean needsRealName() {
+        return requireRealName != null && requireRealName == 1;
+    }
 
     private LocalDateTime createTime;
 

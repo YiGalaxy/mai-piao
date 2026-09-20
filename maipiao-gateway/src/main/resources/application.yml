@@ -48,8 +48,14 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: maipiao-order
+          uri: lb://maipiao-order
+          predicates:
+            - Path=/api/order/**
+          filters:
+            - StripPrefix=1
+
       # More routes are added as services come online:
-      #   maipiao-order  /api/order/**   :9004
       #   maipiao-pay    /api/pay/**     :9005
       #   maipiao-admin  /api/admin/**   :9006
       #   maipiao-queue  /api/queue/**   :9008

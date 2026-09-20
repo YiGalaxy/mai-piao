@@ -8,9 +8,9 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** Maps {@code maipiao_movie.t_movie_cinema}. */
+/** Maps {@code maipiao_movie.t_event_venue}. */
 @Data
-@TableName("t_movie_cinema")
+@TableName("t_event_venue")
 public class Cinema {
 
     public static final int STATUS_CLOSED = 0;

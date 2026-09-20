@@ -12,12 +12,12 @@
         <el-carousel-item v-for="film in bannerFilms" :key="film.id">
           <div class="banner-slide" :style="posterStyle(film)" @click="goFilm(film)">
             <div class="banner-info">
-              <h2>{{ film.name }}</h2>
+              <h2>{{ film.title }}</h2>
               <p class="banner-meta">
-                {{ film.enName }}
+                {{ film.enTitle }}
               </p>
               <p class="banner-meta">
-                {{ film.filmType }} · {{ film.duration }}分钟 · 导演 {{ film.director }}
+                {{ film.tags }} · {{ film.duration }}分钟 · 导演 {{ film.director }}
               </p>
               <div class="banner-score" v-if="film.score > 0">
                 <span class="num">{{ film.score.toFixed(1) }}</span>
@@ -52,10 +52,10 @@
             <img
               v-if="film.posterUrl && isPosterUsable(film.id)"
               :src="film.posterUrl"
-              :alt="film.name"
+              :alt="film.title"
               @error="markPosterBroken(film.id)"
             />
-            <span v-else class="mp-poster-fallback">{{ film.name.slice(0, 2) }}</span>
+            <span v-else class="mp-poster-fallback">{{ film.title.slice(0, 2) }}</span>
 
             <div v-if="film.score > 0" class="mp-score">
               评分 <b>{{ film.score.toFixed(1) }}</b>
@@ -64,8 +64,8 @@
           </div>
 
           <div class="mp-film-body">
-            <h3 class="mp-film-title">{{ film.name }}</h3>
-            <p class="mp-film-sub">{{ film.filmType }} · {{ film.duration }}分钟</p>
+            <h3 class="mp-film-title">{{ film.title }}</h3>
+            <p class="mp-film-sub">{{ film.tags }} · {{ film.duration }}分钟</p>
             <div class="mp-film-action">
               <el-button type="primary" size="small" @click.stop="goFilm(film)">
                 选座购票
@@ -90,16 +90,16 @@
               <img
                 v-if="film.posterUrl && isPosterUsable(film.id)"
                 :src="film.posterUrl"
-                :alt="film.name"
+                :alt="film.title"
                 @error="markPosterBroken(film.id)"
               />
-              <span v-else class="mp-poster-fallback">{{ film.name.slice(0, 2) }}</span>
+              <span v-else class="mp-poster-fallback">{{ film.title.slice(0, 2) }}</span>
               <div class="mp-score mp-score-none">待映</div>
             </div>
 
             <div class="mp-film-body">
-              <h3 class="mp-film-title">{{ film.name }}</h3>
-              <p class="mp-film-sub">上映日期 {{ film.releaseDate }}</p>
+              <h3 class="mp-film-title">{{ film.title }}</h3>
+              <p class="mp-film-sub">上映日期 {{ film.showDate }}</p>
               <div class="mp-film-action">
                 <el-button size="small" plain disabled>预约</el-button>
               </div>

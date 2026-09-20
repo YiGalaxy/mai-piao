@@ -1,7 +1,7 @@
 package com.maipiao.movie.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.maipiao.movie.entity.ScheduleSeat;
+import com.maipiao.movie.entity.SessionSeat;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -20,51 +20,51 @@ import java.util.List;
  * somebody else.
  */
 @Mapper
-public interface ScheduleSeatMapper extends BaseMapper<ScheduleSeat> {
+public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
 
-    /** Bulk insert, called in batches during schedule generation. */
+    /** Bulk insert, called in batches during session generation. */
     @org.apache.ibatis.annotations.Insert("""
             <script>
-            INSERT INTO t_movie_schedule_seat
-              (id, schedule_id, seat_id, seat_index, row_num, col_num, seat_type,
-               status, version, create_time, update_time)
+            INSERT INTO t_event_session_seat
+              (id, session_id, seat_id, seat_index, row_num, col_num, seat_type,
+               tier_id, status, version, create_time, update_time)
             VALUES
             <foreach collection="seats" item="s" separator=",">
-              (#{s.id}, #{s.scheduleId}, #{s.seatId}, #{s.seatIndex}, #{s.rowNum}, #{s.colNum},
-               #{s.seatType}, #{s.status}, 0, NOW(3), NOW(3))
+              (#{s.id}, #{s.sessionId}, #{s.seatId}, #{s.seatIndex}, #{s.rowNum}, #{s.colNum},
+               #{s.seatType}, #{s.tierId}, #{s.status}, 0, NOW(3), NOW(3))
             </foreach>
             </script>
             """)
-    int batchInsert(@Param("seats") List<ScheduleSeat> seats);
+    int batchInsert(@Param("seats") List<SessionSeat> seats);
 
     @Select("""
-            SELECT COUNT(*) FROM t_movie_schedule_seat WHERE schedule_id = #{scheduleId}
+            SELECT COUNT(*) FROM t_event_session_seat WHERE session_id = #{sessionId}
             """)
-    int countBySchedule(@Param("scheduleId") Long scheduleId);
+    int countBySchedule(@Param("sessionId") Long sessionId);
 
     @Select("""
-            SELECT seat_index FROM t_movie_schedule_seat
-             WHERE schedule_id = #{scheduleId} AND status = 2
+            SELECT seat_index FROM t_event_session_seat
+             WHERE session_id = #{sessionId} AND status = 2
             """)
-    List<Integer> selectSoldIndexes(@Param("scheduleId") Long scheduleId);
+    List<Integer> selectSoldIndexes(@Param("sessionId") Long sessionId);
 
     /** G1: available -> locked. Guarded on status = 0. */
     @Update("""
             <script>
-            UPDATE t_movie_schedule_seat
+            UPDATE t_event_session_seat
                SET status = 1,
                    lock_order_no = #{orderNo},
                    lock_user_id = #{userId},
                    lock_expire_time = #{expireTime},
                    version = version + 1,
                    update_time = NOW(3)
-             WHERE schedule_id = #{scheduleId}
+             WHERE session_id = #{sessionId}
                AND seat_id IN
                <foreach collection="seatIds" item="id" open="(" separator="," close=")">#{id}</foreach>
                AND status = 0
             </script>
             """)
-    int lockSeats(@Param("scheduleId") Long scheduleId,
+    int lockSeats(@Param("sessionId") Long sessionId,
                   @Param("seatIds") List<String> seatIds,
                   @Param("orderNo") String orderNo,
                   @Param("userId") Long userId,
@@ -79,7 +79,7 @@ public interface ScheduleSeatMapper extends BaseMapper<ScheduleSeat> {
      */
     @Update("""
             <script>
-            UPDATE t_movie_schedule_seat
+            UPDATE t_event_session_seat
                SET status = 2,
                    sold_order_no = #{orderNo},
                    sold_time = NOW(3),
@@ -88,55 +88,55 @@ public interface ScheduleSeatMapper extends BaseMapper<ScheduleSeat> {
                    lock_expire_time = NULL,
                    version = version + 1,
                    update_time = NOW(3)
-             WHERE schedule_id = #{scheduleId}
+             WHERE session_id = #{sessionId}
                AND seat_id IN
                <foreach collection="seatIds" item="id" open="(" separator="," close=")">#{id}</foreach>
                AND status = 1
                AND lock_order_no = #{orderNo}
             </script>
             """)
-    int markSold(@Param("scheduleId") Long scheduleId,
+    int markSold(@Param("sessionId") Long sessionId,
                  @Param("seatIds") List<String> seatIds,
                  @Param("orderNo") String orderNo);
 
     /** Cancel / timeout / G1 rollback: locked -> available. */
     @Update("""
             <script>
-            UPDATE t_movie_schedule_seat
+            UPDATE t_event_session_seat
                SET status = 0,
                    lock_order_no = NULL,
                    lock_user_id = NULL,
                    lock_expire_time = NULL,
                    version = version + 1,
                    update_time = NOW(3)
-             WHERE schedule_id = #{scheduleId}
+             WHERE session_id = #{sessionId}
                AND seat_id IN
                <foreach collection="seatIds" item="id" open="(" separator="," close=")">#{id}</foreach>
                AND status = 1
                AND lock_order_no = #{orderNo}
             </script>
             """)
-    int releaseLockedSeats(@Param("scheduleId") Long scheduleId,
+    int releaseLockedSeats(@Param("sessionId") Long sessionId,
                            @Param("seatIds") List<String> seatIds,
                            @Param("orderNo") String orderNo);
 
     /** G3 refund: sold -> available, only for the order that bought them. */
     @Update("""
             <script>
-            UPDATE t_movie_schedule_seat
+            UPDATE t_event_session_seat
                SET status = 0,
                    sold_order_no = NULL,
                    sold_time = NULL,
                    version = version + 1,
                    update_time = NOW(3)
-             WHERE schedule_id = #{scheduleId}
+             WHERE session_id = #{sessionId}
                AND seat_id IN
                <foreach collection="seatIds" item="id" open="(" separator="," close=")">#{id}</foreach>
                AND status = 2
                AND sold_order_no = #{orderNo}
             </script>
             """)
-    int releaseSoldSeats(@Param("scheduleId") Long scheduleId,
+    int releaseSoldSeats(@Param("sessionId") Long sessionId,
                          @Param("seatIds") List<String> seatIds,
                          @Param("orderNo") String orderNo);
 
@@ -146,17 +146,17 @@ public interface ScheduleSeatMapper extends BaseMapper<ScheduleSeat> {
      * @return number of seats released
      */
     @Update("""
-            UPDATE t_movie_schedule_seat
+            UPDATE t_event_session_seat
                SET status = 0,
                    lock_order_no = NULL,
                    lock_user_id = NULL,
                    lock_expire_time = NULL,
                    version = version + 1,
                    update_time = NOW(3)
-             WHERE schedule_id = #{scheduleId}
+             WHERE session_id = #{sessionId}
                AND status = 1
                AND lock_expire_time < #{now}
             """)
-    int releaseExpiredLocks(@Param("scheduleId") Long scheduleId,
+    int releaseExpiredLocks(@Param("sessionId") Long sessionId,
                             @Param("now") LocalDateTime now);
 }

@@ -18,21 +18,21 @@ import java.time.LocalDateTime;
  * is fetched separately when the user actually opens the seat map.
  */
 @Data
-public class ScheduleVO {
+public class SessionVO {
 
     private Long id;
 
-    private Long filmId;
-    private String filmName;
+    private Long projectId;
+    private String projectTitle;
     private Integer duration;
     private String posterUrl;
 
-    private Long cinemaId;
-    private String cinemaName;
+    private Long venueId;
+    private String venueName;
 
-    private Long hallId;
-    private String hallName;
-    private String hallType;
+    private Long placeId;
+    private String placeName;
+    private String placeType;
 
     private LocalDate showDate;
     private LocalDateTime startTime;
