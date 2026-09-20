@@ -1,3 +1,11 @@
+-- Force utf8mb4 on this connection.
+--
+-- Without it the mysql client negotiates latin1, the server re-interprets the
+-- UTF-8 bytes of Chinese text as latin1 characters, and stores them
+-- double-encoded (C3A6 C2B7 C2B1 where E6 B7 B1 was intended). The damage
+-- happens on write; reading with the correct charset afterwards cannot undo it.
+SET NAMES utf8mb4;
+
 -- ============================================================
 -- maipiao_user : user-service's private schema
 -- No cross-schema JOIN is allowed. Other services reach this data

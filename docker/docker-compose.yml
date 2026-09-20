@@ -47,6 +47,15 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # Ignore whatever charset the client asks for and use utf8mb4 regardless.
+      #
+      # The init scripts are loaded by the image's entrypoint with a client
+      # that negotiates latin1, so Chinese text in the seed data was stored
+      # double-encoded - the UTF-8 bytes reinterpreted as latin1 characters
+      # and then encoded again. That corruption happens on write and is not
+      # recoverable by reading differently. The scripts also set NAMES
+      # explicitly; this is the belt to that pair of braces.
+      - --skip-character-set-client-handshake
       - --default-time-zone=+08:00
       - --max_connections=500
       - --innodb_buffer_pool_size=256M
