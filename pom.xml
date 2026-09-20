@@ -4,11 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.maoyan</groupId>
-  <artifactId>maoyan-ticket</artifactId>
+  <groupId>com.maipiao</groupId>
+  <artifactId>maipiao-ticket</artifactId>
   <version>1.0.0</version>
   <packaging>pom</packaging>
-  <name>maoyan-ticket</name>
+  <name>maipiao-ticket</name>
   <description>Online movie ticketing system - a portfolio project</description>
 
   <!--
@@ -56,10 +56,10 @@
   </properties>
 
   <modules>
-    <module>maoyan-common/common-core</module>
-    <module>maoyan-common/common-redis</module>
-    <module>maoyan-common/common-web</module>
-    <module>maoyan-service/maoyan-user</module>
+    <module>maipiao-common/common-core</module>
+    <module>maipiao-common/common-redis</module>
+    <module>maipiao-common/common-web</module>
+    <module>maipiao-service/maipiao-user</module>
   </modules>
 
   <dependencyManagement>

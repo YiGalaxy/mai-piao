@@ -19,7 +19,7 @@
 --   coupon tpl     4001-4003
 -- ============================================================
 
-USE maoyan_movie;
+USE maipiao_movie;
 
 -- ------------------------------------------------------------
 -- films
@@ -124,7 +124,7 @@ INSERT INTO t_movie_hall (id, cinema_id, name, hall_type, row_count, col_count, 
 -- ------------------------------------------------------------
 -- coupon templates
 -- ------------------------------------------------------------
-USE maoyan_user;
+USE maipiao_user;
 
 INSERT INTO t_user_coupon_template (id, name, amount, threshold, valid_days, total_quantity, claimed_quantity, status) VALUES
 (4001, '满50减10', 10.00, 50.00, 30, 0, 0, 1),

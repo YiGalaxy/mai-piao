@@ -1,5 +1,5 @@
 -- ============================================================
--- maoyan_pay : pay-service's private schema
+-- maipiao_pay : pay-service's private schema
 --
 -- Idempotency is spread over four layers, each backed by an index:
 --   L1 uk_channel_trade_type  duplicate channel notification
@@ -14,10 +14,10 @@
 -- what actually guarantees idempotency.
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS maoyan_pay
+CREATE DATABASE IF NOT EXISTS maipiao_pay
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE maoyan_pay;
+USE maipiao_pay;
 
 -- ------------------------------------------------------------
 -- payment
