@@ -35,7 +35,7 @@
       </nav>
 
       <div class="search">
-        <el-input v-model="keyword" placeholder="搜索影片、影院、演员" clearable @keyup.enter="onSearch">
+        <el-input v-model="keyword" placeholder="搜索影片、演出、场馆" clearable @keyup.enter="onSearch">
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>

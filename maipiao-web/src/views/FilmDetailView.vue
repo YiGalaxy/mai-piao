@@ -66,7 +66,7 @@
 
         <el-skeleton v-if="loadingSchedules" :rows="5" animated />
 
-        <el-empty v-else-if="groupedSchedules.length === 0" description="该日期暂无排片，换个日期试试" />
+        <el-empty v-else-if="groupedSchedules.length === 0" :description="`该日期暂无${scheduleWord}，换个日期试试`" />
 
         <div v-else class="cinema-groups">
           <div v-for="group in groupedSchedules" :key="group.venueId" class="cinema-group mp-card">
@@ -100,7 +100,7 @@
       </div>
     </template>
 
-    <el-empty v-else description="影片不存在" />
+    <el-empty v-else :description="`${subjectWord}不存在`" />
   </div>
 </template>
 
@@ -108,6 +108,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchFilmDetail, fetchSchedules } from '../api/movie'
+import { scheduleOf, subjectOf } from '../utils/eventTerms'
 
 const route = useRoute()
 const router = useRouter()
@@ -120,6 +121,16 @@ const posterUsable = ref(true)
 const selectedDate = ref('')
 
 const filmId = route.params.id
+
+/**
+ * The detail page serves films and performances both.
+ *
+ * The words follow the category rather than assuming a film: a concert has no
+ * "排片", and calling its sessions that is the kind of detail that makes an
+ * interface read as though nobody looked at it.
+ */
+const subjectWord = computed(() => subjectOf(film.value?.category))
+const scheduleWord = computed(() => scheduleOf(film.value?.category))
 
 /** Deterministic per film, so the tint never changes between visits. */
 const hue = computed(() => ((Number(filmId) || 1) * 47) % 360)

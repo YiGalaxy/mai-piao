@@ -76,6 +76,16 @@ public class Session {
      */
     private Integer seatMode;
 
+    /**
+     * DEMO or ADMIN - who created this session.
+     *
+     * <p>The generator's reset deletes every session before writing new ones,
+     * which was fine while it was the only thing that created them. With an
+     * admin screen, that reset would silently delete somebody's work. The
+     * reset now clears only its own.
+     */
+    private String source;
+
     // ---- admission controls ----
     //
     // A performance opens at a fixed time and limits how many one person can

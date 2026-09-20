@@ -35,6 +35,17 @@ public class User {
     /** 0 = disabled, 1 = active. */
     private Integer status;
 
+    /**
+     * USER or ADMIN.
+     *
+     * <p>Stored rather than inferred, so that what a token may reach is a
+     * property of the account. JwtUtil has had a generateAdminToken method all
+     * along and nothing ever called it, so the role was decided by which
+     * method a caller happened to invoke - and the only caller invoked the
+     * user one. Changing who is an administrator is now a database change.
+     */
+    private String role;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

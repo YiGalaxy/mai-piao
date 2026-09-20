@@ -58,7 +58,7 @@
 
       <el-skeleton v-if="loading" :rows="6" animated />
 
-      <el-empty v-else-if="nowShowing.length === 0" description="暂无正在热映的影片" />
+      <el-empty v-else-if="nowShowing.length === 0" :description="emptyHint" />
 
       <div v-else class="mp-film-grid">
         <div
@@ -171,6 +171,11 @@ const category = ref('MOVIE')
  */
 const isFilm = computed(() => category.value === 'MOVIE')
 const sectionTitle = computed(() => (isFilm.value ? '正在热映' : '热门演出'))
+
+/** What an empty list means depends on what the list was of. */
+const emptyHint = computed(() =>
+  isFilm.value ? '暂无正在热映的影片' : '暂无正在售票的演出'
+)
 const upcomingTitle = computed(() => (isFilm.value ? '即将上映' : '即将开演'))
 
 /** Reserve action is a film concept; performances get "想看" instead. */

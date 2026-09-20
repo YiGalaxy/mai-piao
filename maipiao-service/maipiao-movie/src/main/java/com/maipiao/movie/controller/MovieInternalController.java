@@ -178,6 +178,7 @@ public class MovieInternalController {
         snapshot.put("sessionId", detail.getId());
         snapshot.put("projectId", detail.getProjectId());
         snapshot.put("projectTitle", detail.getProjectTitle());
+        snapshot.put("category", detail.getCategory());
         snapshot.put("venueId", detail.getVenueId());
         snapshot.put("venueName", detail.getVenueName());
         snapshot.put("placeName", detail.getPlaceName());

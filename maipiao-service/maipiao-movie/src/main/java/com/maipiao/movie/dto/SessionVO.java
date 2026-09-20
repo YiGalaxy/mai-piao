@@ -24,6 +24,9 @@ public class SessionVO {
 
     private Long projectId;
     private String projectTitle;
+
+    /** MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL. */
+    private String category;
     private Integer duration;
     private String posterUrl;
 

@@ -15,13 +15,13 @@
       </div>
 
       <div class="mp-card panel">
-        <h2>影片信息</h2>
+        <h2>{{ subject }}信息</h2>
         <div class="info-row">
-          <span class="label">影片</span>
+          <span class="label">{{ subject }}</span>
           <span>{{ order.projectTitle }}</span>
         </div>
         <div class="info-row">
-          <span class="label">影院</span>
+          <span class="label">{{ venueWord }}</span>
           <span>{{ order.venueName }} · {{ order.placeName }}</span>
         </div>
         <div class="info-row">
@@ -97,6 +97,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { cancelOrder, fetchOrderDetail } from '../api/order'
+import { collectHintOf, subjectOf, venueOf } from '../utils/eventTerms'
 import { precreatePayment } from '../api/pay'
 
 const route = useRoute()
@@ -122,15 +123,27 @@ const order = computed(() => detail.value?.order)
 const STATUS_TEXT = {
   0: { text: '等待支付', hint: '超时未支付将自动取消，座位会释放', band: 'band-warn' },
   1: { text: '支付中', hint: '支付结果确认中，请稍候', band: 'band-warn' },
-  2: { text: '出票成功', hint: '请凭取票码到影院自助机取票', band: 'band-ok' },
+  2: { text: '出票成功', hint: '', band: 'band-ok' },
   3: { text: '已完成', hint: '感谢观影', band: 'band-muted' },
   4: { text: '已取消', hint: '订单已取消，座位已释放', band: 'band-muted' },
   5: { text: '退款中', hint: '退款处理中，将原路退回', band: 'band-warn' },
   6: { text: '已退款', hint: '退款已到账', band: 'band-muted' }
 }
 
+// The order carries its own category, snapshotted when it was placed, so
+// these follow what was actually bought rather than what the catalogue says
+// today.
+const subject = computed(() => subjectOf(order.value?.category))
+const venueWord = computed(() => venueOf(order.value?.category))
+
 const statusText = computed(() => STATUS_TEXT[order.value?.status]?.text || '未知')
-const statusHint = computed(() => STATUS_TEXT[order.value?.status]?.hint || '')
+const statusHint = computed(() => {
+  const status = order.value?.status
+  // The collect hint depends on where the ticket is collected from, which
+  // depends on what was bought - a concert has no box office machine.
+  if (status === 2) return collectHintOf(order.value?.category)
+  return STATUS_TEXT[status]?.hint || ''
+})
 const statusBand = computed(() => STATUS_TEXT[order.value?.status]?.band || 'band-muted')
 
 const countdownText = computed(() => {

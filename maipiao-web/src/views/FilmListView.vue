@@ -28,7 +28,7 @@
 
     <el-skeleton v-if="loading" :rows="8" animated />
 
-    <el-empty v-else-if="films.length === 0" description="没有符合条件的影片" />
+    <el-empty v-else-if="films.length === 0" :description="emptyHint" />
 
     <div v-else class="mp-film-grid">
       <div
@@ -88,6 +88,11 @@ const loading = ref(true)
 const status = ref(1)
 const category = ref(null)
 const keyword = ref('')
+
+/** An empty list of films and an empty list of shows are not the same absence. */
+const emptyHint = computed(() =>
+  category.value === 'MOVIE' ? '没有符合条件的影片' : '没有符合条件的演出'
+)
 
 /** Same tabs as the home page, so the two never disagree about what exists. */
 const CATEGORY_TABS = [

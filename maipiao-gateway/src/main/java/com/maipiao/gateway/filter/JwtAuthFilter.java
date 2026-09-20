@@ -31,7 +31,12 @@ import java.nio.charset.StandardCharsets;
 /**
  * Verifies the JWT once, at the edge, and forwards the resolved user id.
  *
- * <p>Two things happen on every request, in this order:
+ * <p>Every request is sanitized, then classified: the internal surface is
+ * refused outright, the public surface is let through, and everything else
+ * needs a token - with the admin surface needing one that carries the admin
+ * role. The order matters, and each step's placement is the reason it works:
+ *
+ * <ol>
  *
  * <ol>
  *   <li><b>Sanitize.</b> {@code X-User-Id} and {@code X-Internal-Call} are
@@ -42,6 +47,9 @@ import java.nio.charset.StandardCharsets;
  *   <li><b>Authenticate.</b> Non-whitelisted paths need a token whose signature
  *       and expiry check out, and whose {@code jti} is not on the logout
  *       blacklist.</li>
+ *   <li><b>Authorise.</b> The admin surface additionally needs the admin role.
+ *       The role has been injected downstream since the beginning and read by
+ *       nobody, so any logged-in user could reach it.</li>
  * </ol>
  *
  * <p>Ordered at {@link Ordered#HIGHEST_PRECEDENCE} so sanitizing runs before
@@ -96,11 +104,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         }
 
         // ---- 4. public endpoints ----
-        if (isWhitelisted(path)) {
+        // Admin paths are never public, whatever the whitelist says, so they
+        // skip this rather than relying on no pattern ever covering them.
+        if (!isAdminPath(path) && isWhitelisted(path)) {
             return chain.filter(withRequest(exchange, sanitized));
         }
 
-        // ---- 4. token required ----
+        // ---- 5. token required ----
         String token = extractToken(sanitized);
         if (token == null) {
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
@@ -119,7 +129,20 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
         }
 
-        // ---- 5. logout blacklist ----
+        // ---- 6. admin surface needs the admin role ----
+        // The role has been put into X-User-Role since the beginning and read
+        // by nobody, so every admin endpoint was reachable by any logged-in
+        // user. A token that is merely valid is not authorisation.
+        //
+        // Checked before the blacklist because it needs no lookup, and a
+        // revocation check on a request that was never going to be allowed is
+        // work for nothing.
+        if (isAdminPath(path) && !jwtUtil.isAdmin(claims)) {
+            log.warn("non-admin token rejected for admin path: path={}, userId={}", path, userId);
+            return forbidden(exchange);
+        }
+
+        // ---- 7. logout blacklist ----
         if (!authProperties.isCheckBlacklist()) {
             return chain.filter(withIdentity(exchange, sanitized, userId, claims));
         }
@@ -196,6 +219,34 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     private Mono<Void> notFound(ServerWebExchange exchange) {
         exchange.getResponse().setStatusCode(HttpStatus.NOT_FOUND);
         return exchange.getResponse().setComplete();
+    }
+
+    /**
+     * True for the administration surface.
+     *
+     * <p>Matched before the public whitelist, like {@code /inner}, so that a
+     * whitelist entry covering a whole service cannot open it by accident.
+     * That is not hypothetical: {@code /api/movie/**} is public for browsing,
+     * and it would have covered {@code /api/movie/admin/**} on its own.
+     */
+    private boolean isAdminPath(String path) {
+        return PATH_MATCHER.match("/api/*/admin/**", path)
+                || PATH_MATCHER.match("/api/*/admin", path);
+    }
+
+    /**
+     * 403, not 404.
+     *
+     * <p>Unlike {@code /inner}, which does not exist as far as the internet is
+     * concerned, the admin surface is meant to be found by the people who use
+     * it. Telling a logged-in non-administrator that they are not one is more
+     * useful than pretending the page is missing.
+     */
+    private Mono<Void> forbidden(ServerWebExchange exchange) {
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.FORBIDDEN);
+        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        return writeBody(response, R.fail(ErrorCode.FORBIDDEN));
     }
 
     private String extractToken(ServerHttpRequest request) {

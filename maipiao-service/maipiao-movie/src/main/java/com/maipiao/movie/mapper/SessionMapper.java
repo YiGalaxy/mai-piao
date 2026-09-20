@@ -44,7 +44,7 @@ public interface SessionMapper extends BaseMapper<Session> {
     @Select("""
             <script>
             SELECT s.*,
-                   f.title AS project_title, f.duration, f.poster_url,
+                   f.title AS project_title, f.category, f.duration, f.poster_url,
                    c.name AS venue_name,
                    h.name AS place_name, h.place_type,
                    (s.total_seat - s.locked_seat - s.sold_seat) AS remaining_seat
@@ -62,7 +62,7 @@ public interface SessionMapper extends BaseMapper<Session> {
 
     @Select("""
             SELECT s.*,
-                   f.title AS project_title, f.duration, f.poster_url,
+                   f.title AS project_title, f.category, f.duration, f.poster_url,
                    c.name AS venue_name,
                    h.name AS place_name, h.place_type,
                    (s.total_seat - s.locked_seat - s.sold_seat) AS remaining_seat

@@ -380,6 +380,7 @@ public class OrderService {
         order.setScheduleId(request.scheduleId());
         order.setProjectId(toLong(schedule.get("projectId")));
         order.setProjectTitle(str(schedule.get("projectTitle")));
+        order.setCategory(str(schedule.get("category")));
         order.setVenueId(toLong(schedule.get("venueId")));
         order.setVenueName(str(schedule.get("venueName")));
         order.setPlaceName(str(schedule.get("placeName")));
