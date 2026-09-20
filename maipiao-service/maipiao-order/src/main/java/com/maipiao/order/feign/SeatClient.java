@@ -18,12 +18,17 @@ import org.springframework.web.bind.annotation.RequestParam;
  *       seat that has been paid for. It is retried by the reconciliation job.</li>
  *   <li>{@link #release} runs from the G1 failure path, not from inside it.</li>
  * </ul>
+ *
+ * <p>The path is {@code /inner/seat}, matching the controller that actually
+ * serves these two calls. The public seat API lives at {@code /seat}, and an
+ * earlier version of this client used that prefix - every call returned 500
+ * while the code read as if it worked.
  */
-@FeignClient(name = "maipiao-seat", path = "/seat")
+@FeignClient(name = "maipiao-seat", path = "/inner/seat")
 public interface SeatClient {
 
     /** Marks a hold as sold. Called after the order is paid. */
-    @PostMapping("/inner/confirm")
+    @PostMapping("/confirm")
     R<Void> confirm(@RequestParam Long sessionId, @RequestParam String orderNo);
 
     /**
@@ -33,6 +38,6 @@ public interface SeatClient {
      * matches this order are cleared, so running it twice - or after the order
      * was already cancelled - frees nothing extra.
      */
-    @PostMapping("/inner/release")
+    @PostMapping("/release")
     R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo);
 }
