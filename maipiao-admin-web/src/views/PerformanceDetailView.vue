@@ -35,8 +35,9 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="" width="90">
+        <el-table-column label="" width="140">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openSession(row)">编辑</el-button>
             <el-button
               link
               type="danger"
@@ -49,6 +50,56 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!--
+      Editing a session changes how it sells, not what it is selling.
+
+      Date, time and price bands are not offered, and that is the point: moving
+      a session moves every seat it sold, and re-banding one remaps seats
+      people already hold. Both are cancellations with extra steps, and a
+      cancellation owes money back - not something to smuggle into an edit
+      dialog.
+    -->
+    <el-dialog v-model="sessionDialog" title="编辑场次" width="520px">
+      <el-form :model="sessionForm" label-width="110px">
+        <el-form-item label="场次">
+          <el-input :model-value="sessionLabel" disabled />
+        </el-form-item>
+        <el-form-item label="每单限购">
+          <el-input-number v-model="sessionForm.purchaseLimit" :min="0" :max="10" />
+          <span class="muted" style="margin-left: 8px">0 表示不限</span>
+        </el-form-item>
+        <el-form-item label="实名观演">
+          <el-switch v-model="sessionForm.requireRealName" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="抢购模式">
+          <el-switch v-model="sessionForm.rushMode" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item v-if="sessionForm.rushMode === 1" label="开抢时间" required>
+          <el-date-picker
+            v-model="sessionForm.rushStartTime"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+          />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="sessionForm.status">
+            <el-radio :value="1">在售</el-radio>
+            <el-radio :value="0">下架</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="">
+          <span class="muted">
+            下架不是取消：已售出的票仍然有效，场次也还在。
+            重新上架就是把它改回「在售」。
+          </span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sessionDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingSession" @click="saveSession">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- Add one -->
     <el-card shadow="never">
@@ -166,7 +217,8 @@ import {
   createSession,
   deleteSession,
   fetchProjectSessions,
-  fetchVenues
+  fetchVenues,
+  updateSession
 } from '../api/admin'
 
 const route = useRoute()
@@ -286,6 +338,58 @@ async function onSubmit() {
     // request.js surfaced the reason
   } finally {
     saving.value = false
+  }
+}
+
+const sessionDialog = ref(false)
+const savingSession = ref(false)
+const sessionForm = reactive({
+  id: null,
+  purchaseLimit: 4,
+  requireRealName: 1,
+  rushMode: 0,
+  rushStartTime: '',
+  status: 1
+})
+
+const sessionLabel = computed(() => {
+  const row = sessions.value.find((s) => s.id === sessionForm.id)
+  return row ? `${dateOf(row.startTime)} ${timeOf(row.startTime)}` : ''
+})
+
+function openSession(row) {
+  Object.assign(sessionForm, {
+    id: row.id,
+    purchaseLimit: row.purchaseLimit ?? 0,
+    requireRealName: row.requireRealName ?? 0,
+    rushMode: row.rushMode ?? 0,
+    rushStartTime: row.rushStartTime || '',
+    status: row.status
+  })
+  sessionDialog.value = true
+}
+
+async function saveSession() {
+  if (sessionForm.rushMode === 1 && !sessionForm.rushStartTime) {
+    ElMessage.warning('抢购场次必须指定开抢时间')
+    return
+  }
+  savingSession.value = true
+  try {
+    await updateSession(sessionForm.id, {
+      purchaseLimit: sessionForm.purchaseLimit,
+      requireRealName: sessionForm.requireRealName,
+      rushMode: sessionForm.rushMode,
+      rushStartTime: sessionForm.rushMode === 1 ? sessionForm.rushStartTime : null,
+      status: sessionForm.status
+    })
+    ElMessage.success('已保存')
+    sessionDialog.value = false
+    await loadSessions()
+  } catch {
+    // request.js surfaced the reason
+  } finally {
+    savingSession.value = false
   }
 }
 

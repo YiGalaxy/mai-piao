@@ -32,6 +32,18 @@ const routes = [
     component: () => import('../views/VenueListView.vue'),
     meta: { requiresAuth: true }
   },
+  {
+    path: '/users',
+    name: 'users',
+    component: () => import('../views/UserListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/orders',
+    name: 'orders',
+    component: () => import('../views/OrderListView.vue'),
+    meta: { requiresAuth: true }
+  },
   { path: '/:pathMatch(.*)*', redirect: '/performances' }
 ]
 

@@ -23,6 +23,14 @@
             <el-icon><OfficeBuilding /></el-icon>
             <span>场馆</span>
           </el-menu-item>
+          <el-menu-item index="/users">
+            <el-icon><User /></el-icon>
+            <span>用户</span>
+          </el-menu-item>
+          <el-menu-item index="/orders">
+            <el-icon><Document /></el-icon>
+            <span>订单</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -36,7 +44,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { OfficeBuilding, Tickets } from '@element-plus/icons-vue'
+import { Document, OfficeBuilding, Tickets, User } from '@element-plus/icons-vue'
 import { clearSession, getProfile } from './utils/session'
 
 const route = useRoute()
