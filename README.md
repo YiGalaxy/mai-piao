@@ -5,12 +5,7 @@
 复刻的是**核心技术难点**而不是界面：同一座位不能被两人同时选中、订单状态要扛住重复与
 乱序的支付回调、两千张票对上十万买家时系统不能垮。
 
-<!-- CI 已配置在 .github/workflows/ci.yml。推到 GitHub 后，把下面的 OWNER/REPO
-     换成实际地址、去掉注释即可。在那之前它是张裂图，所以先藏着。
-
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
-
--->
+[![CI](https://github.com/YiGalaxy/mai-piao/actions/workflows/ci.yml/badge.svg)](https://github.com/YiGalaxy/mai-piao/actions/workflows/ci.yml)
 
 ---
 
@@ -19,7 +14,7 @@
 需要 JDK 21、Maven 3.9+、Node 20+、Docker。
 
 ```bash
-git clone <repo> && cd maipiao
+git clone https://github.com/YiGalaxy/mai-piao.git maipiao && cd maipiao
 
 # 1. 中间件：Nacos / MySQL / Redis / RocketMQ / Seata
 cd docker && docker compose up -d && cd ..
