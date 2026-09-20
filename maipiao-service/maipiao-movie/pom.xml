@@ -63,6 +63,42 @@
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
     </dependency>
+
+    <!--
+      Distributed transaction, as a branch participant.
+
+      This service owns inventory and the seat ledger, and both are written
+      from inside G1. Without the client here those writes are plain local
+      transactions that commit immediately: Seata cannot see them, cannot
+      enlist them as a branch, and cannot undo them when the order fails. The
+      global transaction still reports itself as rolled back - it rolled back
+      the branches it knew about - while the seats stay reserved and the
+      counters stay incremented.
+
+      That is not a theoretical failure: it is what left seats locked with no
+      order behind them and no path that would ever release them.
+
+      The exclusion dance is the same as in maipiao-order; see the comment
+      there for why the bundled starter is removed and re-declared.
+    -->
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>io.seata</groupId>
+          <artifactId>seata-spring-boot-starter</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.seata</groupId>
+          <artifactId>seata-spring-boot-starter</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.seata</groupId>
+      <artifactId>seata-spring-boot-starter</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

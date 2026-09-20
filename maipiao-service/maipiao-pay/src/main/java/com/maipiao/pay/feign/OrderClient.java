@@ -33,6 +33,18 @@ public interface OrderClient {
     R<Void> issueTickets(@RequestParam("orderNo") String orderNo,
                          @RequestParam("paymentNo") String paymentNo);
 
+    /**
+     * Marks the Redis seat hold as sold.
+     *
+     * <p>Not a branch, and deliberately called on its own after the global
+     * transaction has committed. Redis cannot participate in the transaction,
+     * so a marker written inside it would survive a rollback and leave the seat
+     * pinned as sold with no paid order behind it - and the release path, which
+     * refuses to free a seat marked {@code SOLD:}, would never let it go.
+     */
+    @PostMapping("/{orderNo}/confirm-seats")
+    R<Void> confirmSeats(@RequestParam("orderNo") String orderNo);
+
     /** G3 branch: order to REFUNDED. */
     @PostMapping("/{orderNo}/refund-success")
     R<Void> markRefunded(@RequestParam("orderNo") String orderNo,

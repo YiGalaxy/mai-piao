@@ -62,6 +62,28 @@ mybatis-plus:
     db-config:
       id-type: assign_id
 
+# Branch participant in G1 and G2. tx-service-group must match
+# service.vgroupMapping on the Seata server, or startup fails with
+# "can not get cluster name in registry config".
+#
+# registry/config are `file` rather than `nacos`: the server registers the
+# address it sees from inside its own container, which is not reachable from
+# the host. A fixed grouplist avoids depending on that.
+seata:
+  enabled: true
+  application-id: ${spring.application.name}
+  tx-service-group: maipiao_tx_group
+  enable-auto-data-source-proxy: true
+  service:
+    vgroup-mapping:
+      maipiao_tx_group: default
+    grouplist:
+      default: ${SEATA_ADDR:127.0.0.1:8091}
+  registry:
+    type: file
+  config:
+    type: file
+
 maipiao:
   jwt:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The seat bitmap, and the only place that writes to it.
@@ -38,6 +39,8 @@ public class SeatBitmapService {
             LuaScriptLoader.ofLong("lua/seat_confirm.lua");
     private static final RedisScript<List> MAP_QUERY_SCRIPT =
             LuaScriptLoader.ofList("lua/seat_map_query.lua");
+    private static final RedisScript<Long> VERIFY_SCRIPT =
+            LuaScriptLoader.ofLong("lua/seat_verify.lua");
 
     private final StringRedisTemplate redis;
 
@@ -101,6 +104,45 @@ public class SeatBitmapService {
 
         log.debug("seat conflict: schedule={}, order={}, seatIndex={}", sessionId, orderNo, value);
         return LockResult.conflict((int) value);
+    }
+
+    // ------------------------------------------------------------
+    // verify
+    // ------------------------------------------------------------
+
+    /**
+     * True when the order still holds every seat it names.
+     *
+     * <p>This is the check that makes the lock token mean something at order
+     * time. The token is issued when the seats are locked and carries no
+     * expiry of its own, so on its own it stays "valid" long after the hold it
+     * refers to has lapsed and the seats have been taken by somebody else.
+     *
+     * <p>It narrows a race, it does not close one: a release can still land
+     * between this call and the transaction that follows. What stops that from
+     * overselling is the ledger's own {@code status = 0} compare-and-set. This
+     * call exists so the realistic case - a page left open past the hold, then
+     * submitted - is refused outright instead of costing the current holder
+     * their seat.
+     */
+    public boolean verifyOwnership(Long sessionId, String orderNo, List<Integer> seatIndexes) {
+        if (seatIndexes == null || seatIndexes.isEmpty()) {
+            return false;
+        }
+
+        List<String> keys = List.of(CommonConstants.SEAT_OWNER_KEY + sessionId);
+        List<String> args = new ArrayList<>(seatIndexes.size() + 1);
+        args.add(orderNo);
+        for (Integer index : seatIndexes) {
+            args.add(String.valueOf(index));
+        }
+
+        Long held = execute(VERIFY_SCRIPT, keys, args);
+        boolean ok = held != null && held == 1L;
+        if (!ok) {
+            log.debug("hold no longer owned by order: schedule={}, order={}", sessionId, orderNo);
+        }
+        return ok;
     }
 
     // ------------------------------------------------------------
@@ -209,20 +251,25 @@ public class SeatBitmapService {
     }
 
     /**
-     * Rebuilds the owner markers for already-sold seats.
+     * Restores owner markers after a rebuild.
      *
-     * <p>Without this a rebuilt bitmap would know a seat is taken but not by
-     * whom, and the release path - which checks the owner before clearing a
-     * bit - would refuse to ever free it.
+     * <p>Every occupied seat needs one, taken or held alike. The owner marker
+     * is what the release script compares against, so a rebuilt seat without
+     * one can never be freed: the release sees no owner, decides the seat is
+     * not this order's, and leaves the bit set. A held seat rebuilt this way
+     * is dead from the moment it is cancelled until the next rebuild.
+     *
+     * <p>Sold seats get the {@code SOLD:} prefix so the release path can tell
+     * them from held ones and refuse to put a paid-for seat back on sale.
+     *
+     * @param owners seat index to owner marker
      */
-    public void markSoldOwners(Long sessionId, List<String> soldSeatIndexes, String syntheticOrderNo) {
-        if (soldSeatIndexes.isEmpty()) {
+    public void markOwners(Long sessionId, Map<String, String> owners) {
+        if (owners.isEmpty()) {
             return;
         }
         String ownerKey = CommonConstants.SEAT_OWNER_KEY + sessionId;
-        for (String index : soldSeatIndexes) {
-            redis.opsForHash().put(ownerKey, index, "SOLD:" + syntheticOrderNo);
-        }
+        redis.opsForHash().putAll(ownerKey, owners);
     }
 
     // ------------------------------------------------------------

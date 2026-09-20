@@ -88,6 +88,23 @@ maipiao:
     # Disable in any shared environment.
     init-users: true
 
+# Branch participant in G1: coupon locking rolls back with the order that
+# asked for it. See maipiao-movie for why registry/config are `file`.
+seata:
+  enabled: true
+  application-id: ${spring.application.name}
+  tx-service-group: maipiao_tx_group
+  enable-auto-data-source-proxy: true
+  service:
+    vgroup-mapping:
+      maipiao_tx_group: default
+    grouplist:
+      default: ${SEATA_ADDR:127.0.0.1:8091}
+  registry:
+    type: file
+  config:
+    type: file
+
 springdoc:
   api-docs:
     path: /v3/api-docs

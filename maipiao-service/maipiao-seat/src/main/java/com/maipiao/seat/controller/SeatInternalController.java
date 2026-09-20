@@ -9,9 +9,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
- * Service-to-service endpoints. Not routed by the gateway - the paths live
- * under {@code /inner} and the gateway only forwards {@code /api/**}.
+ * Service-to-service endpoints.
+ *
+ * <p>Reachable only from inside the cluster. The gateway stops
+ * {@code /api/*&#47;inner/**} before the public whitelist is consulted - a
+ * whitelist cannot say "public except for these", and {@code /api/movie/**}
+ * being open for anonymous browsing is what made that necessary.
  *
  * <p>These are the Redis half of the order lifecycle. They sit deliberately
  * outside the Seata global transaction: Redis is not a transactional resource,
@@ -57,5 +63,21 @@ public class SeatInternalController {
                     sessionId, orderNo, released);
         }
         return R.ok(released);
+    }
+
+    /**
+     * Whether the order still holds the seats it names.
+     *
+     * <p>Called by order-service before it opens the G1 transaction. A lock
+     * token carries no expiry of its own, so without this an order can be
+     * placed against seats whose hold lapsed and which somebody else has since
+     * taken. Returns a boolean rather than failing, because "no" is an ordinary
+     * answer here, not an error.
+     */
+    @PostMapping("/verify")
+    public R<Boolean> verify(@RequestParam Long sessionId,
+                             @RequestParam String orderNo,
+                             @RequestParam List<Integer> seatIndexes) {
+        return R.ok(seatMapService.verifyOwnership(sessionId, orderNo, seatIndexes));
     }
 }

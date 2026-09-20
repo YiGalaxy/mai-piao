@@ -90,6 +90,21 @@ public class OrderService {
             throw new BizException(ErrorCode.ORDER_DUPLICATE);
         }
 
+        // The token is an identifier, not proof of anything: it was issued when
+        // the seats were locked and carries no expiry of its own, so it stays
+        // usable after the hold behind it has lapsed and the seats have been
+        // taken by somebody else. Confirming with the seat service first is
+        // what makes it evidence.
+        //
+        // Outside the transaction on purpose - it reads Redis, which Seata
+        // cannot roll back, so putting it inside would make the rollback a lie.
+        // It narrows the race rather than closing it: a release can still land
+        // between this and G1. What stops that from overselling is the ledger's
+        // own status = 0 compare-and-set; what this prevents is the realistic
+        // version - a page left open past the hold, then submitted - where the
+        // holder who won the seat fairly is the one who gets refused.
+        requireHeld(request.scheduleId(), orderNo, request.seatIndexes());
+
         Map<String, Object> schedule = fetchSchedule(request.scheduleId());
         int seatCount = request.seatIndexes().size();
 
@@ -194,6 +209,77 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public boolean complete(String orderNo) {
         return stateMachine.complete(orderNo, "SYSTEM");
+    }
+
+    /**
+     * G2: the order is paid, so the seats it holds become sold.
+     *
+     * <p>Two writes, and the second one is easy to leave out because the first
+     * looks like the whole job. Marking the order paid does not touch the seat
+     * ledger, and the ledger is what every counter, every refund and every
+     * reconciliation reads. Left as merely "locked", a paid seat means:
+     *
+     * <ul>
+     *   <li>{@code locked_seat} never comes back down, so a screening slowly
+     *       reports itself sold out while seats are still free - the
+     *       {@code locked + sold + n <= total} guard has no way to tell a lock
+     *       that became a sale from one that never will;</li>
+     *   <li>{@code sold_order_no} stays null, so a refund, which releases on
+     *       {@code status = 2 AND sold_order_no = ?}, matches nothing and
+     *       refuses to return the seat;</li>
+     *   <li>the sale is invisible to the ledger, which is the one place the
+     *       design says the truth lives.</li>
+     * </ul>
+     *
+     * <p>Runs inside the caller's global transaction, so the ledger move and
+     * the order status commit or roll back together.
+     *
+     * @throws BizException when the order was not in a payable state, or the
+     *                      ledger refused the move - the hold having been
+     *                      released underneath us means the seats are gone
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void markPaid(String orderNo, LocalDateTime payTime) {
+        Order order = stateMachine.require(orderNo);
+
+        // false means the order had already moved on - cancelled by the
+        // timeout job while the payment was in flight. That must fail loudly:
+        // the money has been taken and there is nothing to give in return.
+        if (!stateMachine.markPaid(orderNo, payTime, "PAY_CALLBACK")) {
+            log.error("payment arrived for an order that is not payable: orderNo={}", orderNo);
+            throw new BizException(ErrorCode.ORDER_STATUS_ILLEGAL, "订单状态不允许支付");
+        }
+
+        // Asserted by the branch itself: it throws when the ledger has fewer
+        // locked seats than the order claims, which is what a hold released by
+        // the timeout job looks like from here.
+        requireOk(movieClient.confirmSold(order.getScheduleId(), orderNo, order.getSeatCount()),
+                "座位出票失败");
+    }
+
+    /**
+     * Marks the Redis hold as sold rather than merely held.
+     *
+     * <p>Called after G2 commits, never inside it. Redis is not a transactional
+     * resource, so a marker written inside the transaction would survive a
+     * rollback and leave the seat reading as sold with no paid order behind it
+     * - and the release path, which refuses to free a seat marked {@code SOLD:},
+     * would then never let it go.
+     *
+     * <p>Best-effort. A missed marker leaves the seat unavailable either way,
+     * since the bitmap bit is already set; what is lost is the distinction that
+     * stops the occupancy from later being released as if it were still only a
+     * hold. Nothing in the current flow releases a paid order, so this is a
+     * second line of defence rather than the first.
+     */
+    public void confirmSeatHold(String orderNo) {
+        try {
+            Order order = stateMachine.require(orderNo);
+            seatClient.confirm(order.getScheduleId(), orderNo);
+            log.debug("seat hold confirmed as sold: orderNo={}", orderNo);
+        } catch (Exception e) {
+            log.error("could not confirm seat hold for paid order: {}", orderNo, e);
+        }
     }
 
     /**
@@ -340,6 +426,30 @@ public class OrderService {
             return parts[0] + "_" + parts[1];
         }
         return "idx_" + seatIndex;
+    }
+
+    /**
+     * Refuses the order unless the seat service still shows this order holding
+     * every seat it named.
+     *
+     * <p>Fail-closed on a seat-service error: an unavailable seat service
+     * cannot confirm the hold, and letting the order through would fall back to
+     * the ledger alone - which is what this call exists to stop relying on.
+     */
+    private void requireHeld(Long scheduleId, String orderNo, List<Integer> seatIndexes) {
+        Boolean held;
+        try {
+            held = seatClient.verify(scheduleId, orderNo, seatIndexes).getData();
+        } catch (Exception e) {
+            log.error("could not verify seat hold, refusing order: orderNo={}", orderNo, e);
+            throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE);
+        }
+
+        if (!Boolean.TRUE.equals(held)) {
+            log.info("order rejected, seat hold no longer valid: orderNo={}, seats={}",
+                    orderNo, seatIndexes);
+            throw new BizException(ErrorCode.SEAT_LOCK_EXPIRED);
+        }
     }
 
     private void requireOk(com.maipiao.common.core.result.R<?> response, String message) {

@@ -5,6 +5,8 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
+
 /**
  * Calls seat-service.
  *
@@ -40,4 +42,16 @@ public interface SeatClient {
      */
     @PostMapping("/release")
     R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo);
+
+    /**
+     * Whether this order still holds the seats its token names.
+     *
+     * <p>Called before G1 opens. The token is issued at lock time and does not
+     * expire with the hold, so accepting it unverified lets an order be placed
+     * on seats that have since been taken by somebody else.
+     */
+    @PostMapping("/verify")
+    R<Boolean> verify(@RequestParam Long sessionId,
+                      @RequestParam String orderNo,
+                      @RequestParam List<Integer> seatIndexes);
 }
