@@ -386,6 +386,11 @@ async function onConfirm() {
         lockToken: result.lockToken,
         scheduleId: String(result.scheduleId),
         expireSeconds: result.expireSeconds,
+        // The server's figure, carried through rather than recomputed. The map
+        // only knows the session's listing price, which is the cheapest band -
+        // recomputing from it in the checkout would undercharge every seat
+        // that is not in that band.
+        amount: result.amount,
         seats: selected.value.map((s) => ({
           seatIndex: s.seatIndex,
           label: `${s.row}排${s.col}座`

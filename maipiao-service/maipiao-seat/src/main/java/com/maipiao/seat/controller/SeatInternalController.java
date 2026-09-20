@@ -9,7 +9,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Service-to-service endpoints.
@@ -66,18 +70,50 @@ public class SeatInternalController {
     }
 
     /**
-     * Whether the order still holds the seats it names.
+     * Whether the order still holds the seats it names, and what they cost.
      *
      * <p>Called by order-service before it opens the G1 transaction. A lock
      * token carries no expiry of its own, so without this an order can be
      * placed against seats whose hold lapsed and which somebody else has since
-     * taken. Returns a boolean rather than failing, because "no" is an ordinary
-     * answer here, not an error.
+     * taken. Returning {@code held = false} rather than throwing, because "no"
+     * is an ordinary answer here, not an error.
+     *
+     * <p>Price rides along because this call was already being made and the
+     * mapping it needs was already here. That is not just an optimisation: it
+     * means the total is derived from the seats the server resolved, in the
+     * same breath as confirming the caller is entitled to them. There is no
+     * window in which a client could name a price, because it is never given
+     * the chance to.
+     *
+     * <p>Shaped as a map rather than a typed DTO for the same reason
+     * {@code MovieInternalController.snapshot} is: order-service has no
+     * dependency on this module's classes, and giving it one for a payload
+     * this small would couple the two deployments.
      */
     @PostMapping("/verify")
-    public R<Boolean> verify(@RequestParam Long sessionId,
-                             @RequestParam String orderNo,
-                             @RequestParam List<Integer> seatIndexes) {
-        return R.ok(seatMapService.verifyOwnership(sessionId, orderNo, seatIndexes));
+    public R<Map<String, Object>> verify(@RequestParam Long sessionId,
+                                         @RequestParam String orderNo,
+                                         @RequestParam List<Integer> seatIndexes) {
+        boolean held = seatMapService.verifyOwnership(sessionId, orderNo, seatIndexes);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("held", held);
+        if (!held) {
+            // Nothing to price: the seats are not this order's to buy.
+            body.put("amount", BigDecimal.ZERO);
+            body.put("seats", List.of());
+            return R.ok(body);
+        }
+
+        SeatMapService.SeatPricing pricing = seatMapService.priceOf(sessionId, seatIndexes);
+        List<Map<String, Object>> lines = new ArrayList<>(pricing.lines().size());
+        for (SeatMapService.SeatPricing.Line line : pricing.lines()) {
+            lines.add(Map.of("seatIndex", line.seatIndex(),
+                    "tierId", line.tierId() == null ? 0L : line.tierId(),
+                    "price", line.price()));
+        }
+        body.put("amount", pricing.total());
+        body.put("seats", lines);
+        return R.ok(body);
     }
 }

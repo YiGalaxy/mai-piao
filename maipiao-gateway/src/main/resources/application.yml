@@ -116,9 +116,13 @@ maipiao:
         - /api/user/register
         # Public browsing: film lists, cinema lists, schedules and seat maps are
         # readable without an account, the same way the real product works.
+        #
+        # /api/queue/position is deliberately NOT here. It answers "where am I
+        # in the queue", which is a question about the caller - whitelisting it
+        # would leave the gateway not resolving a token, so it would not inject
+        # X-User-Id, and the service would have no idea who was asking.
         - /api/movie/**
         - /api/seat/map/**
-        - /api/queue/position
         - /actuator/health
       # One Redis round trip per authenticated request. Off means logout stops
       # taking effect immediately.

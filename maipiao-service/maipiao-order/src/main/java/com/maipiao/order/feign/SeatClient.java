@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Calls seat-service.
@@ -44,14 +45,20 @@ public interface SeatClient {
     R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo);
 
     /**
-     * Whether this order still holds the seats its token names.
+     * Whether this order still holds the seats its token names, and what they
+     * cost.
      *
      * <p>Called before G1 opens. The token is issued at lock time and does not
      * expire with the hold, so accepting it unverified lets an order be placed
      * on seats that have since been taken by somebody else.
+     *
+     * <p>Returns a map rather than a typed response: {@code {"held": boolean,
+     * "amount": decimal, "seats": [{"seatIndex", "tierId", "price"}]}}. The
+     * price comes back on this call because it must not come from the client
+     * and the seat-to-band mapping already lives on the other side.
      */
     @PostMapping("/verify")
-    R<Boolean> verify(@RequestParam Long sessionId,
-                      @RequestParam String orderNo,
-                      @RequestParam List<Integer> seatIndexes);
+    R<Map<String, Object>> verify(@RequestParam Long sessionId,
+                                  @RequestParam String orderNo,
+                                  @RequestParam List<Integer> seatIndexes);
 }

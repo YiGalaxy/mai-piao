@@ -1,6 +1,8 @@
 package com.maipiao.movie.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.maipiao.common.core.util.SnowflakeIdGenerator;
 import com.maipiao.movie.entity.Film;
 import com.maipiao.movie.entity.Hall;
@@ -23,8 +25,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Generates demo sessions, their price tiers and their seat rows.
@@ -64,6 +68,19 @@ public class DemoDataService {
     };
 
     private static final int BATCH_SIZE = 1000;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * One seat's place in the hall.
+     *
+     * <p>Row and column are kept rather than a bare index because they are not
+     * interchangeable: an aisle puts a gap in the column numbers, so two seats
+     * whose indexes differ by one may be nowhere near each other. Anything
+     * asking "are these adjacent" has to ask in rows and columns.
+     */
+    private record SeatPosition(int row, int col, int type) {
+    }
 
     private final FilmMapper filmMapper;
     private final HallMapper hallMapper;
@@ -128,7 +145,16 @@ public class DemoDataService {
 
                     List<PriceTier> tiers = buildTiers(project, place);
 
-                    Session session = buildSession(project, place, showDate, startTime, tiers);
+                    // The layout comes first because it decides how many seats
+                    // the session has. Taking the count from the hall's
+                    // seat_count instead would disagree with the rows actually
+                    // written the moment a template declares aisles or broken
+                    // seats - and total_seat is what the anti-oversell guard
+                    // compares against, so it has to match.
+                    List<SeatPosition> layout = layoutOf(place);
+
+                    Session session = buildSession(project, place, showDate, startTime,
+                            tiers, layout.size());
                     sessionMapper.insert(session);
                     for (PriceTier tier : tiers) {
                         tier.setSessionId(session.getId());
@@ -137,7 +163,7 @@ public class DemoDataService {
                     tierCount += tiers.size();
 
                     List<SessionSeat> seats = buildSeats(session.getId(), place, tiers,
-                            place.getSeatCount(), soldRatio);
+                            layout, soldRatio);
                     batchInsert(seats);
 
                     sessionCount++;
@@ -266,7 +292,8 @@ public class DemoDataService {
     // ------------------------------------------------------------
 
     private Session buildSession(Film project, Hall place, LocalDate showDate,
-                                  LocalDateTime startTime, List<PriceTier> tiers) {
+                                  LocalDateTime startTime, List<PriceTier> tiers,
+                                  int totalSeat) {
         Session session = new Session();
         session.setProjectId(project.getId());
         session.setVenueId(place.getVenueId());
@@ -280,7 +307,7 @@ public class DemoDataService {
         session.setPrice(tiers.stream().map(PriceTier::getPrice)
                 .min(BigDecimal::compareTo).orElse(BigDecimal.ZERO));
 
-        session.setTotalSeat(place.getSeatCount());
+        session.setTotalSeat(totalSeat);
         session.setLockedSeat(0);
         session.setSoldSeat(0);
         session.setStatus(Session.STATUS_ON_SALE);
@@ -300,34 +327,131 @@ public class DemoDataService {
     }
 
     /**
-     * Seat rows for one session.
+     * The seats a hall actually has, in the order they are numbered.
+     *
+     * <p>Read from {@code seat_template}, which is the venue's own description
+     * of itself. The previous version ignored it: it assumed every hall has
+     * exactly two aisles, deducted them from the column count, and packed the
+     * remaining seats into columns 1..n-2. The hall's declared aisle positions
+     * never reached the data, so no row had a gap, and a seat's column number
+     * did not correspond to anything in the room.
+     *
+     * <p>Indexes stay contiguous 0,1,2,... because they are bitmap offsets and
+     * a gap would waste bits and break the "index N is the Nth seat" reading.
+     * Contiguity is a property of the numbering, not of the geometry - which
+     * is exactly why adjacency cannot be derived from it.
+     */
+    private List<SeatPosition> layoutOf(Hall place) {
+        if (place.isStanding()) {
+            // No grid to honour: one row, one unit of capacity each. The bitmap
+            // is used as an admission counter here, not as a floor plan.
+            int capacity = Math.max(1, place.getSeatCount() == null ? 0 : place.getSeatCount());
+            List<SeatPosition> standing = new ArrayList<>(capacity);
+            for (int i = 1; i <= capacity; i++) {
+                standing.add(new SeatPosition(1, i, 0));
+            }
+            return standing;
+        }
+
+        JsonNode template = parseTemplate(place.getSeatTemplate());
+        int rows = intOr(template, "rows", place.getRowCount());
+        int cols = intOr(template, "cols", place.getColCount());
+
+        Set<Integer> aisleCols = new HashSet<>();
+        for (JsonNode node : arrayOrEmpty(template, "aisleCols")) {
+            aisleCols.add(node.asInt());
+        }
+
+        Set<String> broken = new HashSet<>();
+        for (JsonNode node : arrayOrEmpty(template, "brokenSeats")) {
+            broken.add(node.asText());
+        }
+
+        Set<String> couple = new HashSet<>();
+        for (JsonNode pair : arrayOrEmpty(template, "coupleSeats")) {
+            for (JsonNode seat : pair) {
+                couple.add(seat.asText());
+            }
+        }
+
+        List<SeatPosition> layout = new ArrayList<>(Math.max(1, rows * cols));
+        for (int row = 1; row <= rows; row++) {
+            for (int col = 1; col <= cols; col++) {
+                if (aisleCols.contains(col)) {
+                    continue;
+                }
+                String key = row + "-" + col;
+                if (broken.contains(key)) {
+                    continue;
+                }
+                layout.add(new SeatPosition(row, col, couple.contains(key) ? 1 : 0));
+            }
+        }
+
+        if (layout.isEmpty()) {
+            // A template that describes nothing - malformed, or a hall with a
+            // seat_count but no usable grid. Fall back to the declared count so
+            // the session still has inventory rather than coming out empty.
+            int capacity = Math.max(1, place.getSeatCount() == null ? 0 : place.getSeatCount());
+            log.warn("hall {} has an unusable seat template, falling back to {} packed seats",
+                    place.getId(), capacity);
+            for (int i = 1; i <= capacity; i++) {
+                layout.add(new SeatPosition((i - 1) / Math.max(1, cols) + 1,
+                        (i - 1) % Math.max(1, cols) + 1, 0));
+            }
+        }
+
+        return layout;
+    }
+
+    private JsonNode parseTemplate(String json) {
+        if (json == null || json.isBlank()) {
+            return MAPPER.createObjectNode();
+        }
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            log.warn("could not parse seat template, using hall dimensions instead: {}", json, e);
+            return MAPPER.createObjectNode();
+        }
+    }
+
+    private int intOr(JsonNode node, String field, Integer fallback) {
+        JsonNode value = node.get(field);
+        if (value != null && value.isInt() && value.asInt() > 0) {
+            return value.asInt();
+        }
+        return fallback == null || fallback <= 0 ? 1 : fallback;
+    }
+
+    private JsonNode arrayOrEmpty(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value != null && value.isArray() ? value : MAPPER.createArrayNode();
+    }
+
+    /**
+     * Seat rows for one session, one per seat of the hall's layout.
      *
      * <p>Each seat is assigned to exactly one tier, once, here. That assignment
      * is what the seat map colours by and what the order prices by, so it is
      * resolved at generation time rather than derived per request.
      */
     private List<SessionSeat> buildSeats(Long sessionId, Hall place, List<PriceTier> tiers,
-                                          int capacity, double soldRatio) {
-        List<SessionSeat> seats = new ArrayList<>(capacity);
-        boolean standing = place.isStanding();
-        int cols = Math.max(1, place.getColCount());
-        // Aisles take seats out of every row, so the row a given index lands on
-        // is not index/cols. Two aisles per hall in this dataset.
-        int usableCols = standing ? 1 : Math.max(1, cols - 2);
+                                          List<SeatPosition> layout, double soldRatio) {
+        List<SessionSeat> seats = new ArrayList<>(layout.size());
 
-        for (int index = 0; index < capacity; index++) {
-            int row = standing ? 1 : Math.min(place.getRowCount(), (index / usableCols) + 1);
-            int col = standing ? index + 1 : (index % usableCols) + 1;
+        for (int index = 0; index < layout.size(); index++) {
+            SeatPosition position = layout.get(index);
 
             SessionSeat seat = new SessionSeat();
             seat.setId(SnowflakeIdGenerator.next());
             seat.setSessionId(sessionId);
             seat.setSeatIndex(index);
-            seat.setRowNum(row);
-            seat.setColNum(col);
-            seat.setSeatId(row + "_" + col);
-            seat.setSeatType(0);
-            seat.setTierId(tierForRow(tiers, row));
+            seat.setRowNum(position.row());
+            seat.setColNum(position.col());
+            seat.setSeatId(position.row() + "_" + position.col());
+            seat.setSeatType(position.type());
+            seat.setTierId(tierForRow(tiers, position.row()));
             seat.setStatus(soldRatio > 0 && random.nextDouble() < soldRatio
                     ? SessionSeat.STATUS_SOLD : SessionSeat.STATUS_AVAILABLE);
             seat.setVersion(0);
