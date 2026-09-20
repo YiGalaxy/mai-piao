@@ -1,6 +1,6 @@
-package com.maipiao.common.web.util;
+package com.maipiao.common.core.util;
 
-import com.maipiao.common.web.config.JwtProperties;
+import com.maipiao.common.core.config.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;

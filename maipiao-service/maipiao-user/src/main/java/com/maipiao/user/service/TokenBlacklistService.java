@@ -1,7 +1,7 @@
 package com.maipiao.user.service;
 
 import com.maipiao.common.core.constant.CommonConstants;
-import com.maipiao.common.web.util.JwtUtil;
+import com.maipiao.common.core.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

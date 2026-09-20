@@ -25,5 +25,40 @@
       <groupId>com.fasterxml.jackson.datatype</groupId>
       <artifactId>jackson-datatype-jsr310</artifactId>
     </dependency>
+
+    <!-- JWT lives here rather than in common-web so that the gateway can use it.
+         The gateway is a WebFlux application and must not pull in
+         spring-boot-starter-web, which common-web depends on; keeping token
+         parsing in the module with no web stack keeps one implementation
+         instead of two that drift. -->
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-impl</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-jackson</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <!-- For @ConfigurationProperties on JwtProperties.
+         Deliberately the bare spring-boot artifact rather than a starter: a
+         starter would drag autoconfigure and logging into every module, while
+         this only brings spring-core/context - which any consumer of this
+         module already has. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot</artifactId>
+    </dependency>
   </dependencies>
 </project>
