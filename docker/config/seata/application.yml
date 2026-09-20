@@ -1,15 +1,28 @@
 # ============================================================
 # Seata Server 2.2.0 configuration (local development)
-# Mounted to /seata-server/resources/application.yml
 #
-# IMPORTANT - the client side must match these values:
-#   seata.registry.nacos.server-addr  = nacos:8848 (in docker) / 127.0.0.1:8848 (on host)
+# Mounted over /seata-server/resources/application.yml, which means this file
+# REPLACES the image's default rather than merging with it. Anything the
+# server needs and this file omits fails at startup with a placeholder error,
+# so the structure below deliberately mirrors the shipped default and only
+# changes what has to change.
+#
+# Omissions that have bitten us already:
+#   logging.config      -> without it, logback is never configured
+#   console.user.*      -> "Could not resolve placeholder 'console.user.username'"
+#   security.csrf-ignore-urls / ignore.urls -> console becomes unreachable
+#
+# The image's own defaults live at /seata-server/resources/application.yml.
+# Diff against them before removing anything here.
+#
+# CLIENT SIDE MUST MATCH:
+#   seata.registry.nacos.server-addr  = 127.0.0.1:8858 (host) / nacos:8848 (in docker)
 #   seata.registry.nacos.group        = SEATA_GROUP
 #   seata.registry.nacos.application  = seata-server
-#   seata.tx-service-group            = maoyan_tx_group
-#   seata.service.vgroupMapping.maoyan_tx_group = default
+#   seata.tx-service-group            = maipiao_tx_group
+#   seata.service.vgroupMapping.maipiao_tx_group = default
 #
-# A mismatch on tx-service-group / vgroupMapping produces:
+# A mismatch on tx-service-group / vgroupMapping surfaces as:
 #   "can not get cluster name in registry config"
 # ============================================================
 
@@ -21,20 +34,24 @@ spring:
     name: seata-server
 
 logging:
-  level:
-    io.seata: info
-    root: info
+  config: classpath:logback-spring.xml
   file:
-    name: /seata-server/logs/seata.log
+    path: ${log.home:${user.home}/logs/seata}
+
+# Console login at http://localhost:7091 - change these outside local dev.
+console:
+  user:
+    username: seata
+    password: seata
 
 seata:
-  # ---- Configuration source ----
-  # `file` = read config from this file only. Simplest for dev.
-  # Switch to `nacos` once you want to hot-reload TC settings.
+  # Config source: this file only. Switch to `nacos` once you want the TC
+  # settings hot-reloadable.
   config:
     type: file
 
-  # ---- Registry: how clients find the TC ----
+  # How clients discover the TC. `nacos` so that client-side
+  # seata.registry.nacos.* resolves it without hard-coded addresses.
   registry:
     type: nacos
     nacos:
@@ -46,52 +63,31 @@ seata:
       username: ""
       password: ""
 
-  # ---- Transaction storage ----
-  # `file` keeps global transaction state on the container filesystem.
-  # Good enough for a single-node dev environment.
-  # For HA / durability across container recreation, switch to:
-  #   mode: db
-  #   db.datasource: druid
-  #   db.url: jdbc:mysql://mysql:3306/seata?...
-  # (and create the `seata` schema from docs/sql/00_seata_schema.sql)
+  # Transaction storage. `file` keeps global transaction state on disk inside
+  # the container - fine for a single-node dev setup.
+  # For HA, switch to mode: db (create the `seata` schema first) so that state
+  # is shared and survives container recreation.
   store:
     mode: file
     file:
       dir: /seata-server/sessionStore
 
-  # ---- Server-side security ----
-  security:
-    secretKey: SeataSecretKey0c382ef121d778043159209298fd40bf3850a017
-    tokenValidityInMilliseconds: 1800000
-    ignore:
-      urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.ico,/console-fe/public/**,/api/v1/auth/login
-
   server:
+    # TC service port clients connect to. Distinct from the console port (7091).
     service-port: 8091
     max-commit-retry-timeout: -1
     max-rollback-retry-timeout: -1
     rollback-retry-timeout-unlock-enable: false
     enable-check-auth: true
     recovery:
-      # Periodically clean up timed-out global transactions
       committing-retry-period: 1000
       async-committing-retry-period: 1000
       rollbacking-retry-period: 1000
       timeout-retry-period: 1000
-    undo:
-      # Undo log is compressed to reduce storage; client must be able to decompress.
-      log-serialization: jackson
-      log-table: undo_log
-      only-care-update-columns: true
-      compress:
-        enable: true
-        type: zip
-        threshold: 64k
 
-  transport:
-    type: TCP
-    server: NIO
-    heartbeat: true
-    serialization: seata
-    compressor: none
-    enable-client-batch-send-request: true
+  security:
+    secretKey: SeataSecretKey0c382ef121d778043159209298fd40bf3850a017
+    tokenValidityInMilliseconds: 1800000
+    csrf-ignore-urls: /metadata/v1/**
+    ignore:
+      urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.jpeg,/**/*.ico,/api/v1/auth/login,/version.json,/health,/error,/vgroup/v1/**
