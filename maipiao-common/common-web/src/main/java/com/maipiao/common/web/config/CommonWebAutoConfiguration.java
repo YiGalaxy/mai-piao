@@ -2,11 +2,8 @@ package com.maipiao.common.web.config;
 
 import com.maipiao.common.web.context.UserContextInterceptor;
 import com.maipiao.common.web.exception.GlobalExceptionHandler;
-import com.maipiao.common.web.feign.FeignRequestInterceptor;
 import com.maipiao.common.web.util.JwtUtil;
-import feign.RequestInterceptor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -56,15 +53,13 @@ public class CommonWebAutoConfiguration implements WebMvcConfigurer {
     }
 
     /**
-     * Only created when OpenFeign is on the classpath. Services that never call
-     * another service do not need it and should not be forced to carry Feign.
+     * The Feign interceptor is registered by {@link CommonWebFeignConfiguration}
+     * instead. Declaring it here with a method-level {@code @ConditionalOnClass}
+     * does not work: this class still has to be loaded to evaluate the
+     * condition, and loading it resolves the method signature whose return type
+     * implements {@code feign.RequestInterceptor} - which is absent on services
+     * that do not use OpenFeign.
      */
-    @Bean
-    @ConditionalOnClass(RequestInterceptor.class)
-    @ConditionalOnMissingBean
-    public FeignRequestInterceptor feignRequestInterceptor() {
-        return new FeignRequestInterceptor();
-    }
 
     /**
      * Reads X-User-Id into {@link com.maipiao.common.web.context.UserContext}
