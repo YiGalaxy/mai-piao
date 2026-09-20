@@ -1,0 +1,268 @@
+package com.maipiao.seat.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.maipiao.common.core.exception.BizException;
+import com.maipiao.common.core.result.ErrorCode;
+import com.maipiao.common.core.util.SnowflakeIdGenerator;
+import com.maipiao.seat.dto.SeatDtos;
+import com.maipiao.seat.dto.SeatMapVO;
+import com.maipiao.seat.mapper.SeatQueryMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Seat map assembly and locking.
+ *
+ * <p>Two sources are combined: the layout (which seats exist, and where) comes
+ * from the ledger; availability comes from the Redis bitmap.
+ *
+ * <p>On the lock token: the value returned by a successful lock is a snowflake
+ * id, and it is also the order number the order service will use. That is a
+ * deliberate simplification - the alternative is for order-service to mint its
+ * own number and then ask seat-service to transfer the hold from the token to
+ * the order, which is an extra round trip and an extra failure mode for no
+ * benefit at this scale. If the two ever needed to differ, the transfer is the
+ * change to make.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SeatMapService {
+
+    private final SeatQueryMapper seatQueryMapper;
+    private final SeatBitmapService seatBitmapService;
+    private final ObjectMapper objectMapper;
+
+    @Value("${maipiao.seat.lock-minutes:15}")
+    private int lockMinutes;
+
+    @Value("${maipiao.seat.rebuild-on-miss:true}")
+    private boolean rebuildOnMiss;
+
+    // ------------------------------------------------------------
+    // seat map
+    // ------------------------------------------------------------
+
+    public SeatMapVO getSeatMap(Long scheduleId) {
+        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(scheduleId);
+        if (schedule == null) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
+        }
+
+        int totalSeat = toInt(schedule.get("totalSeat"));
+
+        Set<Integer> occupied = new HashSet<>(loadOccupiedIndexes(scheduleId, totalSeat));
+
+        List<Map<String, Object>> layout = seatQueryMapper.selectSeatLayout(scheduleId);
+        List<SeatMapVO.SeatItem> seats = new ArrayList<>(layout.size());
+
+        for (Map<String, Object> row : layout) {
+            int seatIndex = toInt(row.get("seatIndex"));
+            seats.add(new SeatMapVO.SeatItem(
+                    String.valueOf(row.get("seatId")),
+                    seatIndex,
+                    toInt(row.get("rowNum")),
+                    toInt(row.get("colNum")),
+                    toInt(row.get("seatType")),
+                    occupied.contains(seatIndex) ? 1 : 0));
+        }
+
+        SeatMapVO vo = new SeatMapVO();
+        vo.setScheduleId(scheduleId);
+        vo.setFilmName(str(schedule.get("filmName")));
+        vo.setCinemaName(str(schedule.get("cinemaName")));
+        vo.setHallName(str(schedule.get("hallName")));
+        vo.setHallType(str(schedule.get("hallType")));
+        vo.setStartTime((LocalDateTime) schedule.get("startTime"));
+        vo.setPrice((BigDecimal) schedule.get("price"));
+        vo.setRowCount(toInt(schedule.get("rowCount")));
+        vo.setColCount(toInt(schedule.get("colCount")));
+        vo.setAisleCols(parseAisleCols(str(schedule.get("seatTemplate"))));
+        vo.setSeats(seats);
+        vo.setTotalSeat(totalSeat);
+        vo.setRemainingSeat(Math.max(0, totalSeat - occupied.size()));
+        vo.setRushMode(toInt(schedule.get("rushMode")));
+        return vo;
+    }
+
+    /**
+     * Availability, rebuilding the bitmap from the ledger when it is missing.
+     *
+     * <p>A cold bitmap is not an error state - it is what a freshly deployed
+     * instance, a flushed Redis, or a screening nobody has opened yet looks
+     * like. Rebuilding on first read means there is no separate warm-up step
+     * to forget, and no window where a screening shows as entirely free.
+     */
+    private List<Integer> loadOccupiedIndexes(Long scheduleId, int totalSeat) {
+        if (seatBitmapService.isInitialised(scheduleId)) {
+            return seatBitmapService.findOccupiedIndexes(scheduleId, totalSeat);
+        }
+
+        if (!rebuildOnMiss) {
+            throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE, "座位数据尚未就绪");
+        }
+
+        return rebuildFromLedger(scheduleId, totalSeat);
+    }
+
+    /**
+     * Rebuilds the bitmap and the owner markers from
+     * {@code t_movie_schedule_seat}.
+     *
+     * <p>The owner markers matter as much as the bits: the release script
+     * refuses to clear a seat whose owner does not match, so a bitmap rebuilt
+     * without them would be permanently unable to free a sold seat.
+     */
+    private List<Integer> rebuildFromLedger(Long scheduleId, int totalSeat) {
+        List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(scheduleId);
+
+        List<Integer> indexes = new ArrayList<>(rows.size());
+        List<String> soldIndexes = new ArrayList<>();
+
+        for (Map<String, Object> row : rows) {
+            int index = toInt(row.get("seatIndex"));
+            indexes.add(index);
+            // status 2 = sold; status 1 = locked by an unpaid order
+            if (toInt(row.get("status")) == 2) {
+                soldIndexes.add(String.valueOf(index));
+            }
+        }
+
+        seatBitmapService.rebuild(scheduleId, indexes);
+        seatBitmapService.markSoldOwners(scheduleId, soldIndexes, "REBUILT");
+
+        log.info("seat bitmap rebuilt from ledger: schedule={}, total={}, occupied={}, sold={}",
+                scheduleId, totalSeat, indexes.size(), soldIndexes.size());
+
+        return indexes;
+    }
+
+    // ------------------------------------------------------------
+    // locking
+    // ------------------------------------------------------------
+
+    public SeatDtos.LockSeatResponse lockSeats(SeatDtos.LockSeatRequest request, Long userId) {
+        Long scheduleId = request.scheduleId();
+        List<Integer> seatIndexes = request.seatIndexes();
+
+        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(scheduleId);
+        if (schedule == null) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
+        }
+
+        int status = toInt(schedule.get("status"));
+        if (status != 1) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE);
+        }
+
+        // Ensure the bitmap exists before locking against it, otherwise the
+        // lock script would happily claim seats that the ledger says are sold.
+        loadOccupiedIndexes(scheduleId, toInt(schedule.get("totalSeat")));
+
+        String lockToken = SnowflakeIdGenerator.nextString();
+        Duration ttl = Duration.ofMinutes(lockMinutes);
+
+        SeatBitmapService.LockResult result =
+                seatBitmapService.lock(scheduleId, lockToken, seatIndexes, ttl);
+
+        if (!result.success()) {
+            String label = labelOfSeat(scheduleId, result.conflictSeatIndex());
+            log.info("lock rejected: schedule={}, user={}, conflict={}", scheduleId, userId, label);
+            throw new BizException(ErrorCode.SEAT_OCCUPIED, "座位 " + label + " 已被选走，请重新选择");
+        }
+
+        BigDecimal price = (BigDecimal) schedule.get("price");
+        BigDecimal amount = price.multiply(BigDecimal.valueOf(seatIndexes.size()));
+
+        log.info("seats locked: schedule={}, user={}, token={}, count={}",
+                scheduleId, userId, lockToken, seatIndexes.size());
+
+        return new SeatDtos.LockSeatResponse(
+                lockToken,
+                scheduleId,
+                seatIndexes,
+                labelsOfSeats(scheduleId, seatIndexes),
+                amount,
+                (int) ttl.getSeconds());
+    }
+
+    /** Releases a hold. Used when the user backs out of the payment page. */
+    public void releaseSeats(Long scheduleId, String lockToken) {
+        if (lockToken == null || lockToken.isBlank()) {
+            return;
+        }
+        seatBitmapService.release(scheduleId, lockToken, false);
+    }
+
+    /** Called by order-service after payment succeeds (G2). */
+    public void confirmSeats(Long scheduleId, String orderNo) {
+        seatBitmapService.confirm(scheduleId, orderNo);
+    }
+
+    // ------------------------------------------------------------
+
+    private List<Integer> parseAisleCols(String seatTemplateJson) {
+        if (seatTemplateJson == null || seatTemplateJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            var node = objectMapper.readTree(seatTemplateJson).get("aisleCols");
+            if (node == null || !node.isArray()) {
+                return List.of();
+            }
+            List<Integer> cols = new ArrayList<>();
+            node.forEach(n -> cols.add(n.asInt()));
+            return cols;
+        } catch (Exception e) {
+            // A malformed template must not break the seat map - the client
+            // simply renders without aisle gaps.
+            log.warn("could not parse aisleCols from seat template: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> labelsOfSeats(Long scheduleId, List<Integer> seatIndexes) {
+        Map<Integer, String> byIndex = seatLabelsByIndex(scheduleId);
+        List<String> labels = new ArrayList<>(seatIndexes.size());
+        for (Integer index : seatIndexes) {
+            labels.add(byIndex.getOrDefault(index, String.valueOf(index)));
+        }
+        return labels;
+    }
+
+    private String labelOfSeat(Long scheduleId, int seatIndex) {
+        return seatLabelsByIndex(scheduleId).getOrDefault(seatIndex, String.valueOf(seatIndex));
+    }
+
+    /** Builds "{row}排{col}座" labels for a screening. */
+    private Map<Integer, String> seatLabelsByIndex(Long scheduleId) {
+        Map<Integer, String> labels = new java.util.HashMap<>();
+        for (Map<String, Object> row : seatQueryMapper.selectSeatLayout(scheduleId)) {
+            int index = toInt(row.get("seatIndex"));
+            labels.put(index, toInt(row.get("rowNum")) + "排" + toInt(row.get("colNum")) + "座");
+        }
+        return labels;
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
+    }
+
+    private String str(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+}
