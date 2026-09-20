@@ -62,13 +62,13 @@ mybatis-plus:
     db-config:
       id-type: assign_id
 
-# Branch participant in G1 and G2. tx-service-group must match
-# service.vgroupMapping on the Seata server, or startup fails with
-# "can not get cluster name in registry config".
+# G1 和 G2 里的分支事务参与者。tx-service-group 必须和 Seata 服务端的
+# service.vgroupMapping 对上，否则启动就报
+# "can not get cluster name in registry config"。
 #
-# registry/config are `file` rather than `nacos`: the server registers the
-# address it sees from inside its own container, which is not reachable from
-# the host. A fixed grouplist avoids depending on that.
+# registry/config 用 `file` 而不是 `nacos`：服务端注册上去的是它从自己容器里
+# 看到的地址，宿主机的服务路由不到。
+# 一份固定的 grouplist 就避开了这个依赖。
 seata:
   enabled: true
   application-id: ${spring.application.name}

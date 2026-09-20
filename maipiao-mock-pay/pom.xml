@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-mock-pay</artifactId>
   <name>maipiao-mock-pay</name>
-  <description>Stand-in for a payment provider: cashier page plus controllable callbacks</description>
+  <description>模拟支付渠道：收银台页面，以及可以主动操控的回调</description>
 
   <dependencies>
     <dependency>

@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-pay</artifactId>
   <name>maipiao-pay</name>
-  <description>Payment service : payment orders, callbacks, idempotency, refunds</description>
+  <description>支付服务：支付单、回调幂等、出票、退款</description>
 
   <dependencies>
     <dependency>

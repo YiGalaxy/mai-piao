@@ -23,9 +23,9 @@ spring:
         file-extension: yaml
 
     gateway:
-      # Route by path prefix. /api is stripped before forwarding, so the
-      # downstream service sees the same path it exposes locally - a controller
-      # mapped at /user/login is reachable as /api/user/login from outside.
+      # 按路径前缀路由。转发之前会把 /api 剥掉，所以下游服务看到的路径
+      # 和它自己在本地暴露的一模一样 —— 一个映射在 /user/login 的 controller，
+      # 从外面用 /api/user/login 就能访问到。
       routes:
         - id: maipiao-user
           uri: lb://maipiao-user
@@ -62,29 +62,30 @@ spring:
         - id: maipiao-pay
           uri: lb://maipiao-pay
           predicates:
-            # Callbacks are NOT routed here. A provider posts to the URL it was
-            # given at onboarding, and that URL points straight at pay-service -
-            # payment notifications do not travel through our gateway, and
-            # putting them behind it would mean verifying a provider's
-            # signature with our own auth filter first.
+            # 回调不从这里路由。支付方会把通知投到
+            # 入驻时给它的那个 URL，而那个 URL 直接指向 pay-service ——
+            # 支付通知不经过我们的网关，
+            # 把它放到网关后面，就意味着要先用我们自己的认证过滤器
+            # 去验支付方的签名。
             - Path=/api/pay/**
           filters:
             - StripPrefix=1
 
-      # More routes are added as services come online:
-      #   maipiao-admin  /api/admin/**   :9006
-      #   maipiao-queue  /api/queue/**   :9008
+      # 这里没有独立的后台服务路由，也没有 maipiao-admin 这个服务。
+      # 管理接口挂在 movie-service 下的 /movie/admin/**，走上面那条
+      # maipiao-movie 路由；角色校验在 JwtAuthFilter 里按
+      # `/api/*/admin/**` 统一做。理由见 docs/设计方案.md §19.1。
 
       globalcors:
         cors-configurations:
           '[/**]':
-            # allowedOriginPatterns (not allowedOrigins) is what permits the
-            # wildcard together with credentials - allowedOrigins refuses "*"
-            # once allowCredentials is true.
+            # 能让通配符和 credentials 同时生效的是 allowedOriginPatterns
+            # （而不是 allowedOrigins）—— allowCredentials 变成 true 之后，
+            # allowedOrigins 会直接拒绝 "*"。
             #
-            # Dev-only. Before this is exposed anywhere real, list the actual
-            # origins: a wildcard with credentials lets any site call the API
-            # with the user's token.
+            # 仅限开发环境。在任何真实环境暴露之前，把来源逐个列出来：
+            # 带 credentials 的通配符等于让任何站点都能拿着用户的 token
+            # 调这个 API。
             allowedOriginPatterns: "*"
             allowedMethods: "*"
             allowedHeaders: "*"
@@ -112,24 +113,23 @@ maipiao:
 
   gateway:
     auth:
-      # Everything not listed requires a valid token.
-      # Patterns include the /api prefix, because that is the path the gateway
-      # matches on - before StripPrefix rewrites it.
+      # 没列在这里的，都要求一个有效的 token。
+      # 这些模式带着 /api 前缀，因为网关就是拿这个路径去匹配的 ——
+      # 在 StripPrefix 改写它之前。
       whitelist:
         - /api/user/login
         - /api/user/register
-        # Public browsing: film lists, cinema lists, schedules and seat maps are
-        # readable without an account, the same way the real product works.
+        # 公开浏览：影片列表、影院列表、场次和座位图不登录也能看，
+        # 和真实产品的行为一致。
         #
-        # /api/queue/position is deliberately NOT here. It answers "where am I
-        # in the queue", which is a question about the caller - whitelisting it
-        # would leave the gateway not resolving a token, so it would not inject
-        # X-User-Id, and the service would have no idea who was asking.
+        # /api/queue/position 是刻意不放进来的。它回答的是「我排在第几位」，
+        # 这是关于调用者本身的问题 —— 放行它，网关就不会去解析 token，
+        # 也就不会注入 X-User-Id，服务端根本不知道是谁在问。
         - /api/movie/**
         - /api/seat/map/**
         - /actuator/health
-      # One Redis round trip per authenticated request. Off means logout stops
-      # taking effect immediately.
+      # 每个已认证请求多一次 Redis 往返。关掉它，
+      # 登出就不再有即时效果。
       check-blacklist: true
 
 management:

@@ -1,5 +1,5 @@
 # ============================================================
-# Build output
+# 构建产物
 # ============================================================
 target/
 build/
@@ -23,7 +23,7 @@ build/
 .classpath
 
 # ============================================================
-# Node / frontend
+# Node / 前端
 # ============================================================
 node_modules/
 dist/
@@ -35,7 +35,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # ============================================================
-# Logs and runtime
+# 日志与运行时
 # ============================================================
 logs/
 *.log
@@ -43,25 +43,24 @@ logs/
 *.hprof
 hs_err_pid*.log
 
-# RocketMQ bind-mounted runtime data (store + logs).
-# Bind mounts rather than named volumes because the image's non-root user
-# cannot write to a root-owned volume.
+# RocketMQ 用 bind mount 挂进来的运行时数据（store + logs）。
+# 用具名卷的话，镜像里的非 root 用户写不进 root 拥有的卷。
 docker/data/
 
 # ============================================================
-# OS
+# 操作系统
 # ============================================================
 .DS_Store
 Thumbs.db
 desktop.ini
 
 # ============================================================
-# Local overrides
+# 本地覆盖配置
 #
-# Note: docker/.env IS tracked on purpose. It holds the host port mapping
-# (3309/6381/8858) which is part of how this project is meant to be run
-# locally, and it contains no secrets - the dev passwords live in
-# docker-compose.yml, which is also tracked because it is a dev-only stack.
+# 注意：docker/.env 是**故意**被跟踪的。它存的是宿主机端口映射
+# （3309/6381/8858），那是「这个项目怎么在本机跑起来」的一部分，
+# 而且它不含任何机密 —— 开发用的密码在 docker-compose.yml 里，
+# 那个文件同样被跟踪，因为它是一套纯开发用的编排。
 # ============================================================
 *.local.yml
 application-local.yml

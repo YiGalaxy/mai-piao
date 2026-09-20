@@ -13,10 +13,10 @@
 
   <artifactId>common-core</artifactId>
   <name>common-core</name>
-  <description>Unified response envelope, business exceptions, error codes, id generation</description>
+  <description>统一返回体、业务异常、错误码、ID 生成</description>
 
   <dependencies>
-    <!-- Jackson is needed for @JsonInclude / @JsonFormat on the response envelope -->
+    <!-- 统一响应体上的 @JsonInclude / @JsonFormat 需要 Jackson -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
@@ -26,11 +26,10 @@
       <artifactId>jackson-datatype-jsr310</artifactId>
     </dependency>
 
-    <!-- JWT lives here rather than in common-web so that the gateway can use it.
-         The gateway is a WebFlux application and must not pull in
-         spring-boot-starter-web, which common-web depends on; keeping token
-         parsing in the module with no web stack keeps one implementation
-         instead of two that drift. -->
+    <!-- JWT 放在这里而不是 common-web，是为了让网关也能用。
+         网关是 WebFlux 应用，不能把 spring-boot-starter-web 拖进来，
+         而 common-web 依赖它；把 token 解析留在没有 web 栈的模块里，
+         就只有一份实现，而不是两份慢慢跑偏的实现。 -->
     <dependency>
       <groupId>io.jsonwebtoken</groupId>
       <artifactId>jjwt-api</artifactId>
@@ -51,11 +50,10 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
-    <!-- For @ConfigurationProperties on JwtProperties.
-         Deliberately the bare spring-boot artifact rather than a starter: a
-         starter would drag autoconfigure and logging into every module, while
-         this only brings spring-core/context - which any consumer of this
-         module already has. -->
+    <!-- 给 JwtProperties 上的 @ConfigurationProperties 用。
+         刻意用光秃秃的 spring-boot 而不是 starter：starter 会把 autoconfigure
+         和 logging 拖进每一个模块，而这个只带来 spring-core/context ——
+         任何用这个模块的地方本来就有。 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot</artifactId>

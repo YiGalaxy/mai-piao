@@ -9,17 +9,17 @@ spring:
 
 maipiao:
   mock-pay:
-    # Where callbacks are delivered. In production this is a public URL the
-    # provider was given at onboarding; here it points straight at pay-service.
+    # 回调投递到哪。生产环境里这是接入时给服务商的公网 URL；
+    # 这里直接指向 pay-service。
     notify-url: ${PAY_NOTIFY_URL:http://127.0.0.1:9005/pay/notify/MOCK}
 
-    # Shared secret for the fake signature. Both sides must agree, so a
-    # deliberately wrong value can be used to prove the verification path
-    # actually rejects bad input.
+    # 假签名用的共享密钥。两边必须一致，
+    # 所以可以故意填一个错的值，
+    # 用来证明校验路径确实会拒绝非法输入。
     sign-key: ${MOCK_PAY_SIGN_KEY:maipiao-mock-pay-sign-key-2026}
 
-    # How long the fake cashier waits before calling back, so the UI has time
-    # to show a "processing" state.
+    # 假收银台在回调前等多久，
+    # 这样 UI 才有时间显示「处理中」的状态。
     callback-delay-ms: 800
 
 logging:

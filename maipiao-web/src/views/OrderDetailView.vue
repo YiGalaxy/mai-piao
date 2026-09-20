@@ -3,7 +3,7 @@
     <el-skeleton v-if="loading" :rows="6" animated />
 
     <template v-else-if="order">
-      <!-- Status band -->
+      <!-- 状态条 -->
       <div class="mp-card status-card" :class="statusBand">
         <div class="status-main">
           <span class="status-text">{{ statusText }}</span>
@@ -299,7 +299,7 @@ async function onCheckPaid() {
       ElMessage.warning('还没有收到支付结果，请稍候再试')
     }
   } catch {
-    // request.js surfaced it
+    // request.js 已经弹过提示了，这里不用再报一次
   } finally {
     checking.value = false
   }

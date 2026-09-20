@@ -29,8 +29,8 @@ spring:
     password: ${MYSQL_PASSWORD:maipiao123}
     hikari:
       minimum-idle: 2
-      # Read-mostly service: the pool is small on purpose, because the hot path
-      # (locking) never touches the database at all.
+      # 以读为主的服务：连接池故意配得小，
+      # 因为热路径（加锁）根本不碰数据库。
       maximum-pool-size: 10
       connection-timeout: 10000
 
@@ -49,7 +49,7 @@ spring:
           max-wait: 2000ms
 
 mysqldb:
-  # Kept separate from the datasource above so the read-only intent is visible.
+  # 和上面的数据源分开写，是为了让「只读」这个意图看得见。
   read-only: true
 
 mybatis-plus:

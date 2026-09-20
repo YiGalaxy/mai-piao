@@ -13,7 +13,7 @@
 
   <artifactId>common-web</artifactId>
   <name>common-web</name>
-  <description>Global exception handling, JWT utilities, user context, Feign interceptors</description>
+  <description>全局异常处理、JWT 工具、用户上下文、Feign 拦截器</description>
 
   <dependencies>
     <dependency>
@@ -35,9 +35,9 @@
       <artifactId>spring-boot-starter-aop</artifactId>
     </dependency>
 
-    <!-- Feign interception (forwarding X-User-Id to downstream services).
-         Marked optional so services that do not call other services do not
-         drag the whole OpenFeign stack in. -->
+    <!-- Feign 拦截（把 X-User-Id 透传给下游服务）。
+         标成 optional，这样不调用别的服务的服务就不会把整个 OpenFeign
+         栈拖进来。 -->
     <dependency>
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-openfeign</artifactId>
@@ -45,12 +45,11 @@
     </dependency>
 
     <!--
-      Optional, and only for the pagination interceptor below.
+      optional，而且只为下面那个分页拦截器存在。
 
-      Marked optional so this module does not drag a persistence framework into
-      services that have no database - the gateway depends on common-web's
-      neighbours, not on this, but the principle is the same one the Feign
-      dependency above follows.
+      标成 optional，是为了不让这个模块把持久层框架拖进那些根本没有数据库的
+      服务 —— 网关依赖的是 common-web 的邻居模块，不是它本身，但道理和上面
+      那个 Feign 依赖遵循的是同一条。
     -->
     <dependency>
       <groupId>com.baomidou</groupId>
@@ -79,8 +78,8 @@
       <scope>runtime</scope>
     </dependency>
 
-    <!-- BCrypt only - we do our own authentication at the gateway and do not
-         want Spring Security's filter chain taking over every request. -->
+    <!-- 只要 BCrypt —— 认证我们在网关自己做，不想让 Spring Security
+         的过滤器链接管每一个请求。 -->
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-crypto</artifactId>

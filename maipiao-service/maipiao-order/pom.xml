@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-order</artifactId>
   <name>maipiao-order</name>
-  <description>Order service : order creation, state machine, timeout cancellation</description>
+  <description>订单服务：下单事务、订单状态机、超时取消、退款</description>
 
   <dependencies>
     <dependency>
@@ -55,23 +55,22 @@
     </dependency>
 
     <!--
-      Distributed transaction.
+      分布式事务。
 
-      spring-cloud-starter-alibaba-seata bundles its own copy of
-      seata-spring-boot-starter, which is not necessarily the version the
-      server is running. The bundled one is excluded and the starter is
-      declared explicitly below, pinned by `seata.version` in the parent POM,
-      so the client and the server always match.
+      spring-cloud-starter-alibaba-seata 自带一份 seata-spring-boot-starter，
+      而它不一定是服务端正在跑的版本。把自带的那份排掉，在下面显式声明
+      starter，由父 POM 里的 `seata.version` 钉住，这样客户端和服务端
+      永远对得上。
 
-      Never add `seata-all` alongside this - the two provide the same classes
-      and the resulting failure at startup is not obvious.
+      永远不要在它之外再加 `seata-all` —— 两者提供同一批类，
+      由此导致的启动失败并不会明显地指回这里。
     -->
     <dependency>
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
       <exclusions>
-        <!-- Both groupIds: Seata moved from io.seata to org.apache.seata in
-             2.x, and which one SCA bundles depends on the SCA version. -->
+        <!-- 两个 groupId 都排：Seata 在 2.x 从 io.seata 挪到了 org.apache.seata，
+             而 SCA 自带的是哪一个，取决于 SCA 的版本。 -->
         <exclusion>
           <groupId>io.seata</groupId>
           <artifactId>seata-spring-boot-starter</artifactId>

@@ -9,24 +9,24 @@
   <version>1.0.0</version>
   <packaging>pom</packaging>
   <name>maipiao-ticket</name>
-  <description>Online movie ticketing system - a portfolio project</description>
+  <description>在线电影售票系统 —— 求职作品集项目</description>
 
   <!--
     ============================================================
-    VERSION COMPATIBILITY - READ BEFORE UPGRADING ANYTHING
+    版本兼容性 —— 动任何一项之前先读这里
     ============================================================
-    The chain below is locked together and MUST be upgraded as a whole:
+    下面这条链是锁在一起的，必须整体升级：
 
       Spring Boot 3.2.x  <->  Spring Cloud 2023.0.x  <->  SCA 2023.0.3.2
 
-    Facts that are easy to get wrong:
-      - Spring Boot 3.4.x has NO matching Spring Cloud Alibaba release.
-        Do not bump Boot to 3.4 while SCA stays on 2023.x.
-      - SCA 2025.0.x is the branch for Spring Boot 3.5.x. Moving there
-        means Nacos client 3.0.3 + Seata 2.5.0 as well.
-      - The Seata client version must equal the Seata server version.
-        docker/config/seata runs 2.2.0, so seata.version below is 2.2.0.
-        A mismatch fails at runtime, not at compile time.
+    几个很容易搞错的事实：
+      - Spring Boot 3.4.x 没有对应的 Spring Cloud Alibaba 版本。
+        SCA 还停在 2023.x 的时候，不要把 Boot 升到 3.4。
+      - SCA 2025.0.x 是 Spring Boot 3.5.x 的分支。挪过去意味着
+        Nacos client 3.0.3 + Seata 2.5.0 也要一起换。
+      - Seata 客户端版本必须等于 Seata 服务端版本。
+        docker/config/seata 跑的是 2.2.0，所以下面的 seata.version 是 2.2.0。
+        版本对不上是在运行时失败，不是在编译时。
     ============================================================
   -->
   <properties>
@@ -94,22 +94,20 @@
         <scope>import</scope>
       </dependency>
 
-      <!-- ==================== Distributed transaction ==================== -->
+      <!-- ==================== 分布式事务 ==================== -->
       <!--
-        Seata's coordinates changed in 2.x: the groupId moved from `io.seata`
-        to `org.apache.seata`. Older 2.x artifacts still exist under the old
-        groupId, so a wrong groupId does not fail loudly at build time on every
-        mirror - it fails with "could not find artifact" and looks like a
-        repository problem.
+        Seata 的坐标在 2.x 变了：groupId 从 `io.seata` 挪到了 `org.apache.seata`。
+        旧的 groupId 底下仍然存在较老的 2.x 产物，所以写错 groupId 不会在
+        每个镜像源上都大声报错 —— 它只报 "could not find artifact"，
+        看起来像个仓库问题。
 
-        spring-cloud-starter-alibaba-seata bundles its own
-        seata-spring-boot-starter, which is not the version the server runs.
-        Services exclude it (both groupIds, in case the bundled one predates
-        the rename) and declare the starter explicitly here, pinned by
-        ${seata.version}, so client and server always match.
+        spring-cloud-starter-alibaba-seata 自带一份 seata-spring-boot-starter，
+        那不是服务端在跑的版本。各服务把它排掉（两个 groupId 都排，以防自带的
+        那份早于这次改名），再在这里显式声明 starter，用 ${seata.version}
+        钉住，这样客户端和服务端永远对得上。
 
-        Never add `seata-all` alongside the starter - the two provide the same
-        classes and the resulting startup failure is not obviously about that.
+        永远不要在 starter 之外再加 `seata-all` —— 两者提供同一批类，
+        由此导致的启动失败并不会明显地指回这里。
       -->
       <dependency>
         <groupId>org.apache.seata</groupId>
@@ -117,14 +115,14 @@
         <version>${seata.version}</version>
       </dependency>
 
-      <!-- ==================== Persistence ==================== -->
+      <!-- ==================== 持久层 ==================== -->
       <dependency>
         <groupId>com.baomidou</groupId>
         <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         <version>${mybatis-plus.version}</version>
       </dependency>
 
-      <!-- ==================== Messaging ==================== -->
+      <!-- ==================== 消息 ==================== -->
       <dependency>
         <groupId>org.apache.rocketmq</groupId>
         <artifactId>rocketmq-spring-boot-starter</artifactId>
@@ -136,22 +134,22 @@
           </exclusion>
         </exclusions>
       </dependency>
-      <!-- Pin the client to 5.x: arbitrary-timestamp delay messages
-           (deliverTimeMs) are a 5.x broker feature. -->
+      <!-- 把客户端钉到 5.x：任意时刻的延时消息（deliverTimeMs）
+           是 5.x 的 broker 才有的能力。 -->
       <dependency>
         <groupId>org.apache.rocketmq</groupId>
         <artifactId>rocketmq-client</artifactId>
         <version>5.3.1</version>
       </dependency>
 
-      <!-- ==================== Cache / lock ==================== -->
+      <!-- ==================== 缓存 / 锁 ==================== -->
       <dependency>
         <groupId>org.redisson</groupId>
         <artifactId>redisson-spring-boot-starter</artifactId>
         <version>${redisson.version}</version>
       </dependency>
 
-      <!-- ==================== Scheduled task mutual exclusion ==================== -->
+      <!-- ==================== 定时任务互斥 ==================== -->
       <dependency>
         <groupId>net.javacrumbs.shedlock</groupId>
         <artifactId>shedlock-spring</artifactId>
@@ -163,15 +161,15 @@
         <version>${shedlock.version}</version>
       </dependency>
 
-      <!-- ==================== API docs ==================== -->
+      <!-- ==================== API 文档 ==================== -->
       <dependency>
         <groupId>org.springdoc</groupId>
         <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         <version>${springdoc.version}</version>
       </dependency>
 
-      <!-- ==================== Auth ==================== -->
-      <!-- jjwt: JWT signing / parsing -->
+      <!-- ==================== 认证 ==================== -->
+      <!-- jjwt：JWT 签名 / 解析 -->
       <dependency>
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-api</artifactId>
@@ -187,14 +185,14 @@
         <artifactId>jjwt-jackson</artifactId>
         <version>${jjwt.version}</version>
       </dependency>
-      <!-- spring-security-crypto only: we use BCrypt, not the filter chain -->
+      <!-- 只要 spring-security-crypto：我们用 BCrypt，不用它的过滤器链 -->
       <dependency>
         <groupId>org.springframework.security</groupId>
         <artifactId>spring-security-crypto</artifactId>
         <version>6.2.7</version>
       </dependency>
 
-      <!-- ==================== Utilities ==================== -->
+      <!-- ==================== 工具 ==================== -->
       <dependency>
         <groupId>cn.hutool</groupId>
         <artifactId>hutool-all</artifactId>
@@ -206,7 +204,7 @@
         <version>${mapstruct.version}</version>
       </dependency>
 
-      <!-- ==================== Testing ==================== -->
+      <!-- ==================== 测试 ==================== -->
       <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-bom</artifactId>
@@ -218,7 +216,7 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- Shared by every module -->
+    <!-- 每个模块共用 -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
@@ -243,10 +241,10 @@
             <release>${maven.compiler.release}</release>
             <parameters>true</parameters>
             <!--
-              Annotation processor ORDER MATTERS:
-              lombok must run before mapstruct, and lombok-mapstruct-binding
-              must be on the path or generated mappers will be missing their
-              Lombok-generated getters/setters.
+              注解处理器的顺序是有讲究的：
+              lombok 必须先于 mapstruct 跑，而且 lombok-mapstruct-binding
+              必须在路径上，否则生成的 mapper 里会缺掉 Lombok 生成的
+              getter/setter。
             -->
             <annotationProcessorPaths>
               <path>
@@ -272,18 +270,16 @@
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>${spring-boot.version}</version>
           <!--
-            The repackage execution MUST be declared explicitly here.
+            repackage 这个 execution 必须在这里显式声明。
 
-            Projects that inherit from spring-boot-starter-parent get this
-            binding pre-configured by the parent. We import
-            spring-boot-dependencies as a BOM instead (so the POM stays
-            independent of Boot's opinionated defaults), and a BOM only
-            carries dependency versions - it contributes no plugin
-            executions.
+            继承 spring-boot-starter-parent 的项目，这个绑定由父 POM 预先配好了。
+            而我们是把 spring-boot-dependencies 当 BOM 导入的（这样 POM 就不必
+            接受 Boot 那些强加于人的默认值），而 BOM 只携带依赖版本 ——
+            它不贡献任何 plugin 的 execution。
 
-            Without it, `mvn package` produces a plain 34 KB library jar with
-            no Main-Class and no BOOT-INF, and the failure only shows up at
-            runtime as "no main manifest attribute".
+            少了它，`mvn package` 只会产出一个普通的 34 KB 库 jar，
+            没有 Main-Class 也没有 BOOT-INF，而失败要等到运行时才以
+            "no main manifest attribute" 的形式暴露出来。
           -->
           <executions>
             <execution>

@@ -51,12 +51,12 @@ mybatis-plus:
       id-type: assign_id
 
 # ============================================================
-# Seata - same shape as order-service.
+# Seata —— 和 order-service 是同一套写法。
 #
-# The TC address is configured directly rather than discovered through Nacos:
-# the Seata server runs in a container and registers its Docker-internal IP,
-# which the services on the host cannot route to. See the note in
-# order-service's application.yml for the full explanation.
+# TC 的地址直接配置，而不是走 Nacos 发现：
+# Seata 服务端跑在容器里，注册上去的是它的 Docker 内网 IP，
+# 宿主机上的服务根本路由不到。完整解释见
+# order-service 的 application.yml。
 # ============================================================
 seata:
   enabled: true
@@ -77,12 +77,12 @@ maipiao:
   jwt:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
   pay:
-    # How long a payment stays open before it is closed and the hold released.
+    # 支付单保持打开多久，超时后关闭它并释放占用。
     payment-minutes: 15
     mock:
       gateway-url: ${MOCK_PAY_URL:http://127.0.0.1:9007}
-      # Must match the gateway's maipiao.mock-pay.sign-key, or every callback
-      # fails verification and looks like a provider problem.
+      # 必须和 Gateway 的 maipiao.mock-pay.sign-key 一致，
+      # 否则每个回调都验签失败，看起来像是支付渠道出了问题。
       sign-key: ${MOCK_PAY_SIGN_KEY:maipiao-mock-pay-sign-key-2026}
 
 springdoc:

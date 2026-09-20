@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-seat</artifactId>
   <name>maipiao-seat</name>
-  <description>Seat service : seat map and atomic seat locking on Redis bitmaps</description>
+  <description>座位服务：座位图、Redis Bitmap 上的原子锁座、连座分配、超时回收</description>
 
   <dependencies>
     <dependency>

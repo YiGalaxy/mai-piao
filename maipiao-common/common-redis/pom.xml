@@ -13,7 +13,7 @@
 
   <artifactId>common-redis</artifactId>
   <name>common-redis</name>
-  <description>Redis / Redisson configuration, Lua script loading, bitmap helpers</description>
+  <description>Redis / Redisson 配置、Lua 脚本加载、bitmap 辅助</description>
 
   <dependencies>
     <dependency>
@@ -26,13 +26,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
-    <!-- Lettuce connection pooling -->
+    <!-- Lettuce 连接池 -->
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-pool2</artifactId>
     </dependency>
-    <!-- Redisson: distributed locks and rate limiters that need more than
-         a raw Lua script can express. -->
+    <!-- Redisson：那些光靠裸写一段 Lua 脚本表达不了的
+         分布式锁和限流器。 -->
     <dependency>
       <groupId>org.redisson</groupId>
       <artifactId>redisson-spring-boot-starter</artifactId>

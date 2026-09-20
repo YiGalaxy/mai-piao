@@ -13,13 +13,13 @@
 
   <artifactId>maipiao-gateway</artifactId>
   <name>maipiao-gateway</name>
-  <description>API gateway : routing, JWT verification, rate limiting</description>
+  <description>网关：路由、JWT 校验、抢购短路</description>
 
   <dependencies>
-    <!-- Gateway is a WebFlux application.
-         It depends on common-core only. Pulling in common-web would drag
-         spring-boot-starter-web (Servlet stack) onto the classpath alongside
-         WebFlux, and Spring Boot refuses to start with both present. -->
+    <!-- Gateway 是 WebFlux 应用。
+         它只依赖 common-core。引入 common-web 会把 spring-boot-starter-web
+         （Servlet 栈）和 WebFlux 一起拖上 classpath，而两者同时在场时
+         Spring Boot 会拒绝启动。 -->
     <dependency>
       <groupId>com.maipiao</groupId>
       <artifactId>common-core</artifactId>
@@ -31,14 +31,12 @@
       <artifactId>spring-cloud-starter-gateway</artifactId>
     </dependency>
     <!--
-      Required for `lb://<service-name>` route URIs.
+      `lb://<service-name>` 这种路由 URI 需要它。
 
-      spring-cloud-starter-gateway does NOT bring this in (it used to come via
-      Ribbon, which was removed). Without it the route is registered but no
-      filter can turn the service name into an address, and every request to
-      that route fails with 503 Service Unavailable - with nothing in the log
-      explaining why, because from the gateway's point of view there simply
-      were no instances.
+      spring-cloud-starter-gateway 并不会把它带进来（以前是经由 Ribbon 来的，
+      而 Ribbon 已经被移除）。少了它，路由照样注册，但没有任何过滤器能把
+      服务名变成地址，所有打到这条路由上的请求都以 503 Service Unavailable
+      失败 —— 日志里还什么都没说，因为在网关看来，那儿就是根本没有实例。
     -->
     <dependency>
       <groupId>org.springframework.cloud</groupId>
@@ -54,9 +52,9 @@
       <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
     </dependency>
 
-    <!-- Reactive Redis: the token blacklist check runs inside the gateway's
-         filter chain, which is event-loop driven. A blocking Redis call there
-         would stall every other request on the same reactor thread. -->
+    <!-- 响应式 Redis：token 黑名单检查跑在网关的过滤器链里，而那条链是
+         事件循环驱动的。在那里做一次阻塞的 Redis 调用，会把同一个
+         reactor 线程上其他所有请求一起卡住。 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
@@ -67,7 +65,7 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
-    <!-- Gateway has no servlet container; this starter excludes it. -->
+    <!-- Gateway 没有 servlet 容器；这个 starter 已经把它排除了。 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
