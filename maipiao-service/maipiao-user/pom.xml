@@ -57,6 +57,21 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!--
+      Added when user administration gained a user detail screen that shows
+      order counts. Until then this service never called another one, so it had
+      no client - the one place it needs is that screen, and a degraded count
+      is better than a broken page if order-service is down.
+    -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

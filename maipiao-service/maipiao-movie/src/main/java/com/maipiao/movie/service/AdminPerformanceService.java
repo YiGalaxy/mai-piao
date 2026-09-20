@@ -170,6 +170,235 @@ public class AdminPerformanceService {
     }
 
     // ------------------------------------------------------------
+    // venues and places
+    // ------------------------------------------------------------
+
+    @Transactional(rollbackFor = Exception.class)
+    public Long createVenue(AdminDtos.VenueRequest request) {
+        Cinema venue = new Cinema();
+        applyVenue(venue, request);
+        cinemaMapper.insert(venue);
+        log.info("venue created: id={}, name={}, type={}",
+                venue.getId(), venue.getName(), venue.getVenueType());
+        return venue.getId();
+    }
+
+    /**
+     * Edits a venue.
+     *
+     * <p>Unrestricted, including the type. The type is what the picker groups
+     * by and what suggests a default price band; it is not consulted when a
+     * session's seats are generated, so changing it cannot invalidate seats
+     * that already exist. Name, address and coordinates are likewise
+     * presentational - an order snapshots them when it is placed and keeps its
+     * own copy.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateVenue(Long venueId, AdminDtos.VenueRequest request) {
+        Cinema venue = cinemaMapper.selectById(venueId);
+        if (venue == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "场馆不存在");
+        }
+        applyVenue(venue, request);
+        cinemaMapper.updateById(venue);
+        log.info("venue updated: id={}, name={}", venueId, venue.getName());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Long createPlace(AdminDtos.PlaceRequest request) {
+        if (cinemaMapper.selectById(request.venueId()) == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "所属场馆不存在");
+        }
+        Hall place = new Hall();
+        applyPlace(place, request);
+        hallMapper.insert(place);
+
+        // Say out loud what the template actually yields. A declared seat_count
+        // and a grid that disagrees is the kind of thing nobody notices until a
+        // session comes out a different size than expected, and the warning is
+        // free here.
+        warnIfCapacityDiffers(place);
+        log.info("place created: id={}, venue={}, name={}", place.getId(),
+                place.getVenueId(), place.getName());
+        return place.getId();
+    }
+
+    /**
+     * Edits a place, including its seat template.
+     *
+     * <p>Existing sessions keep the seats they were created with. Their rows
+     * were written out at the time and are the truth for those sessions - a
+     * room really can be reconfigured between events, and refusing that would
+     * be refusing something ordinary. What this changes is every session
+     * created afterwards.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updatePlace(Long placeId, AdminDtos.PlaceRequest request) {
+        Hall place = hallMapper.selectById(placeId);
+        if (place == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "场地不存在");
+        }
+        if (cinemaMapper.selectById(request.venueId()) == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "所属场馆不存在");
+        }
+        applyPlace(place, request);
+        hallMapper.updateById(place);
+        warnIfCapacityDiffers(place);
+        log.info("place updated: id={}, name={}", placeId, place.getName());
+    }
+
+    private void applyVenue(Cinema venue, AdminDtos.VenueRequest request) {
+        venue.setName(request.name());
+        venue.setVenueType(request.venueType());
+        venue.setAddress(request.address() == null ? "" : request.address());
+        venue.setDistrict(request.district() == null ? "" : request.district());
+        venue.setPhone(request.phone() == null ? "" : request.phone());
+        venue.setLongitude(request.longitude());
+        venue.setLatitude(request.latitude());
+        venue.setStatus(request.status() == null ? Cinema.STATUS_OPEN : request.status());
+    }
+
+    private void applyPlace(Hall place, AdminDtos.PlaceRequest request) {
+        place.setVenueId(request.venueId());
+        place.setName(request.name());
+        place.setPlaceType(request.placeType());
+        place.setSeatingMode(request.seatingMode());
+        place.setRowCount(request.rowCount());
+        place.setColCount(request.colCount());
+        place.setSeatTemplate(request.seatTemplate() == null ? "" : request.seatTemplate());
+        place.setSeatCount(request.seatCount() == null ? 0 : request.seatCount());
+        place.setStatus(request.status() == null ? Hall.STATUS_ACTIVE : request.status());
+    }
+
+    /**
+     * Warns when the declared capacity and the template disagree.
+     *
+     * <p>Not an error: {@code seat_count} is a label and the template is what
+     * decides. But they are two numbers describing the same room, and somebody
+     * looking at 716 beside a grid that yields 720 would rather know now than
+     * discover it in the size of a session.
+     */
+    private void warnIfCapacityDiffers(Hall place) {
+        int actual = seatFactory.layoutOf(place).size();
+        if (place.getSeatCount() != null && place.getSeatCount() > 0
+                && place.getSeatCount() != actual) {
+            log.warn("place {} declares {} seats but its template yields {}; "
+                            + "sessions will use {}",
+                    place.getId(), place.getSeatCount(), actual, actual);
+        }
+    }
+
+    // ------------------------------------------------------------
+    // editing what has already been created
+    // ------------------------------------------------------------
+
+    @Transactional(rollbackFor = Exception.class)
+    public void updateProject(Long projectId, AdminDtos.UpdateProjectRequest request) {
+        Film project = filmMapper.selectById(projectId);
+        if (project == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "项目不存在");
+        }
+
+        // Null means "leave it alone", not "set it to null". A form that sends
+        // only the field somebody changed would otherwise blank the rest.
+        if (request.title() != null) {
+            project.setTitle(request.title());
+        }
+        if (request.enTitle() != null) {
+            project.setEnTitle(request.enTitle());
+        }
+        if (request.artist() != null) {
+            project.setArtist(request.artist());
+        }
+        if (request.organizer() != null) {
+            project.setOrganizer(request.organizer());
+        }
+        if (request.director() != null) {
+            project.setDirector(request.director());
+        }
+        if (request.actors() != null) {
+            project.setActors(request.actors());
+        }
+        if (request.tags() != null) {
+            project.setTags(request.tags());
+        }
+        if (request.posterUrl() != null) {
+            project.setPosterUrl(request.posterUrl());
+        }
+        if (request.description() != null) {
+            project.setDescription(request.description());
+        }
+        if (request.duration() != null) {
+            project.setDuration(request.duration());
+        }
+        if (request.showDate() != null) {
+            project.setShowDate(request.showDate());
+        }
+        if (request.status() != null) {
+            project.setStatus(request.status());
+        }
+
+        filmMapper.updateById(project);
+        log.info("project updated: id={}, title={}", projectId, project.getTitle());
+    }
+
+    /**
+     * Edits how a session is sold, not what it is selling.
+     *
+     * <p>Date, time and price bands are absent on purpose. Moving a session
+     * moves every seat it sold; re-banding one remaps the seats people already
+     * hold. Both are cancellations with extra steps, and a cancellation owes
+     * money back - a different operation with different consequences, not
+     * something to smuggle into an edit form.
+     *
+     * <p>Taking a session off sale is allowed, because that is the honest way
+     * to stop selling without pretending the past did not happen.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateSession(Long sessionId, AdminDtos.UpdateSessionRequest request) {
+        Session session = sessionMapper.selectById(sessionId);
+        if (session == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "场次不存在");
+        }
+
+        if (request.purchaseLimit() != null) {
+            session.setPurchaseLimit(request.purchaseLimit());
+        }
+        if (request.requireRealName() != null) {
+            session.setRequireRealName(request.requireRealName());
+        }
+        if (request.saleStartTime() != null) {
+            session.setSaleStartTime(request.saleStartTime());
+        }
+
+        if (request.rushMode() != null) {
+            session.setRushMode(request.rushMode());
+            if (request.rushMode() == 0) {
+                session.setRushStartTime(null);
+            }
+        }
+        if (request.rushStartTime() != null) {
+            session.setRushStartTime(request.rushStartTime());
+        }
+        if (session.getRushMode() != null && session.getRushMode() == 1
+                && session.getRushStartTime() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "抢购场次必须指定开抢时间");
+        }
+
+        if (request.status() != null) {
+            // Off sale is not cancelled: the seats already sold stay sold and
+            // the session keeps its place in the ledger. Putting it back on
+            // sale is the same call with status 1.
+            session.setStatus(request.status());
+        }
+
+        sessionMapper.updateById(session);
+        log.info("session updated: id={}, status={}, limit={}, rush={}",
+                sessionId, session.getStatus(), session.getPurchaseLimit(),
+                session.getRushMode());
+    }
+
+    // ------------------------------------------------------------
 
     /**
      * A place holds one thing at a time.

@@ -2,10 +2,13 @@ package com.maipiao.order.feign;
 
 import com.maipiao.common.core.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Calls user-service for the coupon branch of G1.
@@ -32,4 +35,24 @@ public interface UserClient {
     @PostMapping("/coupon/release")
     R<Void> releaseCoupon(@RequestParam Long couponId,
                           @RequestParam String orderNo);
+
+    /**
+     * Looks a user up by phone, for the admin order search.
+     *
+     * <p>Orders do not store a phone number - it is a value that changes, and
+     * an order is a historical record. So a phone search resolves to an id
+     * here and the order table is queried by that.
+     */
+    @GetMapping("/user/find-by-phone")
+    R<Map<String, Object>> findByPhone(@RequestParam("phone") String phone);
+
+    /**
+     * Phone numbers for a set of user ids, in one call.
+     *
+     * <p>Batched because the alternative is one lookup per row: a page of
+     * twenty orders would be twenty round trips to render a list nobody reads
+     * closely.
+     */
+    @GetMapping("/user/phones")
+    R<Map<Long, String>> phones(@RequestParam("userIds") List<Long> userIds);
 }

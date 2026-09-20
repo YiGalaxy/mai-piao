@@ -119,6 +119,95 @@ public final class AdminDtos {
     ) {
     }
 
+    // ------------------------------------------------------------
+    // venues and places
+    // ------------------------------------------------------------
+
+    /**
+     * A venue: the building.
+     *
+     * <p>{@code venueType} is not decoration - it is what the admin screen
+     * groups by and what tells a stadium from a cinema screen when somebody is
+     * looking for somewhere to put a show on.
+     */
+    public record VenueRequest(
+            @NotBlank(message = "名称不能为空") String name,
+            @NotBlank(message = "类型不能为空") String venueType,
+            String address,
+            String district,
+            String phone,
+            BigDecimal longitude,
+            BigDecimal latitude,
+            /** 0 closed, 1 open. Nulls default to open. */
+            Integer status
+    ) {
+    }
+
+    /**
+     * A room inside a venue, and the grid of seats in it.
+     *
+     * <p>{@code seatTemplate} is the venue's own description of itself -
+     * aisles, broken seats, paired seats - and every session created here
+     * builds its rows from it. Editing it therefore changes what future
+     * sessions look like and leaves existing ones alone: their seats were
+     * written out at the time and are the truth for those sessions. A room can
+     * genuinely be reconfigured between events, and pretending otherwise would
+     * mean refusing a change that is perfectly ordinary.
+     */
+    public record PlaceRequest(
+            @NotNull(message = "所属场馆不能为空") Long venueId,
+            @NotBlank(message = "名称不能为空") String name,
+            @NotBlank(message = "场地类型不能为空") String placeType,
+            /** SEATED / STANDING / MIXED. */
+            @NotBlank(message = "座位形式不能为空") String seatingMode,
+            @NotNull(message = "行数不能为空") @Positive Integer rowCount,
+            @NotNull(message = "列数不能为空") @Positive Integer colCount,
+            /** JSON: {"aisleCols":[9,24],"brokenSeats":["1-1"],"coupleSeats":[["7-8","7-9"]]} */
+            String seatTemplate,
+            /** Declared capacity. Informational; sessions count their own rows. */
+            Integer seatCount,
+            Integer status
+    ) {
+    }
+
+    /** A project, as it can be edited after creation. */
+    public record UpdateProjectRequest(
+            String title,
+            String enTitle,
+            String artist,
+            String organizer,
+            String director,
+            String actors,
+            String tags,
+            String posterUrl,
+            String description,
+            Integer duration,
+            LocalDate showDate,
+            /** 0 upcoming, 1 on sale, 2 offline. */
+            Integer status
+    ) {
+    }
+
+    /**
+     * A session, as it can be edited after creation.
+     *
+     * <p>Date, time and the price bands are absent on purpose. Moving a
+     * session moves every seat it sold, and re-banding one remaps the seats
+     * people already hold - both are cancellations wearing a disguise, and a
+     * cancellation has to give money back. What is here changes how tickets
+     * are sold, not what was sold.
+     */
+    public record UpdateSessionRequest(
+            Integer purchaseLimit,
+            Integer requireRealName,
+            Integer rushMode,
+            LocalDateTime rushStartTime,
+            LocalDateTime saleStartTime,
+            /** 0 on sale, 1 suspended. Taking a session off sale stops sales. */
+            Integer status
+    ) {
+    }
+
     /** What creating a session produced, so the caller can check it. */
     public record SessionCreated(
             Long sessionId,
