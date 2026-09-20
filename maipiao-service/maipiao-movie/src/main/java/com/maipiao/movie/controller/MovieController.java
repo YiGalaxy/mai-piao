@@ -38,10 +38,16 @@ public class MovieController {
     private final CinemaService cinemaService;
     private final SessionService sessionService;
 
-    /** @param status 0 upcoming, 1 now showing, 2 offline; omit for all */
+    /**
+     * @param status   0 upcoming, 1 on sale, 2 closed; omit for all
+     * @param category MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL;
+     *                 omit for everything. Omit rather than pass a list, so
+     *                 the "all" case stays a single unindexed-free query.
+     */
     @GetMapping("/film/list")
-    public R<List<Film>> filmList(@RequestParam(required = false) Integer status) {
-        return R.ok(filmService.list(status));
+    public R<List<Film>> filmList(@RequestParam(required = false) Integer status,
+                                  @RequestParam(required = false) String category) {
+        return R.ok(filmService.list(status, category));
     }
 
     @GetMapping("/film/{projectId}")

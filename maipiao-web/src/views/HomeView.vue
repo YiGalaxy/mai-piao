@@ -31,10 +31,29 @@
         </el-carousel-item>
       </el-carousel>
 
+      <!--
+        Category tabs.
+
+        Films and performances share one catalogue and one card layout, so the
+        switch is a filter rather than a different page. The counts come from
+        the same query the list uses, so a tab never promises more than it
+        shows.
+      -->
+      <el-tabs v-model="category" class="category-tabs" @tab-change="onCategoryChange">
+        <el-tab-pane
+          v-for="tab in CATEGORY_TABS"
+          :key="tab.value"
+          :label="tab.label"
+          :name="tab.value"
+        />
+      </el-tabs>
+
       <!-- Now showing -->
       <div class="mp-section-head">
-        <h2>正在热映</h2>
-        <span class="mp-more" @click="router.push('/films')">全部 {{ nowShowing.length }} 部 &gt;</span>
+        <h2>{{ sectionTitle }}</h2>
+        <span class="mp-more" @click="goAll">
+          全部 {{ nowShowing.length }} 部 &gt;
+        </span>
       </div>
 
       <el-skeleton v-if="loading" :rows="6" animated />
@@ -123,6 +142,28 @@ const upcoming = ref([])
 const loading = ref(true)
 const brokenPosters = ref({})
 
+/**
+ * Which kind of event the page is showing.
+ *
+ * One catalogue, one card layout, so switching category is a filter rather
+ * than a different page. Anything the catalogue gains a row for shows up here
+ * without a code change.
+ */
+const CATEGORY_TABS = [
+  { value: 'MOVIE', label: '电影' },
+  { value: 'CONCERT', label: '演唱会' },
+  { value: 'TALK_SHOW', label: '脱口秀' },
+  { value: 'THEATER', label: '话剧' },
+  { value: 'MUSICAL', label: '音乐剧' }
+]
+
+const category = ref('MOVIE')
+
+/** Heading follows the tab: "正在热映" only makes sense for films. */
+const sectionTitle = computed(() =>
+  category.value === 'MOVIE' ? '正在热映' : '热门演出'
+)
+
 // The banner shows the best-rated few of what is actually on sale.
 const bannerFilms = computed(() =>
   [...nowShowing.value]
@@ -134,21 +175,35 @@ const bannerFilms = computed(() =>
 const STATUS_UPCOMING = 0
 const STATUS_NOW_SHOWING = 1
 
-onMounted(async () => {
+onMounted(load)
+
+async function load() {
+  loading.value = true
   try {
     // Two statuses, two calls. There is no combined endpoint because the two
-    // lists are rendered independently and a partial failure should not blank
-    // both sections.
+    // lists render independently and a partial failure should not blank both.
     const [showing, soon] = await Promise.all([
-      fetchFilms({ status: STATUS_NOW_SHOWING }),
-      fetchFilms({ status: STATUS_UPCOMING })
+      fetchFilms({ status: STATUS_NOW_SHOWING, category: category.value }),
+      fetchFilms({ status: STATUS_UPCOMING, category: category.value })
     ])
     nowShowing.value = showing || []
     upcoming.value = soon || []
+  } catch {
+    nowShowing.value = []
+    upcoming.value = []
   } finally {
     loading.value = false
   }
-})
+}
+
+/** Fired by el-tabs when the active pane changes. */
+function onCategoryChange() {
+  load()
+}
+
+function goAll() {
+  router.push({ path: '/films', query: { category: category.value } })
+}
 
 function goFilm(film) {
   router.push(`/films/${film.id}`)
@@ -180,6 +235,33 @@ function posterStyle(film) {
 <style scoped>
 .home {
   padding-top: 20px;
+}
+
+/**
+ * Category tabs sit on their own white strip rather than floating over the
+ * banner. The banner is per-category content, so the control that selects the
+ * category has to be visibly outside it.
+ */
+.category-tabs {
+  margin-top: 20px;
+  background: #fff;
+  border-radius: var(--mp-radius);
+  padding: 4px 20px 0;
+  box-shadow: var(--mp-shadow);
+}
+
+.category-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.category-tabs :deep(.el-tabs__item) {
+  font-size: 15px;
+  height: 48px;
+  line-height: 48px;
+}
+
+.category-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
 }
 
 .banner {
