@@ -44,6 +44,20 @@
       <optional>true</optional>
     </dependency>
 
+    <!--
+      Optional, and only for the pagination interceptor below.
+
+      Marked optional so this module does not drag a persistence framework into
+      services that have no database - the gateway depends on common-web's
+      neighbours, not on this, but the principle is the same one the Feign
+      dependency above follows.
+    -->
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+      <optional>true</optional>
+    </dependency>
+
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

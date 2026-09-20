@@ -6,11 +6,14 @@ import com.maipiao.common.core.result.R;
 import com.maipiao.common.core.util.SnowflakeIdGenerator;
 import com.maipiao.order.entity.Order;
 import com.maipiao.order.entity.OrderItem;
+import com.maipiao.order.dto.AdminOrderDtos;
 import com.maipiao.order.mapper.OrderItemMapper;
+import com.maipiao.order.service.OrderAdminService;
 import com.maipiao.order.service.OrderService;
 import com.maipiao.order.service.OrderStateMachine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -43,6 +48,24 @@ public class OrderInternalController {
     private final OrderService orderService;
     private final OrderStateMachine stateMachine;
     private final OrderItemMapper orderItemMapper;
+    private final OrderAdminService orderAdminService;
+
+    /**
+     * How much a user has bought.
+     *
+     * <p>Called by user-service for the user detail screen, which is the only
+     * place that needs it. Deliberately not part of the user list: a page of
+     * twenty users would become twenty of these calls for a number nobody
+     * reads while scanning.
+     */
+    @GetMapping("/stats")
+    public R<Map<String, Object>> stats(@RequestParam Long userId) {
+        AdminOrderDtos.UserOrderStats stats = orderAdminService.statsOf(userId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("orderCount", stats.orderCount());
+        body.put("paidAmount", stats.paidAmount());
+        return R.ok(body);
+    }
 
     /**
      * G2 branch: order to PAID, and the seat ledger from locked to sold.
@@ -120,7 +143,7 @@ public class OrderInternalController {
     }
 
     /** Snapshot for the payment page. */
-    @org.springframework.web.bind.annotation.GetMapping("/{orderNo}/summary")
+    @GetMapping("/{orderNo}/summary")
     public R<Order> summary(@PathVariable String orderNo) {
         return R.ok(stateMachine.require(orderNo));
     }
