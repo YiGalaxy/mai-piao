@@ -66,10 +66,15 @@ maipiao:
   jwt:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
   seat:
-    # How long a seat stays locked while the user is on the payment page.
+    # 用户在支付页停留期间，座位保持占用的时长。
     lock-minutes: 15
-    # Rebuild the bitmap from the ledger if it is missing. See SeatMapService.
+    # bitmap 缺失时用账本重建它。见 SeatMapService。
     rebuild-on-miss: true
+    # 超时回收：锁了座却没下单的那些座位，由 SeatExpiryJob 按这个节奏去找回来。
+    expiry-interval-ms: 30000
+    # 每个场次每轮的回收上限。不限量的话，一次 Redis 抖动之后攒下的几千个到期持有
+    # 会在同一轮里一个接一个跑完，期间这个场次的正常加锁全在排队。
+    expiry-batch: 200
 
 springdoc:
   api-docs:

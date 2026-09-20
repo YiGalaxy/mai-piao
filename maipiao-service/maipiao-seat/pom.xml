@@ -79,6 +79,17 @@
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
     </dependency>
+
+    <!-- SeatExpiryJob 用的。座位回收本身是幂等的（释放脚本会校验 owner），
+         锁省下的是多实例同时扫同一批持有这件事。 -->
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-spring</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-provider-redis-spring</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * seat-service：座位图，以及其背后的原子加锁。
@@ -15,10 +16,14 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  *
  * <p>所有不能存在竞争的地方，都表达成一个单独的 Lua 脚本，这样"检查"和"占用"就无法
  * 被另一个请求拆开。
+ *
+ * <p>{@code @EnableScheduling} 是给 {@code SeatExpiryJob} 用的：那是唯一一个读
+ * {@code seat:delay} 的地方，没有它，锁了座却不下单的座位就永久占死了。
  */
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableFeignClients
+@EnableScheduling
 @MapperScan("com.maipiao.seat.mapper")
 public class MaipiaoSeatApplication {
 

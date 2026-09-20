@@ -19,13 +19,15 @@
 -- KEYS[3] = seat:delay:{scheduleId}   ZSet，member = orderNo，score = 过期时刻（毫秒）
 -- KEYS[4] = seat:order:{orderNo}      本订单持有的座位索引 set
 -- KEYS[5] = sold_out:{scheduleId}     最后一个座位卖出时置上
+-- KEYS[6] = seat:active               还有未释放占用的场次集合
 --
 -- ARGV[1] = orderNo
 -- ARGV[2] = 锁过期时刻，epoch 毫秒
 -- ARGV[3] = 要分配几个座位
 -- ARGV[4] = 该场次总座位数，用于售罄判断
 -- ARGV[5] = '1' 表示要求座位相邻，'0' 表示随便拿空位
--- ARGV[6..] = 候选连座段，扁平的 (startIndex, length) 数对，按尝试顺序排列
+-- ARGV[6] = scheduleId，只是为了写进 seat:active
+-- ARGV[7..] = 候选连座段，扁平的 (startIndex, length) 数对，按尝试顺序排列
 --
 -- 成功时返回 {1, seatIndex, seatIndex, ...}，即拿到的座位；填不满请求时返回
 -- {0, longestFreeRun}。第二个值不是摆设：正是靠它调用方才能说"最多能坐 3 个人
@@ -40,20 +42,22 @@
 -- 等于邀请两端对"究竟拿了哪些座位"产生分歧。
 -- ============================================================
 
-local mapKey   = KEYS[1]
-local ownerKey = KEYS[2]
-local delayKey = KEYS[3]
-local orderKey = KEYS[4]
-local soldKey  = KEYS[5]
+local mapKey    = KEYS[1]
+local ownerKey  = KEYS[2]
+local delayKey  = KEYS[3]
+local orderKey  = KEYS[4]
+local soldKey   = KEYS[5]
+local activeKey = KEYS[6]
 
-local orderNo   = ARGV[1]
-local expireTs  = tonumber(ARGV[2])
-local want      = tonumber(ARGV[3])
-local totalSeat = tonumber(ARGV[4])
-local adjacent  = ARGV[5] == '1'
+local orderNo    = ARGV[1]
+local expireTs   = tonumber(ARGV[2])
+local want       = tonumber(ARGV[3])
+local totalSeat  = tonumber(ARGV[4])
+local adjacent   = ARGV[5] == '1'
+local scheduleId = ARGV[6]
 
-local firstArg = 6
-local runCount = math.floor((#ARGV - 5) / 2)
+local firstArg = 7
+local runCount = math.floor((#ARGV - 6) / 2)
 if want < 1 or runCount < 1 then
     return {0, 0}
 end
@@ -160,6 +164,8 @@ for k = 1, #taken do
 end
 redis.call('EXPIRE', orderKey, 7200)
 redis.call('ZADD', delayKey, expireTs, orderNo)
+-- 登记进活跃名单，让超时回收器知道要扫这个场次。理由见 seat_lock.lua。
+redis.call('SADD', activeKey, scheduleId)
 
 -- 售罄是推导出来的，不是数出来的。BITCOUNT 读的就是本脚本刚写下的那些 bit，所以
 -- 它不会像另设一个计数器那样与这些 bit 失步 —— 而且万一 bitmap 从账本重建，它

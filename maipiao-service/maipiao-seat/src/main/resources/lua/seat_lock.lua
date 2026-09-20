@@ -11,28 +11,32 @@
 -- KEYS[3] = seat:delay:{scheduleId}    ZSet，member = orderNo，score = 过期时刻（毫秒）
 -- KEYS[4] = seat:order:{orderNo}       本订单持有的座位索引 set
 -- KEYS[5] = sold_out:{scheduleId}      最后一个座位卖出时置上
+-- KEYS[6] = seat:active                还有未释放占用的场次集合
 --
 -- ARGV[1] = orderNo
 -- ARGV[2] = 锁过期时刻，epoch 毫秒
 -- ARGV[3] = 该场次总座位数，用于售罄判断
--- ARGV[4..] = 要加锁的座位索引
+-- ARGV[4] = scheduleId，只是为了写进 seat:active
+-- ARGV[5..] = 要加锁的座位索引
 --
 -- 成功返回 {1, lockedCount}；只要有一个请求的座位已被占，就返回
 -- {0, conflictingSeatIndex}。给出冲突索引是为了让客户端能精确高亮是哪一个座位没了，
 -- 而不是笼统地回一句"请重试"。
 -- ============================================================
 
-local mapKey   = KEYS[1]
-local ownerKey = KEYS[2]
-local delayKey = KEYS[3]
-local orderKey = KEYS[4]
-local soldKey  = KEYS[5]
+local mapKey    = KEYS[1]
+local ownerKey  = KEYS[2]
+local delayKey  = KEYS[3]
+local orderKey  = KEYS[4]
+local soldKey   = KEYS[5]
+local activeKey = KEYS[6]
 
-local orderNo   = ARGV[1]
-local expireTs  = tonumber(ARGV[2])
-local totalSeat = tonumber(ARGV[3])
+local orderNo    = ARGV[1]
+local expireTs   = tonumber(ARGV[2])
+local totalSeat  = tonumber(ARGV[3])
+local scheduleId = ARGV[4]
 
-local firstSeat = 4
+local firstSeat = 5
 local lastSeat  = #ARGV
 local wanted    = lastSeat - firstSeat + 1
 
@@ -66,6 +70,13 @@ end
 -- 永远锁着。真正的超时回收路径是下面的 delay ZSet；这里只是给损失设个上界。
 redis.call('EXPIRE', orderKey, 7200)
 redis.call('ZADD', delayKey, expireTs, orderNo)
+
+-- 登记进活跃名单，好让超时回收器知道要来扫这个场次。
+--
+-- 写在这里而不是回到 Java 里补一刀，是因为只有脚本内部这两条命令之间插不进任何东西。
+-- 分开写就会留下一个窗口：ZADD 成功了、SADD 还没跑，进程这时挂掉，这个场次就
+-- 带着一个永远不会被回收的占用，从名单上消失了。
+redis.call('SADD', activeKey, scheduleId)
 
 -- 售罄状态由本脚本刚写下的那些 bit 推导得出，所以不会像另设一个计数器那样与它们
 -- 失步，而且 bitmap 从账本重建时它会自愈。座位回退时 seat_release.lua 会再把它

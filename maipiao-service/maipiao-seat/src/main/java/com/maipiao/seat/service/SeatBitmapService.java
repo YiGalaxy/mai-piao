@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 座位 bitmap，同时是唯一会写它的地方。
@@ -41,6 +42,8 @@ public class SeatBitmapService {
             LuaScriptLoader.ofLong("lua/seat_verify.lua");
     private static final RedisScript<List> ALLOCATE_SCRIPT =
             LuaScriptLoader.ofList("lua/seat_allocate.lua");
+    private static final RedisScript<List> SWEEP_SCRIPT =
+            LuaScriptLoader.ofList("lua/seat_sweep.lua");
 
     private final StringRedisTemplate redis;
 
@@ -77,12 +80,14 @@ public class SeatBitmapService {
                 CommonConstants.SEAT_OWNER_KEY + sessionId,
                 CommonConstants.SEAT_DELAY_KEY + sessionId,
                 CommonConstants.SEAT_ORDER_KEY + orderNo,
-                CommonConstants.SOLD_OUT_KEY + sessionId);
+                CommonConstants.SOLD_OUT_KEY + sessionId,
+                CommonConstants.SEAT_ACTIVE_KEY);
 
-        List<String> args = new ArrayList<>(seatIndexes.size() + 3);
+        List<String> args = new ArrayList<>(seatIndexes.size() + 4);
         args.add(orderNo);
         args.add(String.valueOf(System.currentTimeMillis() + ttl.toMillis()));
         args.add(String.valueOf(totalSeat));
+        args.add(String.valueOf(sessionId));
         for (Integer index : seatIndexes) {
             args.add(String.valueOf(index));
         }
@@ -148,14 +153,16 @@ public class SeatBitmapService {
                 CommonConstants.SEAT_OWNER_KEY + sessionId,
                 CommonConstants.SEAT_DELAY_KEY + sessionId,
                 CommonConstants.SEAT_ORDER_KEY + orderNo,
-                CommonConstants.SOLD_OUT_KEY + sessionId);
+                CommonConstants.SOLD_OUT_KEY + sessionId,
+                CommonConstants.SEAT_ACTIVE_KEY);
 
-        List<String> args = new ArrayList<>(5 + runs.size() * 2);
+        List<String> args = new ArrayList<>(6 + runs.size() * 2);
         args.add(orderNo);
         args.add(String.valueOf(System.currentTimeMillis() + ttl.toMillis()));
         args.add(String.valueOf(count));
         args.add(String.valueOf(totalSeat));
         args.add(adjacent ? "1" : "0");
+        args.add(String.valueOf(sessionId));
         for (SeatRuns.Segment run : runs) {
             args.add(String.valueOf(run.startIndex()));
             args.add(String.valueOf(run.length()));
@@ -277,6 +284,57 @@ public class SeatBitmapService {
 
         Long confirmed = execute(CONFIRM_SCRIPT, keys, List.of(orderNo));
         return confirmed == null ? 0 : confirmed.intValue();
+    }
+
+    // ------------------------------------------------------------
+    // 超时回收
+    // ------------------------------------------------------------
+
+    /** 还有未释放占用的场次。 */
+    public Set<String> activeSessions() {
+        Set<String> members = redis.opsForSet().members(CommonConstants.SEAT_ACTIVE_KEY);
+        return members == null ? Set.of() : members;
+    }
+
+    /**
+     * 把一个场次从活跃名单里摘掉。
+     *
+     * <p>只有回收器在遇到一个读不懂的成员时用它 —— 正常情况下场次是自己退场的，
+     * 见 {@code seat_sweep.lua}。
+     *
+     * <p>注意 {@link #activeSessions()} 返回的是 Redis 那一份的拷贝，改它不等于改 Redis。
+     * 想删就得真的发一条 SREM，这个方法是干那个的。
+     */
+    public void forgetActiveSession(String sessionId) {
+        redis.opsForSet().remove(CommonConstants.SEAT_ACTIVE_KEY, sessionId);
+    }
+
+    /**
+     * 某个场次里已经到期的持有。
+     *
+     * <p>只查不释放。判定和清理是两件事，而清理那条路径上有 owner 校验、要和取消、
+     * 退款、G1 回滚共用 —— 它只能有一个实现，就是 {@code seat_release.lua}。
+     *
+     * <p>返回空列表时，脚本可能顺手把这个场次从活跃名单里摘掉了。
+     */
+    @SuppressWarnings("unchecked")
+    public List<String> findExpiredHolds(Long sessionId, int limit) {
+        List<String> keys = List.of(
+                CommonConstants.SEAT_DELAY_KEY + sessionId,
+                CommonConstants.SEAT_ACTIVE_KEY);
+
+        List<?> raw = execute(SWEEP_SCRIPT, keys, List.of(
+                String.valueOf(sessionId),
+                String.valueOf(System.currentTimeMillis()),
+                String.valueOf(limit)));
+
+        List<String> expired = new ArrayList<>();
+        if (raw != null) {
+            for (Object item : raw) {
+                expired.add(String.valueOf(item));
+            }
+        }
+        return expired;
     }
 
     // ------------------------------------------------------------
