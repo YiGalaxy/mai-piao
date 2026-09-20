@@ -59,6 +59,20 @@ public class DemoDataController {
         return R.ok(demoDataService.generate(days, soldRatio, rush));
     }
 
+    /**
+     * Builds the showcase: a 2000-seat stadium, four price bands, two nights -
+     * one sold through a queue, one sold straight through.
+     *
+     * <p>Must run <b>after</b> {@link #generateSchedule}, which clears every
+     * session there is. Re-running this one is safe; it only clears its own
+     * project's sessions.
+     */
+    @PostMapping("/generate-showcase")
+    public R<DemoDataService.GenerateResult> generateShowcase() {
+        requireDemoEnabled();
+        return R.ok(demoDataService.generateShowcase());
+    }
+
     @PostMapping("/clear-schedule")
     public R<Void> clearSchedule() {
         requireDemoEnabled();

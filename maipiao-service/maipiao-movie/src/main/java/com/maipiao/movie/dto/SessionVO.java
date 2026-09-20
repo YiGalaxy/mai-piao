@@ -48,6 +48,9 @@ public class SessionVO {
     private Integer rushMode;
     private LocalDateTime rushStartTime;
 
+    /** 0 = the buyer picks a seat, 1 = the system assigns from a price band. */
+    private Integer seatMode;
+
     /** Derived, not stored: total - locked - sold, floored at zero. */
     private Integer remainingSeat;
 }

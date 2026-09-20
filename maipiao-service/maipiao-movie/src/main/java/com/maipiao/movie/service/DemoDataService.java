@@ -71,6 +71,42 @@ public class DemoDataService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    // ------------------------------------------------------------
+    // showcase: one stadium, one artist, 2000 seats
+    // ------------------------------------------------------------
+
+    private static final long SHOWCASE_PLACE_ID = 3199L;
+    private static final long SHOWCASE_PROJECT_ID = 1199L;
+    private static final LocalTime SHOWCASE_SLOT = LocalTime.of(19, 30);
+    private static final int SHOWCASE_NIGHTS = 2;
+
+    /**
+     * Price bands stated outright rather than derived from the hall.
+     *
+     * <p>{@link #buildTiers} prices off {@code place_type}, which is right for
+     * the generated dataset - one rule, 1272 sessions, all consistent. It is
+     * wrong here: a stadium's base of 380 would put the best seat at 684, and
+     * the point of the showcase is that the numbers look like a concert
+     * somebody could actually buy a ticket to. Four bands across 40 rows is
+     * also what a stadium show sells, where a smaller hall sells three.
+     */
+    private static final List<PriceTier> SHOWCASE_TIERS = List.of(
+            showcaseTier("内场VIP", 1980, 1, 8, "#e91e63"),
+            showcaseTier("内场", 1280, 9, 20, "#ff6700"),
+            showcaseTier("看台A", 880, 21, 32, "#2196f3"),
+            showcaseTier("看台B", 580, 33, 40, "#4caf50"));
+
+    private static PriceTier showcaseTier(String name, float price, int rowStart,
+                                          int rowEnd, String color) {
+        PriceTier tier = new PriceTier();
+        tier.setName(name);
+        tier.setPrice(BigDecimal.valueOf(Math.round(price)).setScale(2, RoundingMode.HALF_UP));
+        tier.setRowStart(rowStart);
+        tier.setRowEnd(rowEnd);
+        tier.setColor(color);
+        return tier;
+    }
+
     /**
      * One seat's place in the hall.
      *
@@ -99,6 +135,154 @@ public class DemoDataService {
         sessionSeatMapper.delete(Wrappers.<SessionSeat>lambdaQuery());
         priceTierMapper.delete(Wrappers.<PriceTier>lambdaQuery());
         log.info("demo sessions cleared");
+    }
+
+    /**
+     * The showcase: one stadium, one artist, 2000 seats, two screenings.
+     *
+     * <p>Separate from {@link #generate} rather than a flag on it, because the
+     * two want opposite things. The general generator clears the whole
+     * dataset first and derives everything - price bands, seat counts, sale
+     * windows - from the venue's own configuration, which is what makes 1272
+     * sessions cheap to produce and consistent with each other. The showcase
+     * is one session that has to be exactly 2000 seats at prices somebody
+     * would recognise, so it states its numbers instead of deriving them.
+     *
+     * <p>Only its own project's sessions are cleared, so it can be re-run
+     * without disturbing the rest - but it must run <b>after</b>
+     * {@code generate-schedule}, which clears everything. See
+     * {@code docs/sql/11_seed_showcase.sql}.
+     */
+    public GenerateResult generateShowcase() {
+        long started = System.currentTimeMillis();
+
+        Hall place = hallMapper.selectById(SHOWCASE_PLACE_ID);
+        Film project = filmMapper.selectById(SHOWCASE_PROJECT_ID);
+        if (place == null || project == null) {
+            throw new IllegalStateException(
+                    "showcase venue or project is missing; run docs/sql/11_seed_showcase.sql first");
+        }
+
+        // Idempotent for this project alone.
+        List<Session> existing = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
+                .eq(Session::getProjectId, SHOWCASE_PROJECT_ID));
+        for (Session stale : existing) {
+            sessionSeatMapper.delete(Wrappers.<SessionSeat>lambdaQuery()
+                    .eq(SessionSeat::getSessionId, stale.getId()));
+            priceTierMapper.delete(Wrappers.<PriceTier>lambdaQuery()
+                    .eq(PriceTier::getSessionId, stale.getId()));
+            sessionMapper.deleteById(stale.getId());
+        }
+
+        List<SeatPosition> layout = layoutOf(place);
+        int sessionCount = 0;
+        int seatCount = 0;
+        int tierCount = 0;
+
+        LocalDate firstNight = project.getShowDate() == null
+                ? LocalDate.now().plusDays(56) : project.getShowDate();
+        LocalDateTime now = LocalDateTime.now();
+
+        // Two nights of the same show, differing only in how the tickets are
+        // sold. Having both is what makes the difference demonstrable: the same
+        // seats, the same bands, one with a queue and one without. A concert
+        // plays one show a night, so they are on separate dates rather than
+        // separate times.
+        for (int i = 0; i < SHOWCASE_NIGHTS; i++) {
+            LocalDate showDate = firstNight.plusDays(i);
+            boolean rush = i == 0;
+
+            Session session = buildShowcaseSession(project, place, showDate,
+                    LocalDateTime.of(showDate, SHOWCASE_SLOT), layout.size(), rush, now);
+            sessionMapper.insert(session);
+
+            for (PriceTier tier : showcaseTiers()) {
+                tier.setSessionId(session.getId());
+                priceTierMapper.insert(tier);
+            }
+            tierCount += SHOWCASE_TIERS.size();
+
+            // soldRatio 0: the whole point of the showcase is that all 2000 are
+            // on sale. Pre-selling a quarter of them, as the general generator
+            // does to make seat maps look lived-in, would undercut it.
+            List<SessionSeat> seats = buildSeats(session.getId(), place, sessionTiers(session),
+                    layout, 0);
+            batchInsert(seats);
+
+            sessionCount++;
+            seatCount += seats.size();
+            log.info("showcase session: id={}, rush={}, seats={}, starts={}",
+                    session.getId(), rush, seats.size(), session.getStartTime());
+        }
+
+        return new GenerateResult(sessionCount, seatCount, tierCount,
+                System.currentTimeMillis() - started);
+    }
+
+    /**
+     * The tiers actually written for a screening.
+     *
+     * <p>{@link #showcaseTiers} builds them fresh each call so the two
+     * screenings do not share row objects - the tier ids are assigned by the
+     * insert, and reusing them would make the second screening's seats point
+     * at the first screening's bands.
+     */
+    private List<PriceTier> sessionTiers(Session session) {
+        return priceTierMapper.selectList(Wrappers.<PriceTier>lambdaQuery()
+                .eq(PriceTier::getSessionId, session.getId())
+                .orderByAsc(PriceTier::getRowStart));
+    }
+
+    private Session buildShowcaseSession(Film project, Hall place, LocalDate showDate,
+                                         LocalDateTime startTime, int totalSeat,
+                                         boolean rush, LocalDateTime now) {
+        Session session = new Session();
+        session.setProjectId(project.getId());
+        session.setVenueId(place.getVenueId());
+        session.setPlaceId(place.getId());
+        session.setShowDate(showDate);
+        session.setStartTime(startTime);
+        session.setEndTime(startTime.plusMinutes(
+                project.getDuration() == null ? 180 : project.getDuration()));
+
+        session.setPrice(SHOWCASE_TIERS.get(SHOWCASE_TIERS.size() - 1).getPrice());
+        session.setTotalSeat(totalSeat);
+        session.setLockedSeat(0);
+        session.setSoldSeat(0);
+        session.setStatus(Session.STATUS_ON_SALE);
+
+        // 1 = the system assigns, which is the whole point of the showcase: a
+        // stadium concert does not let 2000 people pick seats out of a map.
+        session.setSeatMode(1);
+        session.setSaleStartTime(now.minusMinutes(1));
+        session.setPurchaseLimit(rush ? 2 : 4);
+        session.setRequireRealName(1);
+
+        if (rush) {
+            // Not open yet, so the queue is observable rather than already
+            // over: the demo is the waiting room, and it needs a moment where
+            // people are in it.
+            session.setRushMode(1);
+            session.setRushStartTime(now.plusMinutes(5));
+        } else {
+            session.setRushMode(0);
+        }
+        return session;
+    }
+
+    /** Four bands, priced as a stadium concert is rather than derived from the hall. */
+    private List<PriceTier> showcaseTiers() {
+        List<PriceTier> tiers = new ArrayList<>(SHOWCASE_TIERS.size());
+        for (PriceTier template : SHOWCASE_TIERS) {
+            PriceTier tier = new PriceTier();
+            tier.setName(template.getName());
+            tier.setPrice(template.getPrice());
+            tier.setRowStart(template.getRowStart());
+            tier.setRowEnd(template.getRowEnd());
+            tier.setColor(template.getColor());
+            tiers.add(tier);
+        }
+        return tiers;
     }
 
     public GenerateResult generate(int days, double soldRatio, boolean rushSchedule) {
