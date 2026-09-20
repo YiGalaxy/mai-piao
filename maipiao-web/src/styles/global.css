@@ -1,32 +1,48 @@
 /**
  * Global styles.
  *
- * Desktop layout: a fixed 1200px column centred on the page, a dark header
- * bar, and light grey page background so white cards read as raised. The
- * proportions are the ones ticket and e-commerce sites converge on, and they
- * are what the header / grid / footer components assume.
+ * Design language follows what ticketing sites in this category converge on:
+ *
+ *  - A red-and-white base with one saturated brand colour, used sparingly
+ *    enough that it always means "this is actionable".
+ *  - Full-round buttons with a soft diffuse shadow, not flat rectangles.
+ *  - Selected nav items marked by coloured text plus a short coloured rule
+ *    underneath, rather than a filled block.
+ *  - Cards that lift on hover.
+ *  - A dark band at the top of a film detail page, tinted from the film's own
+ *    artwork so each page reads as belonging to that film.
  */
 
 :root {
-  /* Ticket-stub orange. Used for prices, ratings and primary actions only -
-     a colour that appears everywhere stops meaning "act here". */
-  --mp-primary: #ff5f2e;
-  --mp-primary-dark: #e54d1f;
+  /* The brand orange. Everything actionable is this colour; nothing else is,
+     so the eye can find the clickable things without reading. */
+  --mp-primary: #ff6700;
+  --mp-primary-dark: #e05a00;
+  --mp-primary-soft: #fff3ea;
 
   --mp-text: #333;
   --mp-text-strong: #111;
   --mp-text-muted: #999;
+  --mp-text-inverse: #fff;
 
+  /* Red-and-white base: white surfaces, warm off-white page background. */
   --mp-bg: #f5f5f5;
-  --mp-header-bg: #2b2b2b;
-  --mp-border: #e5e5e5;
+  --mp-surface: #fff;
+  --mp-border: #e8e8e8;
+  --mp-divider: #f0f0f0;
 
   --mp-container: 1200px;
   --mp-radius: 8px;
-  --mp-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --mp-radius-pill: 999px;
 
-  /* Element Plus theming is done through its own variables. */
-  --el-color-primary: #ff5f2e;
+  /* Two shadows: one for resting cards, one for lifted ones. Reusing a single
+     value for both is what makes a hover state feel like a flicker. */
+  --mp-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+  --mp-shadow-lift: 0 8px 20px rgba(0, 0, 0, 0.14);
+  --mp-shadow-button: 0 4px 12px rgba(255, 103, 0, 0.32);
+
+  --el-color-primary: #ff6700;
+  --el-border-radius-base: 6px;
 }
 
 * {
@@ -61,7 +77,7 @@ a {
   text-decoration: none;
 }
 
-/* ---- layout helpers ---- */
+/* ---- layout ---- */
 
 .mp-container {
   width: var(--mp-container);
@@ -69,18 +85,16 @@ a {
   padding: 0 16px;
 }
 
-/* Pages sit between the fixed header and the footer. */
 .mp-page {
   flex: 1;
   padding-bottom: 48px;
 }
 
-/* Panel heading: "正在热映" on the left, "全部 >" on the right. */
 .mp-section-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 28px 0 16px;
+  padding: 30px 0 16px;
 }
 
 .mp-section-head h2 {
@@ -88,12 +102,29 @@ a {
   font-size: 22px;
   font-weight: 600;
   color: var(--mp-text-strong);
+  position: relative;
+  padding-left: 12px;
+}
+
+/* The brand-coloured rule beside a section title: the same visual device as
+   the nav underline, reused so headings and nav read as one system. */
+.mp-section-head h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--mp-primary);
 }
 
 .mp-section-head .mp-more {
   font-size: 13px;
   color: var(--mp-text-muted);
   cursor: pointer;
+  transition: color 0.2s;
 }
 
 .mp-section-head .mp-more:hover {
@@ -101,13 +132,40 @@ a {
 }
 
 .mp-card {
-  background: #fff;
+  background: var(--mp-surface);
   border-radius: var(--mp-radius);
   box-shadow: var(--mp-shadow);
 }
 
 .mp-muted {
   color: var(--mp-text-muted);
+}
+
+/* ---- buttons ----
+   Element Plus buttons are rectangles by default. The category's buttons are
+   pills with a coloured glow, set here once rather than per component. */
+
+.el-button {
+  border-radius: var(--mp-radius-pill);
+  font-weight: 500;
+}
+
+.el-button--primary {
+  box-shadow: var(--mp-shadow-button);
+  border: none;
+}
+
+.el-button--primary:hover {
+  box-shadow: 0 6px 16px rgba(255, 103, 0, 0.42);
+}
+
+/* Disabled reads as "the same button, unavailable" rather than as a grey
+   button - which is why it keeps the brand colour at reduced opacity. */
+.el-button--primary.is-disabled,
+.el-button--primary.is-disabled:hover {
+  background: var(--mp-primary);
+  opacity: 0.45;
+  box-shadow: none;
 }
 
 /* ---- film card ---- */
@@ -119,16 +177,19 @@ a {
 }
 
 .mp-film-card {
-  background: #fff;
+  background: var(--mp-surface);
   border-radius: var(--mp-radius);
   overflow: hidden;
   cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.2s;
+  box-shadow: var(--mp-shadow);
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
 }
 
 .mp-film-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
+  transform: translateY(-5px);
+  box-shadow: var(--mp-shadow-lift);
 }
 
 .mp-poster {
@@ -155,14 +216,13 @@ a {
   letter-spacing: 4px;
 }
 
-/* Score badge sits over the poster's bottom-left, as it does on ticket sites. */
 .mp-score {
   position: absolute;
   left: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.68);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   padding: 3px 8px;
   border-top-right-radius: 6px;
 }

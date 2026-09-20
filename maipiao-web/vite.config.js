@@ -9,6 +9,16 @@ export default defineConfig({
     // (大宗货物交易平台) already serves its frontend on 5173.
     port: 5273,
 
+    // Listen on every interface, not just 127.0.0.1.
+    //
+    // Vite's default binds to the IPv4 loopback only. On Windows 11 a browser
+    // resolving `localhost` tries ::1 first, and with nothing listening there
+    // the page simply fails to load - while curl and the dev server's own
+    // output both look perfectly healthy. Binding all interfaces accepts both
+    // families and also makes the app reachable from a phone on the same
+    // network, which is useful for checking the layout.
+    host: true,
+
     // Fail loudly instead of quietly moving to the next free port.
     //
     // Vite's default behaviour is to pick another port and carry on, which
