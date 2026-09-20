@@ -2,11 +2,10 @@
   <div class="mp-container queue-page">
     <div class="mp-card panel">
       <!--
-        The queue screen exists because the alternative is worse. Two thousand
-        tickets and a hundred thousand people clicking means 99.8% of those
-        requests fail, and the failure they get from a seat map is "sold out"
-        arriving as a broken page. Waiting in a line is the same outcome
-        delivered honestly, and it costs the backend almost nothing.
+        做这个排队页，是因为不做的结果更糟。两千张票、十万人同时点，
+        意味着其中 99.8% 的请求注定失败，而他们从座位图上得到的失败，
+        是「已售罄」以一个坏掉的页面的形式砸到脸上。排队等待是同一个结果，
+        只是诚实地交付，而且几乎不花后端什么成本。
       -->
       <template v-if="status === 'WAITING'">
         <h2>正在排队</h2>
@@ -79,15 +78,14 @@ let countdownTimer = null
 const remainingToStart = ref(0)
 
 /**
- * Polling, not a socket.
+ * 用轮询，不用 WebSocket。
  *
- * The update is one number that changes a few times while the user waits, and
- * the wait is measured in seconds. A subscription would be more machinery than
- * the problem needs, and it would have to survive reconnects on exactly the
- * page where thousands of people are connecting at once.
+ * 要更新的只是一个数字，用户在等待期间它也就变几次，而等待是以秒计的。
+ * 上订阅比这个问题需要的机械多得多，而且偏偏是在几千人同时连接的页面上，
+ * 还得保证断线重连能扛住。
  *
- * Two seconds is deliberately unhurried: the server is holding a place in line
- * for this user, so the client is not racing anyone by polling faster.
+ * 两秒是刻意放慢的：服务端已经替这个用户占着队里的位置了，
+ * 客户端轮询再快也抢不过谁。
  */
 const POLL_MS = 2000
 
@@ -116,10 +114,9 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   if (countdownTimer) clearInterval(countdownTimer)
-  // Best-effort. Not leaving costs a place in the admitted set until the
-  // token expires, which is five minutes - it does not block anyone else,
-  // because admission is sized against the remaining stock rather than the
-  // line's length.
+  // 尽力而为。不退出的话，会在放行集合里占一个名额直到 token 过期，
+  // 也就是五分钟 —— 但这不挡别人的路，因为放行数量是按剩余库存算的，
+  // 不是按队列长度算的。
   if (status.value === 'WAITING') {
     leaveQueue(scheduleId).catch(() => {})
   }
@@ -139,15 +136,13 @@ async function poll() {
     const position = await fetchQueuePosition(scheduleId)
     apply(position)
     if (position.status === 'PASSED') {
-      // Stop asking once admitted: the answer cannot change, and the token is
-      // already in hand.
+      // 放行之后就不要再问了：答案不会再变，token 也已经拿到手了。
       clearInterval(pollTimer)
       pollTimer = null
     }
   } catch {
-    // A single failed poll is not worth reporting - the next one is two
-    // seconds away and the server still holds the place. Surfacing every blip
-    // would make a working queue look broken.
+    // 一次轮询失败不值得报出来 —— 两秒后就是下一次，服务端的位置也还在。
+    // 每一点抖动都弹提示，只会让一个正常工作的队列看起来像坏了。
   }
 }
 
@@ -159,8 +154,8 @@ function apply(position) {
   rushStartTime.value = position.rushStartTime || null
 
   if (position.token) {
-    // The token is the proof of admission and it is short-lived, so it is
-    // kept where the purchase page can find it and nowhere else.
+    // token 是放行的凭证，而且有效期很短，所以只放在购买页能找到它的地方，
+    // 别处都不放。
     sessionStorage.setItem('maipiao_queue_token', position.token)
   }
 
@@ -181,8 +176,8 @@ function startCountdown() {
     if (remainingToStart.value <= 0) {
       clearInterval(countdownTimer)
       countdownTimer = null
-      // The line opens on the server's clock, not this one; asking again is
-      // how this client finds out that it has.
+      // 队列是按服务端的时钟开的，不是按本机的；再问一次，
+      // 就是这个客户端得知已经开抢的方式。
       join()
     }
   }
@@ -218,7 +213,7 @@ function goBuy() {
   color: var(--mp-text-muted);
 }
 
-/* The one number the user is here for, so it gets the space. */
+/* 用户来这一页就是为了这个数字，所以给它留足地方。 */
 .rank {
   font-size: 56px;
   font-weight: 700;

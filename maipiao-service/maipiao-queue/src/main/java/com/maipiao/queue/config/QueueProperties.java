@@ -6,11 +6,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * Tunables for admission.
+ * 准入相关的可调参数。
  *
- * <p>The defaults come from {@link CommonConstants} rather than being repeated
- * here, so the numbers the design talks about and the numbers the service runs
- * with cannot drift apart.
+ * <p>默认值取自 {@link CommonConstants} 而不是在这里再写一遍，这样设计里讨论的那些数字
+ * 和服务实际跑的那个数字不会各走各的。
  */
 @Data
 @Component
@@ -18,28 +17,26 @@ import org.springframework.stereotype.Component;
 public class QueueProperties {
 
     /**
-     * How many people to admit per remaining seat.
+     * 每剩余一个座位放多少人进来。
      *
-     * <p>Not 1.0, because not everyone admitted goes on to order - some
-     * hesitate, some close the tab, some find the seats they wanted gone and
-     * leave. Admitting exactly as many as there are seats leaves the last few
-     * unsold. Not 10.0 either, which would mean thousands of people waiting in
-     * a line for a ticket that was never there.
+     * <p>不是 1.0，因为被放进来的人并不是个个都会下单 —— 有人犹豫，有人关掉标签页，
+     * 有人发现想要的座位没了就走了。严格按座位数放人，最后几个座位就卖不掉。也不是
+     * 10.0，那意味着几千人排着队，等的是一张从来就不存在的票。
      */
     private double admitFactor = CommonConstants.QUEUE_ADMIT_FACTOR;
 
-    /** Lifetime of an admission token. Past it, the place is given up. */
+    /** 准入令牌的有效期。超过之后，这个位置就算放弃了。 */
     private int tokenSeconds = CommonConstants.QUEUE_TOKEN_SECONDS;
 
-    /** How often the dispatcher wakes. */
+    /** 调度器多久醒一次。 */
     private long dispatchIntervalMs = CommonConstants.QUEUE_DISPATCH_INTERVAL_MS;
 
-    /** Ceiling on one round's admissions, so a large sale does not arrive all at once. */
+    /** 单轮准入的上限，免得一场大销售一瞬间全涌进来。 */
     private int maxBatch = CommonConstants.QUEUE_ADMIT_MAX_BATCH;
 
-    /** How long a line survives with nobody in it before the registry entry is dropped. */
+    /** 一条队列在空无一人的情况下还能存活多久，超时就把注册表里的条目丢掉。 */
     private int scheduleTtlSeconds = 6 * 3600;
 
-    /** How long fetched session metadata is trusted. */
+    /** 拉取到的场次元数据可以被信任多久。 */
     private int sessionCacheSeconds = 60;
 }

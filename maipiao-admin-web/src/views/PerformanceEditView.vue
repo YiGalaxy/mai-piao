@@ -113,7 +113,7 @@ const form = reactive({
 
 const saving = ref(false)
 
-/** A film credits a director; everything else credits an artist. */
+/** 电影署名导演；其他品类署名艺人。 */
 const isFilm = computed(() => form.category === 'MOVIE')
 
 async function onSubmit() {
@@ -125,11 +125,11 @@ async function onSubmit() {
   try {
     const projectId = await createProject({ ...form, showDate: form.showDate || null })
     ElMessage.success('已创建，接下来排期')
-    // Straight to the dates: a project with no sessions sells nothing, so it
-    // is not a finished piece of work.
+    // 直接跳到排期页：没有场次的剧目一张票也卖不出去，
+    // 所以它算不上是一件做完的活儿。
     router.replace(`/performances/${projectId}`)
   } catch {
-    // surfaced
+    // 已由 request.js 提示
   } finally {
     saving.value = false
   }

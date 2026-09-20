@@ -10,12 +10,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_order.t_order_order}.
+ * 映射 {@code maipiao_order.t_order_order}。
  *
- * <p>The film, cinema and hall names are denormalised snapshots. An order list
- * that called movie-service for each row would issue N remote calls to render
- * a page, and the names are what they were at purchase time anyway - a film
- * being renamed later must not rewrite someone's order history.
+ * <p>影片名、影院名和影厅名是反范式化的快照。一个每行都去调 movie-service 的订单列表，
+ * 渲染一页就要发出 N 次远程调用；而且这些名字本来就是购买当时的名字 ——
+ * 影片之后改了名，不能反过来改写某个人的订单历史。
  */
 @Data
 @TableName("t_order_order")
@@ -24,7 +23,7 @@ public class Order {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /** Business number; also the seat lock token, so the two cannot drift apart. */
+    /** 业务单号；同时也是座位锁凭证，所以两者不可能对不上。 */
     private String orderNo;
 
     private Long userId;
@@ -34,13 +33,11 @@ public class Order {
     private String projectTitle;
 
     /**
-     * What kind of thing was bought: MOVIE, CONCERT, TALK_SHOW, THEATER, MUSICAL.
+     * 买的是哪一类东西：MOVIE、CONCERT、TALK_SHOW、THEATER、MUSICAL。
      *
-     * <p>Snapshotted like the title and the venue rather than looked up through
-     * project_id, because this is a historical record. A project recategorised
-     * or deleted later must not rewrite what somebody already bought - and the
-     * order page needs the answer to say "collect from the venue" rather than
-     * "collect from the cinema".
+     * <p>和标题、场馆一样做成快照，而不是通过 project_id 去查，因为这是一份历史记录。
+     * 一个项目之后被改了分类或被删掉，不能反过来改写别人已经买下的东西 ——
+     * 而且订单页需要这个答案来说「到场馆取票」，而不是「到影院取票」。
      */
     private String category;
 
@@ -59,10 +56,10 @@ public class Order {
 
     private Long couponId;
 
-    /** See {@link OrderStatus}. */
+    /** 见 {@link OrderStatus}。 */
     private Integer status;
 
-    /** Payment deadline. After this the order is cancelled and the seats freed. */
+    /** 支付截止时间。过了这个点订单会被取消、座位被释放。 */
     private LocalDateTime lockExpireTime;
 
     private LocalDateTime payTime;

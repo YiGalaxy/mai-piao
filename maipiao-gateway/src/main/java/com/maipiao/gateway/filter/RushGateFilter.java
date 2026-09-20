@@ -28,28 +28,23 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Turns away the requests that were never going to succeed.
+ * 把那些本来就不可能成功的请求挡回去。
  *
- * <p>Two thousand tickets and a hundred thousand buyers means 99.8% of the
- * traffic is going to fail. Without this they fail slowly and expensively -
- * each one a Redis call, and behind the Redis calls a seat service doing work
- * for an answer it already knew. With it they fail here, in a map lookup.
+ * <p>两千张票、十万人抢，意味着 99.8% 的流量注定要失败。没有这一层，它们会失败得
+ * 又慢又贵 —— 每一个都是一次 Redis 调用，而 Redis 调用背后是 seat 服务在为一个
+ * 它早就知道的答案干活。有了这一层，它们在这里就失败了，一次 map 查找的事。
  *
- * <p>That is the whole optimisation: the requests that cannot succeed stop
- * being requests. The remaining traffic is small enough for the services
- * behind to handle honestly.
+ * <p>优化就这么多：不可能成功的请求不再成为请求。剩下的流量小到后面的服务能实打实
+ * 地处理。
  *
- * <p>Runs after {@link JwtAuthFilter}, for two reasons. It needs the resolved
- * {@code X-User-Id} to check an admission token, and that header only exists
- * once authentication has run. And it should not be doing work for requests
- * that are about to be rejected for having no token at all.
+ * <p>在 {@link JwtAuthFilter} 之后执行，有两个原因。校验准入 token 需要已经解析出
+ * 的 {@code X-User-Id}，而这个头要等认证跑完才存在。另外，对马上要因为完全没有
+ * token 而被拒的请求，它也不该白干活。
  *
- * <p><b>This is a pressure valve, not a boundary.</b> The schedule id comes
- * from the query string, which the caller controls, so a client that lies
- * about it gets past this filter. What stops them is the seat service, which
- * checks the admission token against the key derived from the schedule it
- * resolved itself. The layering is deliberate: the gateway absorbs volume, the
- * service enforces.
+ * <p><b>这是一个泄压阀，不是一道边界。</b>schedule id 来自 query string，由调用方
+ * 控制，所以谎报它的客户端能从这个过滤器底下钻过去。拦住它们的是 seat 服务 ——
+ * 它拿自己解析出的场次推出 key，再拿准入 token 去对。分层是刻意的：网关吸收流量，
+ * 服务负责强制。
  */
 @Slf4j
 @Component
@@ -60,21 +55,19 @@ public class RushGateFilter implements GlobalFilter, Ordered {
     private final ObjectMapper objectMapper;
 
     /**
-     * Sold-out and paused flags, refreshed on a timer.
+     * 售罄和暂停标志，定时刷新。
      *
-     * <p>The point of this filter is to avoid a Redis round trip per request,
-     * so doing one to find out whether to short-circuit would defeat it. At a
-     * million requests a second the difference between a map lookup and a
-     * network hop is the difference between one Redis instance and a cluster.
+     * <p>这个过滤器的意义就在于省掉每个请求一次 Redis 往返，所以为了判断要不要短路
+     * 而去做一次往返，等于自废武功。每秒百万请求的量级上，一次 map 查找和一次网络
+     * 跳转之间的差别，就是一台 Redis 和一个集群之间的差别。
      *
-     * <p>The cost is that a screening can be up to a second stale. In one
-     * direction that is harmless - a few requests reach a service that refuses
-     * them, which is what would have happened anyway. In the other, a sale
-     * that has just reopened stays closed for a second, which nobody notices.
+     * <p>代价是某个场次的状态最多会旧一秒。往一个方向是无害的 —— 少量请求还是打到
+     * 了服务上被拒，反正本来也是这个结果。往另一个方向，刚刚重新开售的场次会多关
+     * 一秒，没人会注意到。
      */
     private volatile Map<String, Integer> rushState = Map.of();
 
-    /** Paths that cost a place in line, and so require one. */
+    /** 这些路径会占用一个排队名额，因此必须先有排队名额。 */
     private static final List<String> GATED_PATHS = List.of(
             "/api/seat/lock",
             "/api/seat/assign");
@@ -90,16 +83,15 @@ public class RushGateFilter implements GlobalFilter, Ordered {
 
         String scheduleId = scheduleIdOf(request);
         if (scheduleId == null) {
-            // No schedule to reason about. The seat service will reject the
-            // request on its own terms; guessing here would be worse.
+            // 没有场次信息可供判断。seat 服务会按它自己的规则拒绝这个请求；
+            // 在这里瞎猜只会更糟。
             return chain.filter(exchange);
         }
 
         Map<String, Integer> state = rushState;
         Integer flags = state.get(scheduleId);
         if (flags == null) {
-            // Not a rush sale, so there is no line to have waited in. This is
-            // the path every ordinary ticket takes.
+            // 不是抢购场次，也就没有队可排。普通购票走的都是这条路。
             return chain.filter(exchange);
         }
 
@@ -128,9 +120,8 @@ public class RushGateFilter implements GlobalFilter, Ordered {
 
     private Mono<Void> reject(ServerWebExchange exchange, ErrorCode code, String message) {
         ServerHttpResponse response = exchange.getResponse();
-        // 200 with a business code, matching how every other expected refusal
-        // in this system is reported. A 4xx here would be indistinguishable
-        // from a gateway fault to the client's error handling.
+        // 返回 200 加业务码，与系统里其他所有"预期内的拒绝"的报法保持一致。这里给
+        // 4xx 的话，在客户端的错误处理看来，它和网关自身故障没有区别。
         response.setStatusCode(HttpStatus.OK);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
@@ -150,28 +141,24 @@ public class RushGateFilter implements GlobalFilter, Ordered {
     private static final int PAUSED = 2;
 
     /**
-     * Refreshes the local view of every rush sale's state.
+     * 刷新本地持有的所有抢购场次状态。
      *
-     * <p>Walks the registry the queue service maintains rather than asking
-     * movie-service which screenings are on rush - one Redis read for the
-     * whole set, and no cross-service coupling on a path that runs every
-     * second whether or not anything is happening.
+     * <p>遍历 queue 服务维护的注册表，而不是去问 movie-service 哪些场次在抢购 ——
+     * 整个集合一次 Redis 读，而且这条每秒都要跑（不管有没有事发生）的路径上不会
+     * 引入跨服务耦合。
      */
     @Scheduled(fixedDelay = 1000)
     public void refreshRushState() {
-        // The set is normally tiny - one entry per concurrent rush sale, and
-        // there is rarely more than one - so this issues a small number of
-        // concurrent lookups once a second rather than one per visitor.
+        // 这个集合通常极小 —— 每个并发的抢购场次一条，而很少有超过一个的时候 ——
+        // 所以这里是每秒发少量并发查询，而不是每个访客发一次。
         Flux.from(redis.opsForSet().members(CommonConstants.RUSH_SCHEDULES_KEY))
                 .flatMap(this::flagsOf)
                 .collectMap(Map.Entry::getKey, Map.Entry::getValue)
                 .doOnNext(next -> rushState = next)
                 .onErrorResume(e -> {
-                    // Redis blip: keep the last known state rather than
-                    // deciding every rush sale is suddenly open. Stale-closed
-                    // turns a few buyers away; stale-open floods the services
-                    // this filter exists to protect, which is the worse failure
-                    // by a wide margin.
+                    // Redis 抖动：保留上一次已知的状态，而不是断定所有抢购场次
+                    // 突然都开放了。状态偏"关"只是挡走几个买家；状态偏"开"会淹没
+                    // 这个过滤器本来要保护的那些服务，而后者的严重程度高出一大截。
                     log.warn("could not refresh rush state, keeping the previous view", e);
                     return Mono.empty();
                 })
@@ -194,7 +181,7 @@ public class RushGateFilter implements GlobalFilter, Ordered {
         return Ordered.HIGHEST_PRECEDENCE + 100;
     }
 
-    /** Exposed for tests and for the refresh path's own bookkeeping. */
+    /** 暴露出来，供测试和刷新逻辑自己记账用。 */
     Set<String> knownSchedules() {
         return rushState.keySet();
     }

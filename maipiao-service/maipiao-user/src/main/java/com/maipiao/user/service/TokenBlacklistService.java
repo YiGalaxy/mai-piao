@@ -11,20 +11,17 @@ import org.springframework.stereotype.Service;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Revoked-token registry, backed by Redis.
+ * 已吊销 token 的登记处，由 Redis 支撑。
  *
- * <p>Two things make this cheap enough to be worth it:
+ * <p>有两件事让它便宜到值得做：
  * <ul>
- *   <li>Only the {@code jti} is stored, not the whole token.</li>
- *   <li>The TTL equals the token's remaining lifetime, so entries expire on
- *       their own and the set cannot grow without bound.</li>
+ *   <li>只存 {@code jti}，不存整个 token。</li>
+ *   <li>TTL 等于 token 剩余的生命，所以条目会自己过期，这个集合不会无限膨胀。</li>
  * </ul>
  *
- * <p>The gateway is what actually enforces this - user-service only writes the
- * entry. Keeping the write here and the read there means a token stays usable
- * for the microseconds between logout and the next request, which is fine; what
- * matters is that it stops working immediately afterwards rather than living on
- * for the full two hours.
+ * <p>真正执行这件事的是网关 —— user-service 只负责写入那条记录。
+ * 写入留在这里、读取放在那边，意味着 token 在登出和下一个请求之间的那几微秒里仍然可用，
+ * 这没关系；要紧的是它在那之后立刻失效，而不是继续活满整整两个小时。
  */
 @Slf4j
 @Service
@@ -35,10 +32,10 @@ public class TokenBlacklistService {
     private final JwtUtil jwtUtil;
 
     /**
-     * Adds the token to the blacklist for the rest of its life.
+     * 把 token 加进黑名单，直到它寿命结束。
      *
-     * <p>An already-expired or unparseable token is a no-op: it is already
-     * unusable, so writing an entry would only waste memory.
+     * <p>已经过期或解析不了的 token 直接空操作：它本来就不可用了，
+     * 写一条记录只会浪费内存。
      */
     public void revoke(String rawToken) {
         Claims claims = jwtUtil.parse(rawToken);
@@ -60,7 +57,7 @@ public class TokenBlacklistService {
         log.debug("token revoked: jti={}, ttl={}ms", claims.getId(), remainingMillis);
     }
 
-    /** @return true when the token has been revoked and must be rejected. */
+    /** @return token 已被吊销、必须拒绝时为 true。 */
     public boolean isRevoked(String jti) {
         if (jti == null || jti.isBlank()) {
             return false;

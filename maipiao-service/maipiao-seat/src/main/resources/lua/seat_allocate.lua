@@ -1,50 +1,43 @@
 -- ============================================================
--- Assign N adjacent seats from a set of candidate runs.
+-- 从一组候选连座段中分配 N 个相邻座位。
 --
--- The counterpart to seat_lock.lua, for the sales where the buyer does not
--- pick. A large concert cannot let a hundred thousand people browse a seat
--- map, so the buyer chooses a price band and a quantity and the system hands
--- out seats; "adjacent" is a promise the buyer is entitled to, not a nicety.
+-- 与 seat_lock.lua 互为对照，服务于买家不自己挑座的那类销售。大型演唱会不可能让
+-- 十万人去浏览座位图，所以买家只选一个票档和一个数量，由系统把座位发下去；
+-- "相邻"是买家应得的承诺，不是可有可无的加分项。
 --
--- Two responsibilities are split deliberately:
+-- 有两个职责被刻意拆开：
 --
---   Java decides WHERE to look. It knows the hall geometry - which seats are
---   in the band, which rows they occupy, and which of them are physically
---   next to each other. None of that is expressible here.
+--   Java 决定「去哪里找」。场馆几何只有它知道 —— 哪些座位在这个票档里、它们占了
+--   哪几排、以及其中哪些在物理上彼此紧邻。这些在这里都表达不出来。
 --
---   This script decides WHETHER the take succeeds. It re-checks every bit
---   itself and never trusts the candidate list, because the list was computed
---   from a bitmap read that is already stale by the time the script runs. The
---   candidates narrow the search; they do not authorise anything.
+--   本脚本决定「这次取座能不能成」。它自己把每一个 bit 重新校验一遍，从不相信
+--   候选列表，因为那份列表是基于一次 bitmap 读取算出来的，而脚本跑到这里时那次
+--   读取早已过期。候选只用来缩小搜索范围，不构成任何授权。
 --
--- KEYS[1] = seat:map:{scheduleId}     bitmap, bit N = seat_index N taken
--- KEYS[2] = seat:owner:{scheduleId}   hash, field = seat_index, value = orderNo
--- KEYS[3] = seat:delay:{scheduleId}   zset, member = orderNo, score = expiry millis
--- KEYS[4] = seat:order:{orderNo}      set of seat indexes held by this order
--- KEYS[5] = sold_out:{scheduleId}     set when the last seat goes
+-- KEYS[1] = seat:map:{scheduleId}     Bitmap，第 N 位 = seat_index N 已被占用
+-- KEYS[2] = seat:owner:{scheduleId}   hash，field = seat_index，value = orderNo
+-- KEYS[3] = seat:delay:{scheduleId}   ZSet，member = orderNo，score = 过期时刻（毫秒）
+-- KEYS[4] = seat:order:{orderNo}      本订单持有的座位索引 set
+-- KEYS[5] = sold_out:{scheduleId}     最后一个座位卖出时置上
 --
 -- ARGV[1] = orderNo
--- ARGV[2] = lock expiry, epoch millis
--- ARGV[3] = how many seats to assign
--- ARGV[4] = total seats in the session, for the sold-out decision
--- ARGV[5] = '1' to require the seats be adjacent, '0' to take any free seats
--- ARGV[6..] = candidate runs, flat pairs of (startIndex, length), in the order
---             they should be tried
+-- ARGV[2] = 锁过期时刻，epoch 毫秒
+-- ARGV[3] = 要分配几个座位
+-- ARGV[4] = 该场次总座位数，用于售罄判断
+-- ARGV[5] = '1' 表示要求座位相邻，'0' 表示随便拿空位
+-- ARGV[6..] = 候选连座段，扁平的 (startIndex, length) 数对，按尝试顺序排列
 --
--- Returns {1, seatIndex, seatIndex, ...} with the seats taken, or
--- {0, longestFreeRun} when it could not fill the request. The second value is
--- not decoration: it is what lets the caller say "at most 3 seats together"
--- instead of "unavailable".
+-- 成功时返回 {1, seatIndex, seatIndex, ...}，即拿到的座位；填不满请求时返回
+-- {0, longestFreeRun}。第二个值不是摆设：正是靠它调用方才能说"最多能坐 3 个人
+-- 一起"，而不是干巴巴一句"不可用"。
 --
--- A run is a sequence that is adjacent BOTH in index and in the hall. Java
--- breaks a run wherever either jumps, because an aisle puts a gap in the
--- column numbering and two seats with consecutive indexes can be on opposite
--- sides of it.
+-- run 指的是「索引连续」和「场馆内相邻」两个条件同时成立的序列。只要有一处断掉
+-- Java 就切段，因为过道会在列号上留出空档，两个索引连续的座位可能正好分处过道
+-- 两侧。
 --
--- The returned indexes rather than a start position because the two modes
--- differ in exactly that: adjacent seats are implied by a start and a count,
--- split ones are not, and returning a position that the caller has to
--- re-derive invites the two sides to disagree about what was taken.
+-- 返回座位索引而不是起始位置，原因恰恰是两种模式的区别所在：相邻模式下有起点加
+-- 数量就能推出座位，拆分模式下推不出来；返回一个还要调用方自己再推导一遍的位置，
+-- 等于邀请两端对"究竟拿了哪些座位"产生分歧。
 -- ============================================================
 
 local mapKey   = KEYS[1]
@@ -65,13 +58,11 @@ if want < 1 or runCount < 1 then
     return {0, 0}
 end
 
--- ---- one read for every bit we are about to look at ----
+-- ---- 将要查看的每一个 bit，只读一次 ----
 --
--- Reading bit by bit would be a redis.call per seat. Redis runs a script as a
--- single unit, so every one of those calls blocks the whole instance - and at
--- a few thousand of them that is milliseconds of stall for every other
--- request in flight, including other screenings' rush sales. One GETRANGE and
--- the rest is ordinary string work in Lua.
+-- 逐位读的话，每看一个座位就是一次 redis.call。Redis 把脚本作为一个整体执行，
+-- 所以这些调用每一个都会阻塞整个实例 —— 几千次下来就是几毫秒的停顿，波及所有在飞
+-- 的请求，包括其他场次的抢购。一次 GETRANGE，剩下的都只是 Lua 里的普通字符串运算。
 local minStart = nil
 local maxEnd = -1
 for s = 1, runCount do
@@ -91,29 +82,25 @@ end
 local firstByte = math.floor(minStart / 8)
 local blob = redis.call('GETRANGE', mapKey, firstByte, math.floor(maxEnd / 8))
 
--- Bit 0 is the most significant bit of byte 0, not the least. Getting this
--- backwards reads the bitmap mirrored, which looks plausible on sparse data
--- and is completely wrong.
+-- bit 0 是第 0 个字节的最高位，不是最低位。搞反了就是把整个 bitmap 镜像着读，
+-- 在稀疏数据上看着还挺像回事，实际完全错误。
 local MASKS = {128, 64, 32, 16, 8, 4, 2, 1}
 
 local function occupied(index)
     local byte = string.byte(blob, math.floor(index / 8) - firstByte + 1)
     if not byte then
-        -- Past the end of the string, which is past the end of the bitmap.
-        -- An unset bit beyond the allocation is free, and so is one on a
-        -- bitmap that has never been written.
+        -- 读到了字符串末尾之外，也就是 bitmap 末尾之外。分配范围之外的 bit 视为
+        -- 未置位，也就是空位；一张从未被写过的 bitmap 上的 bit 同理。
         return false
     end
     return math.floor(byte / MASKS[(index % 8) + 1]) % 2 == 1
 end
 
--- ---- scan, in the order the caller ranked the runs ----
+-- ---- 扫描，按调用方给连座段排出的顺序 ----
 --
--- The seam between the two modes is what resets the run counter. Adjacent
--- mode resets it at every segment boundary as well as on an occupied seat, so
--- a run can only ever be built from seats the caller declared neighbours.
--- Split mode never resets it, so the counter measures "free seats found so
--- far" and the segments are just a visiting order.
+-- 两种模式的分水岭就在于「什么时候重置 run 计数器」。相邻模式在每个段边界以及碰到
+-- 已占座位时都会重置，于是一段 run 只可能由调用方声明过是邻居的座位拼成。拆分模式
+-- 从不重置，这个计数器衡量的就变成"目前为止找到的空位数"，分段只是一个访问顺序。
 local taken = {}
 local longestFree = 0
 local run = 0
@@ -136,7 +123,7 @@ for s = 1, runCount do
 
             if adjacent then
                 if run >= want then
-                    -- take the whole window, not just the seat that closed it
+                    -- 取整个窗口，而不是只取把它凑满的那一个座位
                     taken = {}
                     for j = i - want + 1, i do
                         taken[#taken + 1] = j
@@ -158,8 +145,8 @@ for s = 1, runCount do
 end
 
 if #taken < want then
-    -- Nothing was written: the scan is read-only until this point, so a
-    -- failure leaves the bitmap exactly as it found it.
+    -- 什么都没写：在此之前整段扫描都是只读的，所以失败时 bitmap 与脚本进来时
+    -- 一模一样。
     return {0, longestFree}
 end
 
@@ -174,10 +161,9 @@ end
 redis.call('EXPIRE', orderKey, 7200)
 redis.call('ZADD', delayKey, expireTs, orderNo)
 
--- Sold out is derived, not counted. BITCOUNT reads the same bits this script
--- just wrote, so it cannot drift out of step with them the way a second
--- counter would - and it self-heals if the bitmap is ever rebuilt from the
--- ledger. A release clears the flag by clearing a bit; see seat_release.lua.
+-- 售罄是推导出来的，不是数出来的。BITCOUNT 读的就是本脚本刚写下的那些 bit，所以
+-- 它不会像另设一个计数器那样与这些 bit 失步 —— 而且万一 bitmap 从账本重建，它
+-- 会自愈。释放时通过清掉一个 bit 来清掉这个标记；见 seat_release.lua。
 if redis.call('BITCOUNT', mapKey) >= totalSeat then
     redis.call('SET', soldKey, '1')
 end

@@ -8,12 +8,11 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_order.t_order_status_log}. Append-only audit trail.
+ * 映射 {@code maipiao_order.t_order_status_log}。只追加的审计轨迹。
  *
- * <p>{@code fromStatus} is -1 when the transition was performed by a CAS whose
- * actual from-status is recorded in the UPDATE that did it. Capturing it here
- * would mean an extra read, and that read could disagree with what the CAS
- * actually matched.
+ * <p>当迁移是由 CAS 完成的时候，{@code fromStatus} 是 -1，
+ * 因为真正的来源状态记录在完成这次迁移的那条 UPDATE 里。
+ * 在这里捕获它意味着多一次读，而那次读的结果可能和 CAS 实际匹配到的并不一致。
  */
 @Data
 @TableName("t_order_status_log")
@@ -28,7 +27,7 @@ public class OrderStatusLog {
 
     private Integer toStatus;
 
-    /** USER / SYSTEM / MQ / ADMIN */
+    /** USER / SYSTEM / MQ / ADMIN —— 取值本身保持原样，不翻译 */
     private String operator;
 
     private String remark;

@@ -15,11 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * User endpoints.
+ * 用户接口。
  *
- * <p>Note there is no try/catch anywhere: {@code BizException} is translated by
- * the shared {@code GlobalExceptionHandler}. Controllers here do three things
- * only - bind and validate input, delegate, wrap in {@link R}.
+ * <p>注意这里到处都没有 try/catch：{@code BizException} 由共用的
+ * {@code GlobalExceptionHandler} 统一翻译。这里的 controller 只做三件事 ——
+ * 绑定并校验入参、委派、包进 {@link R}。
  */
 @RestController
 @RequestMapping("/user")
@@ -46,7 +46,7 @@ public class UserController {
         return R.ok();
     }
 
-    /** The gateway has already verified the token; the user id arrives in a header. */
+    /** 网关已经校验过 token 了；用户 id 是通过请求头传过来的。 */
     @GetMapping("/info")
     public R<UserDtos.UserVO> info() {
         return R.ok(userService.getUser(UserContext.require()));

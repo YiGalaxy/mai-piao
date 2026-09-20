@@ -4,9 +4,8 @@
 
     <template v-else-if="film">
       <!--
-        Dark band. The hue is derived from the film's own id, so each film's
-        page has its own colour and the poster sits on a tint of itself rather
-        than on neutral grey.
+        深色色带。色相由影片自己的 id 推导出来，所以每部片子的页面都有自己的
+        颜色，海报是坐在自己的色调上，而不是坐在中性灰上。
       -->
       <div class="hero" :style="heroStyle">
         <div class="mp-container hero-inner">
@@ -46,7 +45,7 @@
         </div>
       </div>
 
-      <!-- Showtimes -->
+      <!-- 场次列表 -->
       <div class="mp-container">
         <div class="date-bar">
           <span class="date-label">选择日期</span>
@@ -123,16 +122,15 @@ const selectedDate = ref('')
 const filmId = route.params.id
 
 /**
- * The detail page serves films and performances both.
+ * 详情页同时服务电影和演出。
  *
- * The words follow the category rather than assuming a film: a concert has no
- * "排片", and calling its sessions that is the kind of detail that makes an
- * interface read as though nobody looked at it.
+ * 用词跟着分类走，而不是默认就是电影：演唱会没有「排片」，把它的场次叫成
+ * 排片，正是那种让人一眼看出没人认真看过的细节。
  */
 const subjectWord = computed(() => subjectOf(film.value?.category))
 const scheduleWord = computed(() => scheduleOf(film.value?.category))
 
-/** Deterministic per film, so the tint never changes between visits. */
+/** 每部片子是固定的，所以两次访问之间色调不会变。 */
 const hue = computed(() => ((Number(filmId) || 1) * 47) % 360)
 
 const heroStyle = computed(() => ({
@@ -159,13 +157,12 @@ const dateOptions = computed(() => {
 })
 
 /**
- * Shows grouped by venue.
+ * 按场馆分组后的场次。
  *
- * The field is venueId. This read cinemaId, which the API has never returned -
- * so the key was undefined for every show and they all landed in one unnamed
- * group. It looked like a grouping bug only once there was more than one
- * venue to tell apart; before that, one group is what a correct grouping
- * produces anyway.
+ * 字段是 venueId。这里曾经读的是 cinemaId，而 API 从来没返回过这个字段 ——
+ * 于是每一场拿到的 key 都是 undefined，所有场次全挤进同一个没有名字的分组里。
+ * 只有在需要区分一个以上场馆的时候，这个分组 bug 才暴露出来；在那之前，
+ * 正确的分组结果本来也就是一个分组。
  */
 const groupedSchedules = computed(() => {
   const groups = new Map()
@@ -213,17 +210,14 @@ async function loadSchedules() {
 }
 
 /**
- * Where a screening's buy button leads.
+ * 场次的购买按钮指向哪里。
  *
- * Three destinations, because there are three ways to sell a seat and the
- * route has to be decided before the page loads - the seat map and the band
- * picker share no state and fetch different things.
+ * 三个去处，因为卖座位有三种方式，而路由必须在页面加载之前就定下来 ——
+ * 座位图和票档选择器没有任何共享状态，拉的东西也不一样。
  *
- * The order matters: a rush sale is a queue first, whatever the seating mode,
- * so it is tested before seatMode. Only the seat map needs the buyer to have
- * an account already; the band picker does too, but the queue is the one that
- * spends a place in line, so asking for the queue before login would be
- * wasting it.
+ * 判断顺序有讲究：抢票场次不管用哪种选座方式，都得先排队，所以要放在
+ * seatMode 前面判。只有座位图要求买家已经有账号；票档选择器其实也要求，
+ * 但排队才是那个会消耗队里名额的动作，登录之前就去排队等于白白浪费掉它。
  */
 function goBuy(show) {
   if (show.rushMode === 1) {
@@ -235,7 +229,7 @@ function goBuy(show) {
   }
 }
 
-/** The button says what the next screen does, which is not the same for all three. */
+/** 按钮说的是下一个页面会做什么，而这三者并不一样。 */
 function actionLabel(show) {
   if (show.remainingSeat <= 0) return '已售罄'
   if (show.rushMode === 1) return '立即抢票'
@@ -265,7 +259,7 @@ function posterStyle(f) {
   padding-bottom: 48px;
 }
 
-/* ---- dark hero ---- */
+/* ---- 深色主视觉区 ---- */
 
 .hero {
   padding: 40px 0;
@@ -353,7 +347,7 @@ function posterStyle(f) {
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* ---- date picker ---- */
+/* ---- 日期选择 ---- */
 
 .date-bar {
   display: flex;
@@ -413,7 +407,7 @@ function posterStyle(f) {
   opacity: 0.85;
 }
 
-/* ---- showtimes ---- */
+/* ---- 场次列表 ---- */
 
 .cinema-group {
   margin-bottom: 16px;
@@ -433,8 +427,7 @@ function posterStyle(f) {
   align-items: center;
   gap: 16px;
   padding: 16px 0;
-  /* Light grey rule between screenings, as the category uses to separate
-     rows without drawing boxes around them. */
+  /* 场次之间用一道浅灰线隔开，和这个品类一样：靠线分行，而不是给每行画框。 */
   border-top: 1px solid var(--mp-divider);
 }
 

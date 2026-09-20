@@ -21,19 +21,16 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import java.util.stream.Collectors;
 
 /**
- * Translates exceptions into the unified {@link R} envelope so that controllers
- * never need try/catch.
+ * 把异常翻译成统一的 {@link R} 响应封装，这样 controller 永远不需要 try/catch。
  *
- * <p>HTTP status policy:
+ * <p>HTTP 状态码策略：
  * <ul>
- *   <li><b>200</b> for {@link BizException} - "the seat is already taken" is a
- *       legitimate outcome of a well-formed request, not a transport failure.
- *       The caller reads {@code code} to decide what happened.</li>
- *   <li><b>400 / 405 / 404</b> for malformed requests - the client sent
- *       something structurally wrong and should be told so at the transport
- *       layer, where gateways and monitoring can see it.</li>
- *   <li><b>500</b> for anything unexpected - this is a bug, and it must be
- *       loud. The client gets a generic message; the detail goes to the log.</li>
+ *   <li>{@link BizException} 返回 <b>200</b> —— "座位已经被人占了"是一个结构良好的
+ *       请求的合法结果，不是传输层故障。调用方读 {@code code} 来判断发生了什么。</li>
+ *   <li>格式错误的请求返回 <b>400 / 405 / 404</b> —— 客户端发来的东西在结构上就是错的，
+ *       而且应该被告知在传输层，这样网关和监控能看到。</li>
+ *   <li>任何意料之外的情况返回 <b>500</b> —— 这是 bug，必须大声。客户端只拿到一句
+ *       泛泛的消息；细节进日志。</li>
  * </ul>
  */
 @Slf4j
@@ -41,36 +38,36 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     // ------------------------------------------------------------
-    // expected business failures -> HTTP 200
+    // 预期内的业务失败 -> HTTP 200
     // ------------------------------------------------------------
 
     @ExceptionHandler(BizException.class)
     public R<Void> handleBizException(BizException e, HttpServletRequest request) {
-        // warn, not error: this is normal control flow and should not page anyone
+        // 用 warn 而不是 error：这是正常的控制流，不该半夜把人叫起来
         log.warn("biz exception [{}] {} -> code={}, message={}",
                 request.getMethod(), request.getRequestURI(), e.getCode(), e.getMessage());
         return R.fail(e.getCode(), e.getMessage());
     }
 
     // ------------------------------------------------------------
-    // malformed requests -> HTTP 400
+    // 格式错误的请求 -> HTTP 400
     // ------------------------------------------------------------
 
-    /** @Valid failure on a @RequestBody. */
+    /** {@code @RequestBody} 上的 {@code @Valid} 校验失败。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public R<Void> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
         return R.fail(ErrorCode.PARAM_ERROR, joinFieldErrors(e));
     }
 
-    /** @Valid failure on a form / query object binding. */
+    /** 表单 / query 对象绑定时的 {@code @Valid} 校验失败。 */
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public R<Void> handleBindException(BindException e) {
         return R.fail(ErrorCode.PARAM_ERROR, joinFieldErrors(e));
     }
 
-    /** @Validated on a method parameter (e.g. @Min on a query param). */
+    /** 方法参数上的 {@code @Validated} 校验失败（例如 query 参数上的 {@code @Min}）。 */
     @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public R<Void> handleConstraintViolation(ConstraintViolationException e) {
@@ -94,7 +91,7 @@ public class GlobalExceptionHandler {
     }
 
     // ------------------------------------------------------------
-    // routing -> 404 / 405
+    // 路由 -> 404 / 405
     // ------------------------------------------------------------
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -110,14 +107,14 @@ public class GlobalExceptionHandler {
     }
 
     // ------------------------------------------------------------
-    // everything else -> HTTP 500
+    // 其余一切 -> HTTP 500
     // ------------------------------------------------------------
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public R<Void> handleUnexpected(Exception e, HttpServletRequest request) {
-        // Full stack trace here. The client only gets a generic message, because
-        // leaking SQL fragments or file paths to a caller is an information leak.
+        // 这里打完整堆栈。客户端只拿到一句泛泛的消息，因为把 SQL 片段或文件路径
+        // 泄漏给调用方就是信息泄露。
         log.error("unhandled exception [{}] {}", request.getMethod(), request.getRequestURI(), e);
         return R.fail(ErrorCode.SYSTEM_ERROR);
     }

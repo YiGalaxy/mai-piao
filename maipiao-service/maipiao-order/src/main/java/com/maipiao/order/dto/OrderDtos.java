@@ -11,27 +11,25 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** Request and response shapes for the order endpoints. */
+/** 订单接口的请求与响应结构。 */
 public final class OrderDtos {
 
     private OrderDtos() {
     }
 
     /**
-     * Order creation input.
+     * 下单入参。
      *
-     * <p>{@code lockToken} is what seat-service returned when the seats were
-     * held, and it becomes the order number. Requiring it is what stops an
-     * order being placed for seats nobody holds.
+     * <p>{@code lockToken} 是 seat-service 在锁座时返回的东西，它会成为订单号。
+     * 把它设成必填，是拦住「为一组没人持有的座位下单」的那道关。
      */
     public record CreateOrderRequest(
             /**
-             * The token seat-service returned when the seats were held.
+             * seat-service 在锁座时返回的凭证。
              *
-             * <p>It becomes the order number, which is what keeps the Redis
-             * hold and the order row referring to the same thing by
-             * construction rather than by a later reconciliation. Requiring it
-             * is also what stops an order being placed for seats nobody holds.
+             * <p>它会成为订单号，而这是让 Redis 里的占用和订单行在构造上就指向同一件事、
+             * 而不是靠事后再对账去对齐的原因。把它设成必填，
+             * 同样也是拦住「为一组没人持有的座位下单」的那道关。
              */
             @NotBlank(message = "选座凭证不能为空")
             String lockToken,
@@ -43,13 +41,13 @@ public final class OrderDtos {
             @Size(max = 6, message = "一次最多购买 6 张票")
             List<Integer> seatIndexes,
 
-            /** Display labels, e.g. ["5排7座"]; sent by the client to avoid a lookup. */
+            /** 展示用标签，例如 ["5排7座"]；由客户端送来，省掉一次查询。 */
             List<String> seatLabels,
 
-            /** Optional. Validated server-side against the user's actual coupons. */
+            /** 可选。会在服务端针对用户真实的优惠券做校验。 */
             Long couponId,
 
-            /** Client-computed discount; re-derived server-side before use. */
+            /** 客户端算出来的优惠金额；使用之前会在服务端重新推导一遍。 */
             BigDecimal discountAmount
     ) {
     }
@@ -69,8 +67,7 @@ public final class OrderDtos {
     }
 
     /**
-     * Alias kept so the controller can name the request without importing the
-     * entity package.
+     * 留着的别名，好让 controller 不用去 import entity 包就能给这个请求命名。
      */
     public record CancelRequest(String reason) {
     }

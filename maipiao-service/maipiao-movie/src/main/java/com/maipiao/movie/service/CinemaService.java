@@ -17,11 +17,10 @@ public class CinemaService {
     private final CinemaMapper cinemaMapper;
 
     /**
-     * Open cinemas, optionally filtered by district.
+     * 营业中的影院，可以按行政区筛。
      *
-     * <p>Closed cinemas are excluded unconditionally - there is no client-side
-     * reason to see one, and returning them would mean every caller filters
-     * the same way.
+     * <p>停业的影院无条件排除 —— 客户端没有任何理由看到它，返回它们只会让每个调用方
+     * 都做一遍同样的过滤。
      */
     public List<Cinema> list(String district) {
         return cinemaMapper.selectList(Wrappers.<Cinema>lambdaQuery()

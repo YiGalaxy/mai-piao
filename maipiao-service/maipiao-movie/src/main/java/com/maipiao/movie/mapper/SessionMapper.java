@@ -12,22 +12,20 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Session persistence.
+ * 场次持久化。
  *
- * <p>The UPDATE statements at the bottom are concurrency boundaries, not
- * convenience wrappers. Each is a single conditional UPDATE whose affected row
- * count the caller asserts - reading the counters first and deciding in Java
- * would let two requests both see "2 seats left" and both proceed.
+ * <p>底部那些 UPDATE 语句是并发边界，不是图省事的包装。每一条都是单条带条件的
+ * UPDATE，由调用方断言它影响的行数 —— 先把计数器读出来在 Java 里判断，会让两个请求
+ * 都看到「还剩 2 个座」然后双双往下走。
  *
- * <p>Column note: the queries select {@code s.*} plus explicitly aliased join
- * columns rather than a named column list. MyBatis maps the extra columns by
- * name and ignores the rest, and it avoids needing the column list to be
- * interpolated into the SQL as a string.
+ * <p>关于选列：这些查询选 {@code s.*} 加上显式起别名的 join 列，而不是写一串列名。
+ * MyBatis 会按名字映射多出来的列并忽略其余的，而且这样不必把列名清单当字符串拼进
+ * SQL 里。
  */
 @Mapper
 public interface SessionMapper extends BaseMapper<Session> {
 
-    /** Join columns shared by the list and detail queries. */
+    /** 列表查询和详情查询共用的 join 部分。 */
     String JOIN_AND_LABELS = """
               FROM t_event_session s
               JOIN t_event_project   f ON f.id = s.project_id
@@ -36,10 +34,10 @@ public interface SessionMapper extends BaseMapper<Session> {
             """;
 
     /**
-     * Screenings on a given date, optionally narrowed to one film or cinema.
+     * 某一天的排片，可以再收窄到某部影片或某个影院。
      *
-     * <p>Only on-sale screenings are returned: one that has not opened yet, or
-     * has already finished, is not something a buyer can act on.
+     * <p>只返回在售的排片：还没开票的、或者已经散场的，都不是买家能对之采取行动的
+     * 东西。
      */
     @Select("""
             <script>
@@ -72,9 +70,7 @@ public interface SessionMapper extends BaseMapper<Session> {
     SessionVO selectScheduleDetail(@Param("sessionId") Long sessionId);
 
     /**
-     * Film ids that actually have a screening at this cinema on this date, so
-     * the cinema page shows only what is bookable rather than the whole
-     * catalogue.
+     * 这一天在这个影院确实有排片的影片 id，这样影院页只展示可订的，而不是整个片库。
      */
     @Select("""
             SELECT DISTINCT s.project_id
@@ -87,19 +83,17 @@ public interface SessionMapper extends BaseMapper<Session> {
                                           @Param("showDate") LocalDate showDate);
 
     // ------------------------------------------------------------
-    // G1 branch - occupy inventory while an order is being placed
+    // G1 分支 —— 下单过程中占住库存
     // ------------------------------------------------------------
 
     /**
-     * Reserves {@code count} seats against a screening's inventory.
+     * 从一场排片的库存里预占 {@code count} 个座位。
      *
-     * <p>The {@code locked + sold + count <= total} predicate is the
-     * anti-oversell guard. Two concurrent orders can both reach this statement;
-     * InnoDB serialises them on the row and the second gets 0, which the caller
-     * must treat as "sold out".
+     * <p>{@code locked + sold + count <= total} 这个条件就是防超卖关卡。两个并发订单
+     * 可以同时走到这条语句；InnoDB 在行上把它们串行化，第二个拿到 0，调用方必须把它
+     * 当成「已售罄」。
      *
-     * @return 1 when reserved, 0 when it would oversell or the screening is no
-     *         longer on sale
+     * @return 预占成功返回 1；会超卖或该排片已不在售返回 0
      */
     @Update("""
             UPDATE t_event_session
@@ -112,11 +106,10 @@ public interface SessionMapper extends BaseMapper<Session> {
     int occupySeats(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
-     * Moves seats from locked to sold once payment succeeds (G2).
+     * 支付成功后把座位从锁定挪到已售（G2）。
      *
-     * <p>Guarded on {@code locked_seat >= count}: if the locks were already
-     * released by the timeout job, this returns 0 and the caller must not issue
-     * tickets for seats that are no longer held.
+     * <p>用 {@code locked_seat >= count} 把关：如果这些占位已经被超时任务释放了，
+     * 这里返回 0，调用方就不能再给出那些已经没人持有的座位的票。
      */
     @Update("""
             UPDATE t_event_session
@@ -129,11 +122,9 @@ public interface SessionMapper extends BaseMapper<Session> {
     int confirmSold(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
-     * Gives reserved seats back - on cancellation, on timeout, or from a G1
-     * rollback.
+     * 把预占的座位还回去 —— 取消时、超时时，或 G1 回滚时。
      *
-     * <p>The {@code locked_seat >= count} guard keeps the counter from going
-     * negative if a compensation runs twice.
+     * <p>{@code locked_seat >= count} 这个关卡防止补偿跑两遍时把计数器变成负数。
      */
     @Update("""
             UPDATE t_event_session
@@ -145,14 +136,11 @@ public interface SessionMapper extends BaseMapper<Session> {
     int releaseLocked(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
-     * Gives <em>sold</em> seats back, for a refund that returns them to the
-     * pool.
+     * 把<em>已售</em>的座位还回去，用于把座位放回池子的退款。
      *
-     * <p>Distinct from {@link #releaseLocked}: those seats were never paid for,
-     * so only the locked counter moves. These were, so only the sold counter
-     * moves. Using the wrong one silently corrupts the remaining-seat
-     * arithmetic - the seat map would show the seat as free while the sold
-     * counter still claims it.
+     * <p>和 {@link #releaseLocked} 不是一回事：那些座位从来没付过钱，所以只动锁定
+     * 计数器。这些付过，所以只动已售计数器。用错一个会无声地搞坏余座算术 —— 座位图
+     * 会把这个座位显示成空闲，而已售计数器仍然声称它是卖掉的。
      */
     @Update("""
             UPDATE t_event_session

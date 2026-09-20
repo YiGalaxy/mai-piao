@@ -11,22 +11,20 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Order persistence.
+ * 订单持久化。
  *
- * <p>{@link #transition} is the only method that changes an order's status, and
- * everything about the state machine rests on it:
+ * <p>{@link #transition} 是唯一会改订单状态的方法，整个状态机都压在它身上：
  *
  * <pre>
- * UPDATE ... WHERE order_no = ? AND status IN (allowed from-statuses)
+ * UPDATE ... WHERE order_no = ? AND status IN (允许的来源状态)
  * </pre>
  *
- * <p>Two concurrent callers racing to move an order both reach the row; InnoDB
- * serialises them; one gets 1 and the other gets 0. The caller must treat 0 as
- * "somebody already did this" and return success, not as an error - which is
- * exactly what makes a redelivered message harmless.
+ * <p>两个并发调用者抢着推进同一笔订单，都会摸到那一行；InnoDB 把它们串行化；
+ * 一个拿到 1，另一个拿到 0。调用方必须把 0 解读成「别人已经做过了」并返回成功，
+ * 而不是当成错误 —— 重投的消息之所以无害，靠的正是这一点。
  *
- * <p>A bare {@code UPDATE t_order_order SET status = ...} without a status
- * predicate is forbidden anywhere in this codebase.
+ * <p>在这个代码库里，任何地方都不允许出现不带状态谓词的裸
+ * {@code UPDATE t_order_order SET status = ...}。
  */
 @Mapper
 public interface OrderMapper extends BaseMapper<Order> {
@@ -37,11 +35,9 @@ public interface OrderMapper extends BaseMapper<Order> {
     Order selectByOrderNo(@Param("orderNo") String orderNo);
 
     /**
-     * Moves an order to {@code toStatus} only if it is currently in one of
-     * {@code fromStatuses}.
+     * 只有当订单当前处于 {@code fromStatuses} 之一时，才把它推进到 {@code toStatus}。
      *
-     * @return 1 when this call performed the transition, 0 when the order was
-     *         already in another state
+     * @return 本次调用完成了迁移时为 1；订单已经处在别的状态时为 0
      */
     @Update("""
             <script>
@@ -57,7 +53,7 @@ public interface OrderMapper extends BaseMapper<Order> {
                    @Param("fromStatuses") List<Integer> fromStatuses,
                    @Param("toStatus") int toStatus);
 
-    /** Payment succeeded: status plus the payment columns, in one guarded write. */
+    /** 支付成功：状态和支付相关的列，在一次带守护条件的写入里一起改掉。 */
     @Update("""
             <script>
             UPDATE t_order_order
@@ -73,7 +69,7 @@ public interface OrderMapper extends BaseMapper<Order> {
                  @Param("fromStatuses") List<Integer> fromStatuses,
                  @Param("payTime") LocalDateTime payTime);
 
-    /** Refund succeeded: status plus the refund columns. */
+    /** 退款成功：状态和退款相关的列。 */
     @Update("""
             UPDATE t_order_order
                SET status = 6,
@@ -88,10 +84,10 @@ public interface OrderMapper extends BaseMapper<Order> {
                      @Param("refundTime") LocalDateTime refundTime);
 
     /**
-     * Orders that are past their payment deadline.
+     * 已经过了支付截止时间的订单。
      *
-     * <p>Backed by {@code idx_status_expire}. Bounded by {@code limit} so a
-     * backlog cannot turn one sweep into a table scan that blocks everything.
+     * <p>由 {@code idx_status_expire} 支撑。用 {@code limit} 兜住上限，
+     * 免得一次积压把单次清扫变成一次卡住所有人的全表扫描。
      */
     @Select("""
             SELECT * FROM t_order_order
@@ -102,7 +98,7 @@ public interface OrderMapper extends BaseMapper<Order> {
             """)
     List<Order> selectExpired(@Param("now") LocalDateTime now, @Param("limit") int limit);
 
-    /** Paid orders whose screening finished a while ago - ready to complete. */
+    /** 已支付、且场次已经结束一段时间的订单 —— 可以置为已完成了。 */
     @Select("""
             SELECT * FROM t_order_order
              WHERE status = 2

@@ -12,12 +12,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Payment persistence.
+ * 支付单的持久化。
  *
- * <p>{@link #casPaySuccess} is layer L2 of the idempotency stack, and the
- * {@code status IN (0,2)} predicate in it is the entire out-of-order defence.
- * Two concurrent callbacks both reach this statement; InnoDB serialises them
- * on the row and one gets 0. No distributed lock is involved or needed.
+ * <p>{@link #casPaySuccess} 是幂等体系里的 L2 层，其中 {@code status IN (0,2)}
+ * 这个条件就是防乱序的全部。两条并发的回调都会走到这条语句；InnoDB 会在行上把它们串起来，
+ * 其中一条拿到 0。整个过程没有用到分布式锁，也不需要。
  */
 @Mapper
 public interface PaymentMapper extends BaseMapper<Payment> {
@@ -33,14 +32,13 @@ public interface PaymentMapper extends BaseMapper<Payment> {
     Payment selectLatestByOrderNo(@Param("orderNo") String orderNo);
 
     /**
-     * Marks a payment successful, if it is in a state that allows it.
+     * 把支付单标记为成功，前提是它处在允许这么做的状态。
      *
-     * <p>The amount check is not decoration: without it, a callback quoting a
-     * different amount would be accepted, which is how a payment for one yuan
-     * ends up marking a thousand-yuan order as paid.
+     * <p>金额检查不是装饰：没有它，一条报了别的金额的回调也会被接受，
+     * 一笔一元的支付就是这样把一千元的订单标成已支付的。
      *
-     * @return 1 when this call performed the transition, 0 when the payment
-     *         was already successful, already closed, or the amount differs
+     * @return 本次调用真正完成了状态迁移时返回 1；支付单已经成功、已经关闭，
+     *         或者金额不符时返回 0
      */
     @Update("""
             UPDATE t_pay_payment
@@ -59,10 +57,10 @@ public interface PaymentMapper extends BaseMapper<Payment> {
                       @Param("payTime") LocalDateTime payTime);
 
     /**
-     * Marks a payment failed.
+     * 把支付单标记为失败。
      *
-     * <p>Guarded on {@code status = 0} alone: a failure must never overwrite a
-     * success, and 0 is the only state where failing is still meaningful.
+     * <p>只以 {@code status = 0} 为守卫：失败绝不能覆盖一个成功，而 0 是唯一
+     * 一个「失败」还算有意义的状态。
      */
     @Update("""
             UPDATE t_pay_payment
@@ -72,10 +70,10 @@ public interface PaymentMapper extends BaseMapper<Payment> {
     int casPayFailed(@Param("paymentNo") String paymentNo);
 
     /**
-     * Closes an expired payment.
+     * 关闭一笔已过期的支付。
      *
-     * <p>{@code status IN (0,2)} so a payment that succeeded a moment ago is
-     * not closed underneath its callback.
+     * <p>条件是 {@code status IN (0,2)}，这样一笔刚刚成功的支付，
+     * 不会被关在自己的回调底下。
      */
     @Update("""
             UPDATE t_pay_payment
@@ -84,7 +82,7 @@ public interface PaymentMapper extends BaseMapper<Payment> {
             """)
     int closePayment(@Param("paymentNo") String paymentNo);
 
-    /** Payments past their deadline but still open - the closing sweep. */
+    /** 已经过了截止时间却仍然开放的支付单 —— 关闭扫描用。 */
     @Select("""
             SELECT * FROM t_pay_payment
              WHERE status = 0
@@ -95,10 +93,10 @@ public interface PaymentMapper extends BaseMapper<Payment> {
     List<Payment> selectExpired(@Param("now") LocalDateTime now, @Param("limit") int limit);
 
     /**
-     * Open payments old enough to be worth asking the provider about.
+     * 开放得足够久、值得去问一下渠道方的支付单。
      *
-     * <p>The lower bound matters: a payment created seconds ago has simply not
-     * been paid yet, and querying it wastes a round trip per order.
+     * <p>下界是有意义的：几秒前才创建的支付单纯粹是还没来得及付，
+     * 去查它等于给每个订单白费一次往返。
      */
     @Select("""
             SELECT * FROM t_pay_payment

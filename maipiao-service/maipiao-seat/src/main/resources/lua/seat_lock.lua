@@ -1,26 +1,25 @@
 -- ============================================================
--- Atomic multi-seat lock.
+-- 原子的多座位加锁。
 --
--- This is the single arbitration point for the whole system: it is the only
--- place where "is this seat free" and "mark it taken" happen together. Redis
--- runs a script as one unit, so no other command can slip between the check
--- and the write. Doing the same with separate GETBIT and SETBIT calls leaves
--- a window in which two users both see the seat as free and both take it.
+-- 这是整个系统唯一的仲裁点：只有在这里，"这个座位空着吗"和"把它标记为占用"才是
+-- 一起发生的。Redis 把脚本当作一个整体执行，所以没有任何其他命令能插进检查和写入
+-- 之间。用分开的 GETBIT 和 SETBIT 去做同样的事，会留下一段窗口期，两个用户都看到
+-- 座位是空的，然后都把它拿走。
 --
--- KEYS[1] = seat:map:{scheduleId}      bitmap, bit N = seat_index N taken
--- KEYS[2] = seat:owner:{scheduleId}    hash, field = seat_index, value = orderNo
--- KEYS[3] = seat:delay:{scheduleId}    zset, member = orderNo, score = expiry millis
--- KEYS[4] = seat:order:{orderNo}       set of seat indexes held by this order
--- KEYS[5] = sold_out:{scheduleId}      set when the last seat goes
+-- KEYS[1] = seat:map:{scheduleId}      Bitmap，第 N 位 = seat_index N 已被占用
+-- KEYS[2] = seat:owner:{scheduleId}    hash，field = seat_index，value = orderNo
+-- KEYS[3] = seat:delay:{scheduleId}    ZSet，member = orderNo，score = 过期时刻（毫秒）
+-- KEYS[4] = seat:order:{orderNo}       本订单持有的座位索引 set
+-- KEYS[5] = sold_out:{scheduleId}      最后一个座位卖出时置上
 --
 -- ARGV[1] = orderNo
--- ARGV[2] = lock expiry, epoch millis
--- ARGV[3] = total seats in the session, for the sold-out decision
--- ARGV[4..] = seat indexes to lock
+-- ARGV[2] = 锁过期时刻，epoch 毫秒
+-- ARGV[3] = 该场次总座位数，用于售罄判断
+-- ARGV[4..] = 要加锁的座位索引
 --
--- Returns {1, lockedCount} on success, or {0, conflictingSeatIndex} when any
--- requested seat is already taken. The conflicting index lets the client
--- highlight exactly which seat went, instead of failing with "try again".
+-- 成功返回 {1, lockedCount}；只要有一个请求的座位已被占，就返回
+-- {0, conflictingSeatIndex}。给出冲突索引是为了让客户端能精确高亮是哪一个座位没了，
+-- 而不是笼统地回一句"请重试"。
 -- ============================================================
 
 local mapKey   = KEYS[1]
@@ -41,10 +40,10 @@ if wanted <= 0 then
     return {0, -1}
 end
 
--- ---- pass 1: verify every seat, without writing anything ----
+-- ---- pass 1: 校验每一个座位，不写任何东西 ----
 --
--- All-or-nothing: a partial lock would leave the user holding a seat they
--- never confirmed, and no one else able to book it until the lock expires.
+-- 全有或全无：部分加锁会让用户攥着一个他并没有确认过的座位，而别人也订不了它，
+-- 一直要等到锁过期。
 for i = firstSeat, lastSeat do
     local seatIndex = tonumber(ARGV[i])
     if redis.call('GETBIT', mapKey, seatIndex) == 1 then
@@ -52,10 +51,10 @@ for i = firstSeat, lastSeat do
     end
 end
 
--- ---- pass 2: occupy them all ----
+-- ---- pass 2: 把它们全部占下 ----
 --
--- No command runs between pass 1 and pass 2, so nothing observed as free in
--- pass 1 can have been taken by the time we get here.
+-- pass 1 和 pass 2 之间没有任何命令能执行，所以 pass 1 里看到是空的座位，到不了
+-- 这里就被人抢走。
 for i = firstSeat, lastSeat do
     local seatIndex = tonumber(ARGV[i])
     redis.call('SETBIT', mapKey, seatIndex, 1)
@@ -63,16 +62,14 @@ for i = firstSeat, lastSeat do
     redis.call('SADD', orderKey, seatIndex)
 end
 
--- Safety net: if the order flow dies before confirming or releasing, the key
--- disappears on its own rather than leaving seats locked forever. The real
--- timeout path is the delay zset below; this only bounds the damage.
+-- 兜底：万一订单流程在确认或释放之前就挂了，这个 key 会自己消失，而不是让座位
+-- 永远锁着。真正的超时回收路径是下面的 delay ZSet；这里只是给损失设个上界。
 redis.call('EXPIRE', orderKey, 7200)
 redis.call('ZADD', delayKey, expireTs, orderNo)
 
--- Sold out is derived from the same bits this script just wrote, so it cannot
--- drift out of step with them the way a separate counter would, and it
--- self-heals when the bitmap is rebuilt from the ledger. seat_release.lua
--- clears it again when a seat comes back.
+-- 售罄状态由本脚本刚写下的那些 bit 推导得出，所以不会像另设一个计数器那样与它们
+-- 失步，而且 bitmap 从账本重建时它会自愈。座位回退时 seat_release.lua 会再把它
+-- 清掉。
 if totalSeat > 0 and redis.call('BITCOUNT', mapKey) >= totalSeat then
     redis.call('SET', soldKey, '1')
 end

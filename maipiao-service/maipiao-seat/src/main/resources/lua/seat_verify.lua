@@ -1,23 +1,20 @@
 -- ============================================================
--- Check that a hold is still this order's.
+-- 检查一个持有关系是否仍然属于本订单。
 --
--- Called at the start of order creation, before the G1 transaction opens.
--- Without it the lock token is taken at face value, and a token whose hold
--- lapsed - the browser tab left open past the 15-minute hold, then submitted -
--- still produces an order. The ledger compare-and-set stops that from
--- overselling, but it does so by rejecting whoever holds the seat now, so the
--- user who actually won the seat loses it to one holding a dead token.
+-- 在创建订单的开头调用，早于 G1 事务开启。没有它，锁令牌就是被照单全收的：一个持有
+-- 早已过期的令牌 —— 浏览器标签页开过了 15 分钟持有期才提交 —— 照样能生成订单。账本
+-- 上的 CAS 确实拦住了超卖，但它的拦法是拒掉此刻真正持有座位的那个人，结果是真正
+-- 抢到座位的用户，输给了一个攥着死令牌的人。
 --
 -- KEYS[1] = seat:owner:{scheduleId}
 --
 -- ARGV[1] = orderNo
--- ARGV[2..] = seat indexes the order claims
+-- ARGV[2..] = 本订单声称拥有的座位索引
 --
--- Returns 1 when every seat is owned by this order, 0 otherwise.
+-- 每个座位都属于本订单时返回 1，否则返回 0。
 --
--- One script rather than a read per seat: the seats are a single claim, and
--- checking them separately would let a release land between two of the reads
--- and produce a verdict that was never true at any instant.
+-- 用一个脚本而不是逐座位读：这些座位是一个整体主张，分开检查会让一次释放插进两次
+-- 读取之间，从而给出一个在任何瞬间都不曾成立的结论。
 -- ============================================================
 
 local ownerKey = KEYS[1]

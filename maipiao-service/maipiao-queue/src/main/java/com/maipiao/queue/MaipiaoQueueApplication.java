@@ -6,20 +6,16 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * The rush-sale queue.
+ * 抢购队列。
  *
- * <p>Sits in front of seat-service and hands out admission tokens. It exists
- * because the alternative is worse: when two thousand tickets meet a hundred
- * thousand buyers, 99.8% of the requests are going to fail, and the only
- * question is what they fail with. Without a queue they fail by piling onto
- * the seat service and Redis until everything slows down for the 0.2% who
- * would have got a ticket.
+ * <p>横在 seat-service 前面，负责发放准入令牌。它之所以存在，是因为另一条路更糟：
+ * 两千张票对上十万买家时，99.8% 的请求注定要失败，唯一的问题只是它们以什么方式失败。
+ * 没有队列，它们的失败方式是全部压在 seat-service 和 Redis 上，直到把一切都拖慢 ——
+ * 包括本来能拿到票的那 0.2%。
  *
- * <p>{@code @EnableScheduling} is for the dispatcher, which is not a cleanup
- * job but the mechanism itself - the line only moves because something moves
- * it. It runs on every instance and relies on {@code ZPOPMIN} being atomic
- * rather than on a leader election, so two instances admitting at once cannot
- * hand the same place to two people.
+ * <p>{@code @EnableScheduling} 是给调度器用的，而调度器不是清理任务，它就是机制本身
+ * —— 队列只会因为有什么东西去推它才前进。它在每个实例上都跑，依赖的是一个 Lua 脚本
+ * 的原子性而不是选主，所以两个实例同时放人，不可能把同一个位置发给两个人。
  */
 @SpringBootApplication
 @EnableFeignClients

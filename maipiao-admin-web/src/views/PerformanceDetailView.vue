@@ -10,7 +10,7 @@
       没有「每天循环」这种东西，那是电影院的排片方式。
     </p>
 
-    <!-- Dates already on sale -->
+    <!-- 已经开卖的场次 -->
     <el-card shadow="never" style="margin-bottom: 16px">
       <template #header>已排场次</template>
       <el-table :data="sessions" v-loading="loading" empty-text="还没有排期，演出不会出现在前台">
@@ -101,7 +101,7 @@
       </template>
     </el-dialog>
 
-    <!-- Add one -->
+    <!-- 新增一场 -->
     <el-card shadow="never">
       <template #header>新增一场</template>
 
@@ -176,7 +176,7 @@
           />
         </el-form-item>
 
-        <!-- Price bands -->
+        <!-- 票档 -->
         <el-divider content-position="left">票档</el-divider>
         <p class="hint" style="margin-top: 0">
           按排划分，这是场馆实际卖票的方式：「1 到 8 排是 VIP」。
@@ -285,8 +285,8 @@ function addTier() {
   form.tierSpecs.push({
     name: '',
     price: 380,
-    // Continues from the previous band rather than starting over, because a
-    // gap between bands is seats no band covers - and those price at nothing.
+    // 接着上一档往下排，而不是从头开始：两档之间留出的空档，是没有任何档位
+    // 覆盖的座位 —— 而那些座位定不出价来。
     rowStart: last ? (last.rowEnd === 0 ? last.rowStart + 10 : last.rowEnd + 1) : 1,
     rowEnd: 0,
     color: '#909399'
@@ -335,7 +335,7 @@ async function onSubmit() {
     ElMessage.success(`已排期，生成 ${created.totalSeat} 个座位`)
     await loadSessions()
   } catch {
-    // request.js surfaced the reason
+    // 原因已经由 request.js 提示过了
   } finally {
     saving.value = false
   }
@@ -387,7 +387,7 @@ async function saveSession() {
     sessionDialog.value = false
     await loadSessions()
   } catch {
-    // request.js surfaced the reason
+    // 原因已经由 request.js 提示过了
   } finally {
     savingSession.value = false
   }
@@ -408,7 +408,7 @@ async function onDelete(row) {
     ElMessage.success('已删除')
     await loadSessions()
   } catch {
-    // surfaced - the server refuses once a seat has been sold
+    // 已由 request.js 提示 —— 一旦卖出过座位，服务端就会拒绝
   }
 }
 </script>

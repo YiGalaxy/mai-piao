@@ -31,15 +31,14 @@ public class PayController {
     public static class PrecreateRequest {
         private String orderNo;
         private java.math.BigDecimal amount;
-        /** MOCK by default; ALIPAY once that channel exists. */
+        /** 默认 MOCK；等那条渠道接进来之后才是 ALIPAY。 */
         private String channel = "MOCK";
     }
 
     /**
-     * Creates a payment and returns where to send the user.
+     * 创建一笔支付，并返回该把用户送到哪里去。
      *
-     * <p>Idempotent per order: reloading the payment page reuses the existing
-     * payment rather than opening a second one that could be paid in parallel.
+     * <p>按订单幂等：刷新收银台页面复用的是已有的那笔支付，而不是又开一笔可以并行付款的。
      */
     @PostMapping("/precreate")
     public R<Map<String, Object>> precreate(@RequestBody PrecreateRequest request) {
@@ -53,22 +52,21 @@ public class PayController {
         body.put("channelTradeNo", payment.getChannelTradeNo());
         body.put("amount", payment.getAmount());
         body.put("expireTime", payment.getExpireTime());
-        // Where the client opens the cashier. A real provider returns a URL
-        // here too; only the destination differs.
+        // 客户端打开收银台的地方。真实渠道方同样会返回一个 URL，
+        // 不同的只是它指向哪里。
         body.put("cashierUrl", "http://127.0.0.1:9007/mock-pay/cashier/" + payment.getChannelTradeNo());
         return R.ok(body);
     }
 
     /**
-     * The provider's callback.
+     * 渠道方的回调入口。
      *
-     * <p>Returns the channel's own response body, not the shared envelope:
-     * providers parse this literally, and Alipay wants exactly {@code success}
-     * with no JSON around it. Wrapping it would make every callback look
-     * failed and be retried forever.
+     * <p>返回的是渠道自己的响应体，而不是统一的封装：渠道方是按字面解析它的，支付宝要的
+     * 就是干干净净一个 {@code success}，外面不能套 JSON。套上封装会让每一条回调看起来
+     * 都是失败的，然后被无限重试下去。
      *
-     * <p>Answers HTTP 200 even for a rejected callback. A non-2xx would be read
-     * as "try again", which is not what "your signature is wrong" means.
+     * <p>即使回调被拒，也照样回 HTTP 200。非 2xx 会被理解成「请重试」，
+     * 而「你的签名不对」并不是这个意思。
      */
     @PostMapping(value = "/notify/{channel}", produces = MediaType.TEXT_PLAIN_VALUE)
     public String notify(@PathVariable String channel,
@@ -77,14 +75,14 @@ public class PayController {
         return paymentService.handleNotify(channel, rawBody, headers);
     }
 
-    /** Payment status, for the client to poll while the provider processes. */
+    /** 支付状态，供客户端在渠道方处理期间轮询。 */
     @GetMapping("/query/{paymentNo}")
     public R<Payment> query(@PathVariable String paymentNo) {
         UserContext.require();
         return R.ok(paymentService.getByPaymentNo(paymentNo));
     }
 
-    /** Payment for an order, so the order page can find it without an id. */
+    /** 某个订单的支付单，让订单页不必知道 id 也能找到它。 */
     @GetMapping("/order/{orderNo}")
     public R<Payment> byOrder(@PathVariable String orderNo) {
         UserContext.require();

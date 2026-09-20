@@ -89,12 +89,12 @@ const avatarText = computed(() => {
   return name ? name.slice(0, 1) : '我'
 })
 
-/** True when the film list is showing films - "演出" covers everything else. */
+/** 当列表页正在展示电影时为真 —— 其余的都归到「演出」下。 */
 function isCategory(value) {
   return route.path.startsWith('/films') && (route.query.category ?? 'MOVIE') === value
 }
 
-/** Any non-film category, so one nav item covers concerts, comedy and stage. */
+/** 任何非电影分类，这样一个导航项就同时覆盖了演唱会、脱口秀和话剧。 */
 function isStage() {
   return route.path.startsWith('/films') && route.query.category && route.query.category !== 'MOVIE'
 }
@@ -131,11 +131,10 @@ async function onCommand(command) {
 
 <style scoped>
 /**
- * White bar, not a dark one.
+ * 白色顶栏，不用深色。
  *
- * The category's headers are red-and-white: a white surface carrying the brand
- * colour in the logo and in the selected nav item. A dark bar reads as a
- * developer console, which is not what this is.
+ * 这个品类的头部都是红白配色：白底，品牌色只出现在 logo 和选中的导航项上。
+ * 深色顶栏看着像开发者控制台，而这不是。
  */
 .app-header {
   background: #fff;
@@ -204,10 +203,10 @@ async function onCommand(command) {
 }
 
 /**
- * Selected nav: coloured text plus a short coloured rule under it.
+ * 选中态的导航：文字变品牌色，底下再加一小段品牌色横线。
  *
- * A short rule rather than a full-width underline - the bar reads as one
- * continuous surface, and the marker reads as attached to the word.
+ * 用一小段横线而不是通栏下划线 —— 这样顶栏看起来仍是一整块连续的表面，
+ * 而标记看起来是跟着那个词走的。
  */
 .nav a {
   position: relative;

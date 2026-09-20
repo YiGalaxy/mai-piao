@@ -32,23 +32,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The admin surface: saying what will be on sale.
+ * 后台管理接口：说明将会卖什么。
  *
- * <p>Reachable only by an administrator. The gateway rejects
- * {@code /api/*&#47;admin/**} unless the token carries the admin role, in the
- * same place and by the same mechanism as the {@code /inner} block - before
- * the public whitelist is consulted, so a whitelist entry covering a whole
- * service cannot accidentally open this.
+ * <p>只有管理员够得着。网关在 token 不带 admin 角色时拒绝
+ * {@code /api/*&#47;admin/**}，位置和机制都与 {@code /inner} 的拦截相同 —— 都在查
+ * 公开白名单之前，所以一条覆盖整个服务的白名单条目不会不小心把它放开。
  *
- * <p>One controller rather than several, because what it does is one job:
- * create a thing, put it on sale, say when. Three controllers for three nouns
- * would be three places to get the authorization annotation wrong.
+ * <p>只做一个 controller 而不是好几个，因为它干的是一件事：建一个东西、让它上架、
+ * 说明什么时候。为三个名词写三个 controller，就是三个可能把鉴权注解写错的地方。
  */
 @Slf4j
 @RestController
-// /movie/admin, not /admin: the gateway strips one prefix segment, so a
-// request to /api/movie/admin/... arrives here as /movie/admin/... The public
-// controller is under /movie for the same reason.
+// 是 /movie/admin 而不是 /admin：网关会剥掉一层前缀，所以发往
+// /api/movie/admin/... 的请求到这里是 /movie/admin/... 公开的那个 controller
+// 挂在 /movie 下也是同一个原因。
 @RequestMapping("/movie/admin")
 @RequiredArgsConstructor
 public class AdminController {
@@ -61,23 +58,20 @@ public class AdminController {
     private final SessionSeatFactory seatFactory;
 
     // ------------------------------------------------------------
-    // what exists
+    // 已有什么
     // ------------------------------------------------------------
 
     /**
-     * Venues and their rooms.
+     * 场馆和它们下面的场地。
      *
-     * <p>Nested rather than flat because that is how the choice is made: you
-     * pick a stadium, then you pick which part of it. A flat list of a hundred
-     * rooms with no venue attached is a list nobody can use.
+     * <p>做成嵌套而不是平铺，因为选择就是这么做的：先挑一个体育场，再挑它的哪一块。
+     * 一份一百个场地、不挂任何场馆的平铺列表，是没人用得起来的列表。
      *
-     * <p>Returns everything the edit forms need as well as what the picker
-     * needs, so opening a venue to change its phone number does not require a
-     * second round trip for the fields that were not on the first one.
+     * <p>返回的东西既够选择器用，也够编辑表单用，这样打开一个场馆改电话号时，不必
+     * 为了第一次没带的字段再跑一趟。
      *
-     * <p>{@code includeClosed} exists because this list is also the
-     * management screen: a venue taken out of service has to remain visible to
-     * whoever took it out, or the action looks like a deletion.
+     * <p>{@code includeClosed} 存在是因为这个列表同时也是管理界面：一个被停用的
+     * 场馆必须对停用它的人仍然可见，否则这个操作看起来就像删除。
      */
     @GetMapping("/venues")
     public R<List<Map<String, Object>>> venues(
@@ -107,9 +101,8 @@ public class AdminController {
                 view.put("seatCount", place.getSeatCount());
                 view.put("seatTemplate", place.getSeatTemplate());
                 view.put("status", place.getStatus());
-                // What the template actually yields, beside what the venue
-                // declares. The two are allowed to differ - one is a label and
-                // the other decides - but a person editing should see both.
+                // 模板实际产出多少，摆在场馆声明的数字旁边。两者允许不一致 —— 一个是
+                // 标签，另一个才算数 —— 但正在编辑的人应该两个都看得到。
                 view.put("actualSeatCount", seatFactory.layoutOf(place).size());
                 view.put("sessionCount", sessionCountOfPlace(place.getId()));
                 placeViews.add(view);
@@ -132,7 +125,7 @@ public class AdminController {
         return R.ok(result);
     }
 
-    /** Projects, so the screen can list what is already there. */
+    /** 项目列表，好让界面把已有的东西列出来。 */
     @GetMapping("/projects")
     public R<List<AdminDtos.ProjectSummary>> projects(
             @RequestParam(required = false) String category) {
@@ -151,14 +144,14 @@ public class AdminController {
         return R.ok(summaries);
     }
 
-    /** A project's dates. What an administrator checks after adding one. */
+    /** 一个项目的日期。管理员加完之后就来看这里。 */
     @GetMapping("/projects/{projectId}/sessions")
     public R<List<Session>> sessions(@PathVariable Long projectId) {
         return R.ok(adminService.sessionsOf(projectId));
     }
 
     // ------------------------------------------------------------
-    // creating
+    // 创建
     // ------------------------------------------------------------
 
     @PostMapping("/projects")
@@ -167,12 +160,11 @@ public class AdminController {
     }
 
     /**
-     * Puts a project on sale for one date at one place.
+     * 让一个项目在某一天、某个场地上架开卖。
      *
-     * <p>One call, one night. A tour stop that plays three nights is three
-     * calls, which is honest: they are three separate things to put on sale,
-     * with their own seats and their own inventory. A repeating schedule would
-     * be the cinema model again.
+     * <p>一次调用，一个晚上。巡演的一站要演三晚就是三次调用，这是诚实的做法：它们是
+     * 三件各自独立、要上架的事，有各自的座位和各自的库存。搞成循环排期，又回到电影院
+     * 那套模型了。
      */
     @PostMapping("/sessions")
     public R<AdminDtos.SessionCreated> createSession(
@@ -187,7 +179,7 @@ public class AdminController {
     }
 
     // ------------------------------------------------------------
-    // venues and places
+    // 场馆和场地
     // ------------------------------------------------------------
 
     @PostMapping("/venues")
@@ -220,10 +212,10 @@ public class AdminController {
     }
 
     /**
-     * Edits a room, seat template included.
+     * 编辑一个场地，座位模板也在内。
      *
-     * <p>Existing sessions are untouched: their seat rows were written when
-     * they were created, and a room really can be reconfigured between events.
+     * <p>已有场次不受影响：它们的座位行在创建时就写好了，而一个场子在两场活动之间
+     * 确实可能重新布置。
      */
     @PutMapping("/places/{placeId}")
     public R<Void> updatePlace(@PathVariable Long placeId,
@@ -233,7 +225,7 @@ public class AdminController {
     }
 
     // ------------------------------------------------------------
-    // editing
+    // 编辑
     // ------------------------------------------------------------
 
     @PutMapping("/projects/{projectId}")
@@ -244,11 +236,10 @@ public class AdminController {
     }
 
     /**
-     * Changes how a session sells, not what it is selling.
+     * 改的是一个场次怎么卖，不是它在卖什么。
      *
-     * <p>Date, time and price bands are not editable here - see the request
-     * record for why. {@code status} 0 takes it off sale without cancelling
-     * anything.
+     * <p>日期、时间、票价档在这里都不可改 —— 原因见那个请求 record。{@code status}
+     * 传 0 是下架，取消不了任何东西。
      */
     @PutMapping("/sessions/{sessionId}")
     public R<Void> updateSession(@PathVariable Long sessionId,
@@ -260,11 +251,10 @@ public class AdminController {
     // ------------------------------------------------------------
 
     /**
-     * How many sessions use this room.
+     * 这个场地被多少个场次用着。
      *
-     * <p>Shown next to it because editing a seat template changes what future
-     * sessions are built from, and somebody about to do that should know how
-     * many already exist - not to block them, but so the change is deliberate.
+     * <p>摆在它旁边显示，因为改座位模板会改变之后每一个场次的构造基础，而正要做
+     * 这件事的人应该知道已经存在多少个 —— 不是要拦他，而是让这个改动是有意为之。
      */
     private int sessionCountOfPlace(Long placeId) {
         Long count = sessionMapper.selectCount(

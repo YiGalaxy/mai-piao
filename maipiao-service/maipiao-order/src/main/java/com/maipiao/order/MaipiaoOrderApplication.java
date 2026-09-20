@@ -8,12 +8,11 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * order-service : order creation, the state machine, and timeout cancellation.
+ * order-service：订单创建、状态机，以及超时取消。
  *
- * <p>This is the transaction manager for G1 (order creation). It opens the
- * global transaction and drives the branches in movie-service and
- * user-service; the seat hold in Redis is compensated explicitly because Redis
- * is not a transactional resource.
+ * <p>它是 G1（订单创建）的事务管理者。它开启全局事务，并驱动 movie-service 和
+ * user-service 里的各个分支；Redis 里的座位占用靠显式补偿来撤销，
+ * 因为 Redis 不是事务性资源。
  */
 @SpringBootApplication
 @EnableDiscoveryClient

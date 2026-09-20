@@ -11,21 +11,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * In-memory state of the fake provider.
+ * 假服务商的内存态。
  *
- * <p>Deliberately not persisted. A real provider's records live on their side
- * and survive our restarts; here, losing them means the operator has to start
- * a new payment, which is exactly what would happen if a real provider lost
- * its records - so the failure is honest rather than misleading.
+ * <p>刻意不做持久化。真实服务商的记录存在它那边，能扛过我们的重启；在这里，丢记录的
+ * 后果是操作者得重新发起一笔支付，而这恰恰就是一个真实服务商丢了记录时会发生的事 ——
+ * 所以这种故障是诚实的，不会误导人。
  */
 @Slf4j
 @Component
 public class MockPayStore {
 
-    /** Channel trade number -> session. */
+    /** 渠道交易号 -> 会话。 */
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
 
-    /** Payment number -> channel trade number, so a retry finds the same session. */
+    /** 支付单号 -> 渠道交易号，这样重试能找到同一个会话。 */
     private final Map<String, String> byPaymentNo = new ConcurrentHashMap<>();
 
     @Data
@@ -37,7 +36,7 @@ public class MockPayStore {
         /** PENDING / SUCCESS / FAILED */
         private String status = "PENDING";
         private LocalDateTime createdAt;
-        /** How many times a callback has been delivered for this session. */
+        /** 这个会话已经投递过多少次回调。 */
         private AtomicInteger notifyCount = new AtomicInteger(0);
     }
 
@@ -51,8 +50,7 @@ public class MockPayStore {
         }
 
         Session session = new Session();
-        // The channel's own identifier, in the shape a real provider uses:
-        // not our payment number, and not derivable from it.
+        // 渠道自己的标识，形态照着真实服务商来：不是我们的支付单号，也没法从它推出来。
         session.setChannelTradeNo("MOCK" + System.currentTimeMillis() + (int) (Math.random() * 1000));
         session.setPaymentNo(paymentNo);
         session.setOrderNo(orderNo);
@@ -68,13 +66,13 @@ public class MockPayStore {
         return sessions.get(channelTradeNo);
     }
 
-    /** By our payment number, for the operator tooling. */
+    /** 按我们的支付单号查，给运维工具用。 */
     public Session findByPaymentNo(String paymentNo) {
         String channelTradeNo = byPaymentNo.get(paymentNo);
         return channelTradeNo == null ? null : sessions.get(channelTradeNo);
     }
 
-    /** Everything the fake provider has seen, newest first. */
+    /** 假服务商见过的所有东西，最新的在前。 */
     public java.util.Collection<Session> list() {
         return sessions.values();
     }

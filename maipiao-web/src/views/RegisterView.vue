@@ -88,8 +88,7 @@ const rules = {
   ],
   confirmPassword: [
     { required: true, message: '请再次输入密码', trigger: 'blur' },
-    // Confirmation is a client-side concern only - the server has no reason
-    // to receive the same string twice.
+    // 二次确认纯属客户端的事 —— 服务端没理由收到同一个字符串两遍。
     {
       validator: (_rule, value, callback) => {
         if (value !== form.password) {
@@ -120,7 +119,7 @@ async function onSubmit() {
     ElMessage.success('注册成功')
     await router.replace('/')
   } catch {
-    // request.js already surfaced the reason.
+    // 原因已经由 request.js 提示过了。
   } finally {
     loading.value = false
   }

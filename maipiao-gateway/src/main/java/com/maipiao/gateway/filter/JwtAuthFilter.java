@@ -29,31 +29,24 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Verifies the JWT once, at the edge, and forwards the resolved user id.
+ * 在入口处校验一次 JWT，并把解析出的用户 id 转发下去。
  *
- * <p>Every request is sanitized, then classified: the internal surface is
- * refused outright, the public surface is let through, and everything else
- * needs a token - with the admin surface needing one that carries the admin
- * role. The order matters, and each step's placement is the reason it works:
- *
- * <ol>
+ * <p>每个请求先净化，再分级：内部接口直接拒绝，公开接口放行，其余的一律要 token
+ * —— 其中管理端接口还要求 token 携带管理员角色。顺序是有讲究的，每一步摆在哪个
+ * 位置，正是它能生效的原因：
  *
  * <ol>
- *   <li><b>Sanitize.</b> {@code X-User-Id} and {@code X-Internal-Call} are
- *       stripped from whatever the client sent. Downstream services trust those
- *       headers, so a client able to set them could act as any user, or as
- *       another service. This runs for whitelisted paths too - an anonymous
- *       request must not be able to smuggle in an identity.</li>
- *   <li><b>Authenticate.</b> Non-whitelisted paths need a token whose signature
- *       and expiry check out, and whose {@code jti} is not on the logout
- *       blacklist.</li>
- *   <li><b>Authorise.</b> The admin surface additionally needs the admin role.
- *       The role has been injected downstream since the beginning and read by
- *       nobody, so any logged-in user could reach it.</li>
+ *   <li><b>净化。</b>把客户端自己带上的 {@code X-User-Id} 和 {@code X-Internal-Call}
+ *       剥掉。下游服务信任这些头，所以能设置它们的客户端就能冒充任何用户，或者冒充
+ *       另一个服务。白名单路径同样要跑这一步 —— 匿名请求不能偷偷夹带一个身份进来。</li>
+ *   <li><b>认证。</b>非白名单路径需要一个签名和有效期都过关、且 {@code jti} 不在登出
+ *       黑名单上的 token。</li>
+ *   <li><b>授权。</b>管理端接口额外还要求管理员角色。这个角色从一开始就往下游注入，
+ *       却没有任何人去读它，所以任何已登录用户都能访问到管理端。</li>
  * </ol>
  *
- * <p>Ordered at {@link Ordered#HIGHEST_PRECEDENCE} so sanitizing runs before
- * any other filter can look at those headers.
+ * <p>排序在 {@link Ordered#HIGHEST_PRECEDENCE}，为的是净化先跑，等其他 filter
+ * 看到那些头的时候，它们已经被净化过了。
  */
 @Slf4j
 @Component
@@ -73,7 +66,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().value();
 
-        // ---- 1. strip client-supplied identity headers, always ----
+        // ---- 1. 剥掉客户端自带的身份头，任何情况下都做 ----
         ServerHttpRequest sanitized = request.mutate()
                 .headers(headers -> {
                     headers.remove(CommonConstants.HEADER_USER_ID);
@@ -82,35 +75,33 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        // ---- 2. internal endpoints are never routable from outside ----
-        // Checked before the whitelist, and deliberately so: /api/movie/** is
-        // public for browsing, which also matched /api/movie/inner/schedule/
-        // occupy - the branch that reserves inventory for the order
-        // transaction. Anybody could have called it with no token at all.
+        // ---- 2. 内部接口永远不能从外部路由到 ----
+        // 先于白名单检查，而且是刻意的：/api/movie/** 为了浏览而公开，它同时也
+        // 会匹配上 /api/movie/inner/schedule/occupy —— 也就是给订单事务预留库存
+        // 的那个分支。任何人不用带 token 就能调它。
         //
-        // A whitelist cannot express "public except for these", so the rule is
-        // separate and runs first. Service-to-service calls use Feign straight
-        // to the target service and never traverse the gateway, so nothing
-        // legitimate is blocked here.
+        // 白名单表达不了"公开，但这些除外"，所以这条规则单独拎出来，并且先跑。
+        // 服务之间的调用走 Feign 直连目标服务，根本不经过网关，所以这里不会挡下
+        // 任何合法调用。
         if (isInternal(path)) {
             log.warn("blocked external call to internal endpoint: {} {}", request.getMethod(), path);
-            // 404 rather than 403: a 403 confirms the endpoint exists.
+            // 返回 404 而不是 403：403 等于承认这个接口存在。
             return notFound(exchange);
         }
 
-        // ---- 3. CORS preflight carries no token by design ----
+        // ---- 3. CORS 预检请求按设计就不带 token ----
         if (HttpMethod.OPTIONS.equals(request.getMethod())) {
             return chain.filter(withRequest(exchange, sanitized));
         }
 
-        // ---- 4. public endpoints ----
-        // Admin paths are never public, whatever the whitelist says, so they
-        // skip this rather than relying on no pattern ever covering them.
+        // ---- 4. 公开接口 ----
+        // 不管白名单怎么写，管理端路径都算不上公开，所以让它们跳过这一步，而不是
+        // 指望白名单里永远不会有哪个模式覆盖到它们。
         if (!isAdminPath(path) && isWhitelisted(path)) {
             return chain.filter(withRequest(exchange, sanitized));
         }
 
-        // ---- 5. token required ----
+        // ---- 5. 必须有 token ----
         String token = extractToken(sanitized);
         if (token == null) {
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
@@ -118,9 +109,8 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         Claims claims = jwtUtil.parse(token);
         if (claims == null) {
-            // parse() logs the reason at debug: expired, bad signature, wrong
-            // issuer. The client is told none of it, because the distinction is
-            // more useful to an attacker than to a legitimate caller.
+            // parse() 会把原因记进 debug 日志：过期、签名不对、issuer 不对。
+            // 这些一点都不告诉客户端，因为这个区分对攻击者的用处大于对合法调用方。
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
         }
 
@@ -129,20 +119,18 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
         }
 
-        // ---- 6. admin surface needs the admin role ----
-        // The role has been put into X-User-Role since the beginning and read
-        // by nobody, so every admin endpoint was reachable by any logged-in
-        // user. A token that is merely valid is not authorisation.
+        // ---- 6. 管理端接口需要管理员角色 ----
+        // 角色从一开始就写进了 X-User-Role，却没有任何人去读，所以每个管理端接口
+        // 任何已登录用户都能访问。token 仅仅有效，不等于已获授权。
         //
-        // Checked before the blacklist because it needs no lookup, and a
-        // revocation check on a request that was never going to be allowed is
-        // work for nothing.
+        // 放在黑名单检查之前，因为它不需要查任何东西；对一个本来就不会被放行的
+        // 请求做吊销检查，是白费功夫。
         if (isAdminPath(path) && !jwtUtil.isAdmin(claims)) {
             log.warn("non-admin token rejected for admin path: path={}, userId={}", path, userId);
             return forbidden(exchange);
         }
 
-        // ---- 7. logout blacklist ----
+        // ---- 7. 登出黑名单 ----
         if (!authProperties.isCheckBlacklist()) {
             return chain.filter(withIdentity(exchange, sanitized, userId, claims));
         }
@@ -157,22 +145,22 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                     }
                     return chain.filter(withIdentity(exchange, sanitized, userId, claims));
                 })
-                // Redis down: fail closed. Treating an outage as "not revoked"
-                // turns a Redis blip into a window where logged-out tokens work.
+                // Redis 挂了：fail closed。把故障当成"未被吊销"，等于把 Redis 的
+                // 一次抖动变成一个窗口，窗口期内已登出的 token 照样好使。
                 .onErrorResume(e -> {
                     log.error("blacklist lookup failed, rejecting request", e);
                     return unauthorized(exchange, ErrorCode.SERVICE_UNAVAILABLE);
                 });
     }
 
-    /** Carries the sanitized request forward, with no identity attached. */
+    /** 把净化后的请求原样转发下去，不附带任何身份。 */
     private ServerWebExchange withRequest(ServerWebExchange exchange, ServerHttpRequest sanitized) {
         return exchange.mutate().request(sanitized).build();
     }
 
     /**
-     * Carries the sanitized request forward with the verified identity attached.
-     * This is the only place {@code X-User-Id} is ever set.
+     * 把净化后的请求转发下去，并附上已校验的身份。
+     * 这里是整个系统里唯一会设置 {@code X-User-Id} 的地方。
      */
     private ServerWebExchange withIdentity(ServerWebExchange exchange,
                                            ServerHttpRequest sanitized,
@@ -204,12 +192,11 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * True for the service-to-service surface.
+     * 判断是否为服务间调用接口。
      *
-     * <p>Every service mounts its internal endpoints under {@code /inner/...},
-     * reached through the gateway as {@code /api/{service}/inner/...}. The
-     * pattern matches at any depth so a service that nests its controllers
-     * differently is still covered.
+     * <p>每个服务都把内部接口挂在 {@code /inner/...} 下，经网关访问时是
+     * {@code /api/{service}/inner/...}。这个模式匹配任意深度，所以某个服务把
+     * controller 嵌套得跟别人不一样，也照样能覆盖到。
      */
     private boolean isInternal(String path) {
         return PATH_MATCHER.match("/api/*/inner/**", path)
@@ -222,12 +209,11 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * True for the administration surface.
+     * 判断是否为管理端接口。
      *
-     * <p>Matched before the public whitelist, like {@code /inner}, so that a
-     * whitelist entry covering a whole service cannot open it by accident.
-     * That is not hypothetical: {@code /api/movie/**} is public for browsing,
-     * and it would have covered {@code /api/movie/admin/**} on its own.
+     * <p>和 {@code /inner} 一样先于公开白名单匹配，这样一条覆盖整个服务的白名单
+     * 条目不会顺手把它打开。这不是假设：{@code /api/movie/**} 为浏览而公开，
+     * 它自己就会覆盖到 {@code /api/movie/admin/**}。
      */
     private boolean isAdminPath(String path) {
         return PATH_MATCHER.match("/api/*/admin/**", path)
@@ -235,12 +221,11 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * 403, not 404.
+     * 返回 403，不是 404。
      *
-     * <p>Unlike {@code /inner}, which does not exist as far as the internet is
-     * concerned, the admin surface is meant to be found by the people who use
-     * it. Telling a logged-in non-administrator that they are not one is more
-     * useful than pretending the page is missing.
+     * <p>不像 {@code /inner} —— 对互联网来说它压根不存在；管理端接口是要让它的
+     * 使用者找到的。告诉一个已登录的非管理员"你不是管理员"，比假装这个页面不存在
+     * 更有用。
      */
     private Mono<Void> forbidden(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
@@ -269,8 +254,8 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         try {
             bytes = objectMapper.writeValueAsBytes(body);
         } catch (JsonProcessingException e) {
-            // Cannot serialize our own envelope - emit a literal rather than
-            // leaving the client with an empty response.
+            // 连自己的响应封装都序列化不了 —— 吐一个字面量出去，总比让客户端
+            // 收到一个空响应强。
             bytes = "{\"code\":500,\"message\":\"system error\"}".getBytes(StandardCharsets.UTF_8);
         }
         DataBuffer buffer = response.bufferFactory().wrap(bytes);

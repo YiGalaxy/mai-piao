@@ -14,31 +14,27 @@ import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSeriali
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
- * Redis serialization setup.
+ * Redis 序列化配置。
  *
- * <p>Keys are always plain strings - that is what makes {@code KEYS seat:map:*}
- * and the Lua scripts readable, and it is what the bitmap/zset commands expect.
+ * <p>key 一律是纯字符串 —— 这才让 {@code KEYS seat:map:*} 和那些 Lua 脚本可读，
+ * 也正是 bitmap/zset 命令所要求的。
  *
- * <p>Values are JSON rather than JDK serialization so that a value written by
- * one service can still be inspected (and, if the shape matches, read) by
- * another. JDK serialization also bakes in the class name, which breaks the
- * moment you rename a class.
+ * <p>value 用 JSON 而不是 JDK 序列化，这样 A 服务写进去的值，B 服务还能看得懂
+ * （形状对得上的话也能读）。JDK 序列化还会把类名焊进去，类一改名就崩。
  *
- * <p>{@link StringRedisTemplate} is registered too: the hot seat-lock path uses
- * it directly with raw string arguments, because building JSON for what is
- * ultimately a bitmap offset is pure overhead.
+ * <p>{@link StringRedisTemplate} 也一并注册了：座位锁定这条热点路径直接拿它配上
+ * 原始字符串参数来用，因为为一个说到底只是 bitmap 偏移量的东西去拼 JSON 纯属多余
+ * 开销。
  */
 @Configuration
 public class RedisConfig {
 
     /**
-     * ObjectMapper used for values.
+     * 给 value 用的 ObjectMapper。
      *
-     * <p>{@code activateDefaultTyping} writes a class hint into the JSON so that
-     * a {@code List<SeatDTO>} round-trips as the same type instead of becoming
-     * {@code List<LinkedHashMap>}. The trade-off is that the payload is coupled
-     * to the class name - acceptable here because these values are short-lived
-     * caches, not long-term storage.
+     * <p>{@code activateDefaultTyping} 会把类信息写进 JSON，这样 {@code List<SeatDTO>}
+     * 取出来还是原来的类型，而不会变成 {@code List<LinkedHashMap>}。代价是载荷和
+     * 类名绑在了一起 —— 这里可以接受，因为这些值都是短命的缓存，不是长期存储。
      */
     private ObjectMapper buildObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
@@ -65,7 +61,7 @@ public class RedisConfig {
         template.setValueSerializer(valueSerializer);
         template.setHashValueSerializer(valueSerializer);
 
-        // Without this, a connection is not released back to the pool.
+        // 少了这一句，连接不会被还回连接池。
         template.afterPropertiesSet();
         return template;
     }

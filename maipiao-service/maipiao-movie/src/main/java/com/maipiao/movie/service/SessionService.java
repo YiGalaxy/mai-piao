@@ -19,8 +19,8 @@ public class SessionService {
     private final SessionMapper sessionMapper;
 
     /**
-     * @param showDate defaults to today when omitted, so a client that has not
-     *                 implemented date picker yet still gets something useful
+     * @param showDate 不传时默认今天，这样还没做日期选择器的客户端拿到的仍是有用的
+     *                 东西
      */
     public List<SessionVO> list(Long projectId, Long venueId, LocalDate showDate) {
         LocalDate target = showDate != null ? showDate : LocalDate.now();

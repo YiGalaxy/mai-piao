@@ -23,10 +23,9 @@ const routes = [
     component: () => import('../views/SeatSelectView.vue'),
     meta: { requiresAuth: true }
   },
-  // The other way to buy a seat: the venue assigns it. Separate route rather
-  // than a mode inside the seat map, because the two pages share no state -
-  // one fetches a map and tracks selections, the other fetches bands and a
-  // quantity - and the choice between them is made before either loads.
+  // 另一种买座方式：由场馆来分配座位。做成独立路由而不是座位图里的一个
+  // 模式，因为这两个页面没有任何共享状态 —— 一个拉座位图并跟踪选中项，
+  // 另一个拉票价档位和张数 —— 而且两者的选择在任一页面加载之前就已经定了。
   {
     path: '/schedules/:id/tickets',
     name: 'ticket-select',
@@ -82,7 +81,7 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    // Anything unrecognised goes home rather than showing a blank page.
+    // 认不出来的路径一律回首页，而不是给一张白页。
     path: '/:pathMatch(.*)*',
     redirect: '/'
   }
@@ -95,12 +94,11 @@ const router = createRouter({
 })
 
 /**
- * Route guard.
+ * 路由守卫。
  *
- * A UX guard, not a security boundary. Everything it protects is also enforced
- * server-side by the gateway - editing localStorage or calling the API directly
- * still yields a 401. Its job is to avoid showing a screen that is guaranteed
- * to fail.
+ * 这是体验层的守卫，不是安全边界。它挡住的每一件事，网关在服务端也都拦着 ——
+ * 改 localStorage 也好、直接打 API 也好，照样是 401。它的职责只是别把一个
+ * 注定会失败的页面显示出来。
  */
 router.beforeEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · 麦票` : '麦票'

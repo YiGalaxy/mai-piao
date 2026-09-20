@@ -5,16 +5,14 @@ import com.maipiao.common.core.result.ErrorCode;
 import java.io.Serial;
 
 /**
- * Business exception. Thrown by services for expected, recoverable failures
- * (seat taken, order expired, coupon unusable...).
+ * 业务异常。服务端遇到预期内、可恢复的失败时抛它
+ * （座位已被占、订单已过期、优惠券不可用……）。
  *
- * <p>The global exception handler converts this into {@code R.fail(...)} with
- * HTTP 200, because "the seat is taken" is a normal outcome of a successful
- * request, not a transport failure. Genuine bugs (NPE, SQL errors) surface as
- * {@link ErrorCode#SYSTEM_ERROR} with HTTP 500.
+ * <p>全局异常处理器把它转成 HTTP 200 的 {@code R.fail(...)}，因为"座位被占了"是
+ * 一次成功请求的正常结果，不是传输层故障。真正的 bug（NPE、SQL 错误）则以
+ * {@link ErrorCode#SYSTEM_ERROR} 加 HTTP 500 的形式冒出来。
  *
- * <p>Stack trace filling is disabled: these are expected control flow, and
- * catching one is cheaper without the trace.
+ * <p>关闭了堆栈填充：这些属于预期内的控制流，不带堆栈时捕获它的开销更低。
  */
 public class BizException extends RuntimeException {
 
@@ -34,8 +32,8 @@ public class BizException extends RuntimeException {
     }
 
     /**
-     * Wrap a lower-level failure while keeping the business code.
-     * The cause is preserved but no stack trace is filled.
+     * 包装一个更底层的失败，同时保留业务码。
+     * cause 会保留下来，但不填充堆栈。
      */
     public BizException(ErrorCode errorCode, String message, Throwable cause) {
         super(message, cause, false, false);
@@ -47,7 +45,7 @@ public class BizException extends RuntimeException {
     }
 
     // ------------------------------------------------------------
-    // Convenience factories - keep call sites short
+    // 便捷工厂方法 —— 让调用处短一些
     // ------------------------------------------------------------
 
     public static BizException of(ErrorCode errorCode) {
@@ -58,14 +56,14 @@ public class BizException extends RuntimeException {
         return new BizException(errorCode, message);
     }
 
-    /** Throws when {@code condition} is true. Useful for guard clauses. */
+    /** 当 {@code condition} 为 true 时抛出。适合写守卫式的前置判断。 */
     public static void throwIf(boolean condition, ErrorCode errorCode) {
         if (condition) {
             throw new BizException(errorCode);
         }
     }
 
-    /** Throws when {@code condition} is true, with a custom message. */
+    /** 当 {@code condition} 为 true 时抛出，可自定义消息。 */
     public static void throwIf(boolean condition, ErrorCode errorCode, String message) {
         if (condition) {
             throw new BizException(errorCode, message);

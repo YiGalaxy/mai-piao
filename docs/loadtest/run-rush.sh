@@ -1,19 +1,17 @@
 #!/bin/bash
 # ============================================================
-# One rush-sale load run, from a clean screening.
+# 一次抢购压测，从一场干净的场次开始。
 #
-# Resets the showcase rush sale, fires N buyers at it, and prints the
-# summary. Everything it needs it finds itself, so it can be re-run
-# without remembering anything about the last run.
+# 把展示用的抢购场次重置掉，放 N 个买家上去抢，然后打印汇总。
+# 需要的东西它自己都会找，所以可以重复跑，不用记上一次跑的是什么。
 #
 #   ./run-rush.sh [buyers] [threads] [queue|direct]
 #
-#   queue   - join the line, wait to be admitted, then buy (the real path)
-#   direct  - skip the line and call the seat endpoint, which is what the
-#             line exists to protect against
+#   queue   - 排队、等叫号、再下单（真实链路）
+#   direct  - 跳过排队直接打选座接口，也就是排队机制本来要防的那种打法
 #
-# Results are appended to results.txt as well as printed, so a ladder of
-# runs can be compared without re-running them.
+# 结果除了打印出来，还会追加写进 results.txt，这样一整梯次的压测
+# 可以直接拿来对比，不必重跑。
 # ============================================================
 set -u
 
@@ -25,10 +23,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 MYSQL="docker exec maipiao-mysql mysql -uroot -pmaipiao123 -N"
 REDIS="docker exec maipiao-redis redis-cli -a maipiao123 --no-auth-warning"
 
-# The showcase rush sale.
+# 展示用的抢购场次。
 SESSION=$($MYSQL -e "SELECT id FROM maipiao_event.t_event_session WHERE project_id=1199 AND rush_mode=1 LIMIT 1;" 2>/dev/null | grep -v Warning)
-# Every band, not just the first: one band holds 400 of the 2000 seats,
-# so a single-band run measures the band filling up rather than the venue.
+# 用上全部票档，不只第一个：2000 个座位里单个票档只占 400 个，
+# 只跑一个档测出来的是这个档满了，而不是整个场子满了。
 TIER=$($MYSQL -e "SELECT GROUP_CONCAT(id ORDER BY row_start SEPARATOR ',') FROM maipiao_event.t_event_price_tier WHERE session_id=$SESSION;" 2>/dev/null | grep -v Warning)
 
 if [ -z "$SESSION" ] || [ -z "$TIER" ]; then
@@ -48,7 +46,7 @@ $REDIS DEL "seat:map:$SESSION" "seat:owner:$SESSION" "seat:delay:$SESSION" "sold
   "queue:wait:$SESSION" "queue:inflight:$SESSION" "queue:session:$SESSION" >/dev/null 2>&1
 $REDIS DEL rush:schedules >/dev/null 2>&1
 
-# First user id of the seeded block; see seed users in this directory.
+# 种子用户块里的第一个用户 id；种子用户见本目录。
 FIRST_USER=2102900000000000000
 
 echo "开始：买家=$BUYERS 并发=$THREADS 模式=$MODE"
@@ -56,7 +54,7 @@ java -Dfile.encoding=UTF-8 "$DIR/RushSaleTest.java" \
   "http://127.0.0.1:9000" "$SESSION" "$TIER" "$TOTAL" \
   "$BUYERS" "$THREADS" "$FIRST_USER" "$MODE" || exit 1
 
-# What the ledger says afterwards, which is the only account that matters.
+# 跑完之后账本怎么说——只有这本账才算数。
 echo
 echo "=== 账本核对 ==="
 $MYSQL -e "

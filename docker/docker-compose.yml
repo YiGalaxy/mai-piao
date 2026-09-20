@@ -1,45 +1,43 @@
 # ============================================================
-# Maipiao Ticket - Infrastructure
-# Middleware for local development ONLY.
-# Passwords here are dev-only, never use in production.
+# Maipiao Ticket - 基础设施
+# 中间件仅供本地开发使用。
+# 这里的密码都是开发用密码，绝不能用于生产环境。
 #
-# Memory budget (total ~3GB):
+# 内存预算（合计约 3GB）：
 #   nacos 512m | mysql 512m | redis 128m
 #   rocketmq namesrv 256m + broker 1g | seata 512m
 # ============================================================
 
-# Explicit project name.
+# 显式指定项目名。
 #
-# Without this, Compose derives the name from the directory ("docker") and it
-# collides with every other project that also keeps its compose file in a
-# folder called `docker`. Volumes, networks and containers all get prefixed
-# with the project name, so two projects sharing one silently share resources -
-# and `docker compose down --remove-orphans` in one project will delete
-# containers belonging to the other.
+# 不写这一行，Compose 就会拿目录名（"docker"）当项目名，于是和所有同样把
+# compose 文件放在 `docker` 目录下的项目撞车。卷、网络、容器都会带上
+# 项目名前缀，两个项目共用一个名字时，资源就被静默地共享了——
+# 而且其中一个项目执行 `docker compose down --remove-orphans` 时，
+# 会把属于另一个项目的容器一并删掉。
 #
-# That is not hypothetical: it is exactly what happened here. The volume
-# `docker_rabbitmq-data`, created 2026-08-13 by a different project, has
-# com.docker.compose.project=docker on it.
+# 这不是假设，本项目就栽过这个坑：卷 `docker_rabbitmq-data` 是 2026-08-13
+# 由另一个项目创建的，它上面挂着的标签就是 com.docker.compose.project=docker。
 #
-# Always give a compose project a unique name. Override with -p if needed.
+# 每个 compose 项目都要给一个唯一的名字。需要时用 -p 覆盖。
 name: maipiao
 
 services:
 
   # ---------------------------------------------------------
-  # MySQL 8.0 - one instance, multiple schemas (database-per-service)
-  # Schemas are created by the scripts mounted into /docker-entrypoint-initdb.d
-  # NOTE: init scripts only run when the data volume is EMPTY.
-  #       Run `docker compose down -v` to reset and re-init.
+  # MySQL 8.0 —— 单实例、多 schema（一个服务一个库）
+  # schema 由挂载进 /docker-entrypoint-initdb.d 的脚本创建
+  # 注意：初始化脚本只在数据卷为空时才会执行。
+  #       要重置并重新初始化，执行 `docker compose down -v`。
   # ---------------------------------------------------------
   mysql:
     image: mysql:8.0
     container_name: maipiao-mysql
     restart: unless-stopped
     ports:
-      # Host port 3309, NOT 3306: this machine already runs a native MySQL
-      # service on 3306 and three other projects' MySQL containers on 3307/3308/3310.
-      # Override with MYSQL_PORT in .env if that ever collides too.
+      # 宿主端口用 3309，不是 3306：本机的 3306 已经被一个原生 MySQL 服务占了，
+      # 3307/3308/3310 也被另外三个项目的 MySQL 容器占着。
+      # 万一这几个也冲突了，就在 .env 里用 MYSQL_PORT 覆盖。
       - "${MYSQL_PORT:-3309}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: maipiao123
@@ -47,21 +45,20 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      # Ignore whatever charset the client asks for and use utf8mb4 regardless.
+      # 无视客户端要的字符集，一律强制用 utf8mb4。
       #
-      # The init scripts are loaded by the image's entrypoint with a client
-      # that negotiates latin1, so Chinese text in the seed data was stored
-      # double-encoded - the UTF-8 bytes reinterpreted as latin1 characters
-      # and then encoded again. That corruption happens on write and is not
-      # recoverable by reading differently. The scripts also set NAMES
-      # explicitly; this is the belt to that pair of braces.
+      # 镜像的 entrypoint 在加载初始化脚本时，客户端协商出来的是 latin1，
+      # 于是种子数据里的中文被双重编码存了进去——UTF-8 字节先被当成 latin1
+      # 字符重新解释一遍，然后再编码一次。这种损坏发生在写的那一刻，
+      # 事后换个方式读也救不回来。那些脚本里也已经显式 SET NAMES 了，
+      # 这里是再上一道保险。
       - --skip-character-set-client-handshake
       - --default-time-zone=+08:00
       - --max_connections=500
       - --innodb_buffer_pool_size=256M
     volumes:
       - mysql-data:/var/lib/mysql
-      - ../docs/sql:/docker-entrypoint-initdb.d:ro
+      - ../docs/sql/schema:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pmaipiao123"]
       interval: 10s
@@ -72,16 +69,16 @@ services:
       - maipiao-net
 
   # ---------------------------------------------------------
-  # Redis 7 - seat bitmap, queue (ZSet), inventory, cache
-  # AOF enabled: seat occupancy must survive a restart.
+  # Redis 7 —— 座位位图、排队（ZSet）、库存、缓存
+  # 开启 AOF：座位占用情况必须能扛住重启。
   # ---------------------------------------------------------
   redis:
     image: redis:7.2-alpine
     container_name: maipiao-redis
     restart: unless-stopped
     ports:
-      # Host port 6381: 6379 is taken by another project's xtdp-redis container,
-      # 6380 by yiguixingtu-redis, 16379 by bulk-trade-redis.
+      # 宿主端口 6381：6379 被另一个项目的 xtdp-redis 容器占了，
+      # 6380 被 yiguixingtu-redis 占了，16379 被 bulk-trade-redis 占了。
       - "${REDIS_PORT:-6381}:6379"
     command:
       - redis-server
@@ -106,23 +103,23 @@ services:
       - maipiao-net
 
   # ---------------------------------------------------------
-  # Nacos 2.4.3 - service discovery + config center
-  # Standalone mode with embedded Derby storage (dev only).
-  # Auth is DISABLED for local convenience.
-  # gRPC port 9848 is REQUIRED by Nacos 2.x clients.
+  # Nacos 2.4.3 —— 服务发现 + 配置中心
+  # 单机模式，配内嵌 Derby 存储（仅开发环境）。
+  # 为了方便本地使用，鉴权是关掉的。
+  # Nacos 2.x 客户端必须要 gRPC 端口 9848。
   # ---------------------------------------------------------
   nacos:
     image: nacos/nacos-server:v2.4.3
     container_name: maipiao-nacos
     restart: unless-stopped
     ports:
-      # Host ports 8858/9858: 8848 and 9848 are taken by another project's
-      # zhy-nacos container.
+      # 宿主端口用 8858/9858：8848 和 9848 被另一个项目的
+      # zhy-nacos 容器占了。
       #
-      # The gRPC offset matters. A Nacos 2.x client dials <serverPort>+1000 for
-      # gRPC, so a client configured with 127.0.0.1:8858 will open a second
-      # connection to 127.0.0.1:9858. Mapping 9858 -> container 9848 is what
-      # makes that work; there is nothing to configure on the client side.
+      # 这个 gRPC 偏移量很关键。Nacos 2.x 客户端会去连 <serverPort>+1000 当作
+      # gRPC 端口，所以配成 127.0.0.1:8858 的客户端会再开一条连到
+      # 127.0.0.1:9858 的连接。把 9858 映射到容器内的 9848 就能让它跑通，
+      # 客户端那边什么都不用配。
       - "${NACOS_PORT:-8858}:8848"
       - "${NACOS_GRPC_PORT:-9858}:9848"
     environment:
@@ -144,9 +141,9 @@ services:
       - maipiao-net
 
   # ---------------------------------------------------------
-  # RocketMQ 5.3.1 - nameserver + broker
-  # brokerIP1 MUST be 127.0.0.1 so that host-side Spring Boot
-  # clients (running outside docker) can reach the broker.
+  # RocketMQ 5.3.1 —— nameserver + broker
+  # brokerIP1 必须是 127.0.0.1，这样跑在宿主机上的 Spring Boot
+  # 客户端（在 docker 之外）才能连上 broker。
   # ---------------------------------------------------------
   rocketmq-namesrv:
     image: apache/rocketmq:5.3.1
@@ -157,12 +154,11 @@ services:
     environment:
       JAVA_OPT_EXT: "-Xms256m -Xmx256m -Xmn128m"
       TZ: Asia/Shanghai
-    # The image's entrypoint (docker-entrypoint.sh) dispatches on the FIRST
-    # argument: `nameserver` -> exec ./mqnamesrv, `broker` -> exec ./mqbroker.
-    # Writing `sh mqnamesrv` here falls through to its else-branch, which runs
-    # the script with $0 set to the relative name `mqnamesrv`. The script then
-    # fails to resolve ROCKETMQ_HOME from $0 and the broker dies on startup
-    # with an opaque NPE. Use the bare role name.
+    # 镜像的 entrypoint（docker-entrypoint.sh）是按第一个参数分发的：
+    # `nameserver` -> exec ./mqnamesrv，`broker` -> exec ./mqbroker。
+    # 这里要是写成 `sh mqnamesrv`，就会落到它的 else 分支，脚本带着
+    # $0 = 相对名字 `mqnamesrv` 执行，于是脚本没法从 $0 推出 ROCKETMQ_HOME，
+    # broker 启动时就以一个看不懂的 NPE 挂掉。所以只写角色名就行。
     command: nameserver
     volumes:
       - ./data/rocketmq/namesrv-logs:/home/rocketmq/logs
@@ -184,29 +180,28 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.1/conf/broker.conf:ro
-      # Bind mounts, not named volumes.
+      # 用 bind mount，不用具名卷。
       #
-      # A named volume is created as root:root, but this image runs as the
-      # `rocketmq` user - it cannot write to /home/rocketmq/store or /logs, so
-      # the broker dies during startup without ever managing to log why
-      # (the log directory itself is unwritable). Bind mounts inherit the
-      # host's permission model on Docker Desktop and avoid the whole problem.
+      # 具名卷创建出来是 root:root，而这个镜像以 `rocketmq` 用户运行，写不进
+      # /home/rocketmq/store 和 /logs，于是 broker 在启动过程中就死了，
+      # 连死因都没能记下来（日志目录本身不可写）。bind mount 在
+      # Docker Desktop 上沿用宿主的权限模型，能绕开这一整类问题。
       - ./data/rocketmq/store:/home/rocketmq/store
       - ./data/rocketmq/logs:/home/rocketmq/logs
-    # See the note on namesrv's command: `broker` is the entrypoint's dispatch
-    # keyword, not a shell invocation. -n is passed explicitly rather than
-    # relying on NAMESRV_ADDR being picked up by the startup script.
+    # 见 namesrv 那条 command 的说明：`broker` 是 entrypoint 的分发关键字，
+    # 不是在调 shell。-n 直接写在命令行里，而不是指望启动脚本能读到
+    # NAMESRV_ADDR。
     command: broker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-5.3.1/conf/broker.conf
     networks:
       - maipiao-net
 
   # ---------------------------------------------------------
-  # Seata 2.2.0 - distributed transaction coordinator
-  # store.mode=file : simplest for a single-node dev setup.
-  #   Global transaction state lives in the container FS.
-  #   Switch to `db` mode (create the `seata` schema + undo_log)
-  #   if you need HA or want to survive container recreation.
-  # Registry = Nacos, so clients discover the TC automatically.
+  # Seata 2.2.0 —— 分布式事务协调器
+  # store.mode=file：单机开发环境最简单的选择。
+  #   全局事务状态存在容器文件系统里。
+  #   如果要做 HA，或者想让状态扛住容器重建，就切到 `db` 模式
+  #   （先建 `seata` 库和 undo_log 表）。
+  # 注册中心用 Nacos，客户端能自动发现 TC。
   # ---------------------------------------------------------
   seata:
     image: apache/seata-server:2.2.0
@@ -215,26 +210,26 @@ services:
     depends_on:
       - nacos
     ports:
-      - "8091:8091"   # TC service port used by clients
-      - "7091:7091"   # console (http://localhost:7091)
+      - "8091:8091"   # 客户端连接用的 TC 服务端口
+      - "7091:7091"   # 控制台 (http://localhost:7091)
     environment:
       SEATA_PORT: 8091
       TZ: Asia/Shanghai
-      # Advertise 127.0.0.1 rather than the container's own address.
+      # 对外注册 127.0.0.1，而不是容器自己的地址。
       #
-      # Seata registers itself in Nacos with whichever IP it detects, which
-      # inside a container is the Docker-internal one (172.x.x.x). The services
-      # run on the host, cannot route to that address, and fail at startup with
+      # Seata 会拿自己探测到的 IP 注册到 Nacos，而在容器里探测到的是 Docker
+      # 内网地址（172.x.x.x）。各个服务跑在宿主机上，路由不到那个地址，
+      # 启动时就会失败并报
       #     can not connect to [172.28.0.8:8091]
-      # which reads like the server is down when it is actually healthy.
+      # 看起来像服务端挂了，其实它好好的。
       #
-      # If the services are ever moved into Docker too, this must become the
-      # seata container's name so they resolve it over the compose network.
+      # 如果哪天把这些服务也搬进 Docker，这里就得改成 seata 容器名，
+      # 让它们通过 compose 网络解析。
       SEATA_IP: 127.0.0.1
     volumes:
       - ./config/seata/application.yml:/seata-server/resources/application.yml:ro
-      # Bind mount for the same reason as RocketMQ: a root-owned named volume
-      # is not writable by the image's non-root user.
+      # 用 bind mount，理由和 RocketMQ 一样：root 属主的具名卷，
+      # 镜像里的非 root 用户写不进去。
       - ./data/seata/sessionStore:/seata-server/sessionStore
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:7091/health"]
@@ -253,7 +248,6 @@ volumes:
   mysql-data:
   redis-data:
   nacos-data:
-  # RocketMQ and Seata use bind mounts under ./data instead of named volumes -
-  # see the notes on those services. Their images run as a non-root user that
-  # cannot write to a root-owned volume, and the resulting failure is silent
-  # (the process dies before it can log why).
+  # RocketMQ 和 Seata 用的是 ./data 下的 bind mount，而不是具名卷——
+  # 见那两个服务上的说明。它们的镜像以非 root 用户运行，写不进 root 属主的卷，
+  # 而且这个失败是静默的（进程还没记下原因就死了）。

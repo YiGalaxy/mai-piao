@@ -11,15 +11,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Demo data generation.
+ * 演示数据生成。
  *
- * <p>This exists because the schedule tables cannot be seeded from SQL - see
- * {@link DemoDataService} for the arithmetic. It is a development affordance,
- * not a product feature, and it is gated behind a flag so it cannot be reached
- * on a deployment where {@code maipiao.demo.enabled} is not explicitly set.
+ * <p>它存在是因为排期这几张表没法用 SQL 初始化 —— 那套算术见
+ * {@link DemoDataService}。这是开发期的便利，不是产品功能，所以被一个开关挡住：
+ * 没有显式设置 {@code maipiao.demo.enabled} 的部署环境够不到它。
  *
- * <p>When admin-service lands, schedule creation moves there with proper
- * authorisation. Until then this is the only way to get bookable screenings.
+ * <p>等 admin-service 落地，排期创建会带着正经的鉴权搬过去。在那之前，这是拿到
+ * 可预订场次的唯一办法。
  */
 @Slf4j
 @RestController
@@ -33,12 +32,10 @@ public class DemoDataController {
     private boolean demoEnabled;
 
     /**
-     * Generates screenings for the next {@code days} days across every active
-     * hall, plus their seat rows.
+     * 为接下来 {@code days} 天、每个在用场馆生成排片，以及它们的座位行。
      *
-     * <p>Idempotent in effect but not incremental: existing schedules are
-     * cleared first, so calling it twice yields one dataset rather than two
-     * overlapping ones.
+     * <p>效果上幂等，但不是增量的：已有的排期会先被清掉，所以调两次得到的是一份数据集，
+     * 而不是两份互相重叠的。
      */
     @PostMapping("/generate-schedule")
     public R<DemoDataService.GenerateResult> generateSchedule(
@@ -60,12 +57,11 @@ public class DemoDataController {
     }
 
     /**
-     * Builds the showcase: a 2000-seat stadium, four price bands, two nights -
-     * one sold through a queue, one sold straight through.
+     * 构建 showcase：一个 2000 座的体育场、四个票价档、两晚 —— 一晚走排队卖，
+     * 一晚直接卖。
      *
-     * <p>Must run <b>after</b> {@link #generateSchedule}, which clears every
-     * session there is. Re-running this one is safe; it only clears its own
-     * project's sessions.
+     * <p>必须在 {@link #generateSchedule} <b>之后</b>运行，那个会清掉所有场次。
+     * 这一个重跑是安全的；它只清除自己那个项目的场次。
      */
     @PostMapping("/generate-showcase")
     public R<DemoDataService.GenerateResult> generateShowcase() {

@@ -7,11 +7,11 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
- * user-service : registration, login, JWT issuing, coupons.
+ * user-service：注册、登录、JWT 签发、优惠券。
  *
- * <p>Note there is no {@code @ComponentScan} widening the base package: the
- * shared beans from common-web / common-redis arrive through Spring Boot's
- * auto-configuration imports, not through scanning.
+ * <p>注意这里没有把基础包范围放大的 {@code @ComponentScan}：
+ * 来自 common-web / common-redis 的共享 bean 是通过 Spring Boot 的自动配置导入进来的，
+ * 不是靠扫描进来的。
  */
 @SpringBootApplication
 @EnableFeignClients

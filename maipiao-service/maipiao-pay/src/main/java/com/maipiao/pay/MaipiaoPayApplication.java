@@ -8,14 +8,13 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * pay-service : payment orders, callbacks, idempotency and refunds.
+ * pay-service：支付单、回调、幂等与退款。
  *
- * <p>Transaction manager for G2 (issue tickets) and G3 (refund and release),
- * for the same reason order-service manages G1: the writes span services and
- * have to succeed or fail together.
+ * <p>G2（出票）和 G3（退款并释放座位）的事务发起方，理由和 order-service 发起 G1 一样：
+ * 这些写入跨越了多个服务，必须一起成功或一起失败。
  *
- * <p>It is also the only service that talks to a payment provider, and the
- * only one that has to be correct about the same callback arriving twice.
+ * <p>它也是唯一一个与支付渠道方打交道的服务，以及唯一一个必须正确处理
+ * 「同一条回调来了两次」的服务。
  */
 @SpringBootApplication
 @EnableDiscoveryClient

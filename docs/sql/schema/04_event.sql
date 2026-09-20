@@ -1,17 +1,15 @@
 -- ============================================================
--- Event schema : films, concerts, talk shows and theatre under one model
+-- 演出模型：把影片、演唱会、脱口秀、话剧统一到一套模型里
 --
--- The original schema assumed film: one price per screening, a seat for
--- every ticket, no admission control. A concert breaks all three - it has
--- tiered pricing (VIP / floor / stands), it may be standing-only, and it
--- opens at a fixed time with a per-person purchase limit.
+-- 最初的表结构是按影片假设的：一场放映一个价格、每张票一个座位、没有入场控制。
+-- 演唱会把这三点全打破了 —— 它分级定价（VIP / 内场 / 看台），可能只有站席，
+-- 而且固定时间开票、限制每人购买数量。
 --
--- Rather than bolt columns onto `t_movie_*` tables and leave names that
--- describe something else, the tables are named for what they actually hold.
--- A row in t_event_project is a thing that is ticketed; whether that is a
--- film or a stand-up set is a value in `category`, not a different table.
+-- 与其往 `t_movie_*` 表上硬加列、留下名不副实的表名，不如让表名如实描述
+-- 它实际存的东西。t_event_project 里的一行就是「一个要卖票的东西」；
+-- 它到底是电影还是单口喜剧专场，是 `category` 里的一个取值，而不是另一张表。
 --
--- Naming map from the previous schema:
+-- 与上一版表结构的命名对照：
 --   t_movie_film          -> t_event_project
 --   t_movie_cinema        -> t_event_venue
 --   t_movie_hall          -> t_event_place
@@ -27,12 +25,11 @@ CREATE DATABASE IF NOT EXISTS maipiao_event
 USE maipiao_event;
 
 -- ------------------------------------------------------------
--- project : the thing being ticketed
+-- project：要卖票的那个东西
 --
--- Film-specific and performance-specific columns coexist and are null for
--- the other kind. The alternative - one table per category - would mean the
--- listing page queries N tables, and every new category is a migration
--- rather than a new enum value.
+-- 影片专有的列和演出专有的列并存，对另一类来说它们为空。另一种做法 ——
+-- 一个分类一张表 —— 意味着列表页要查 N 张表，而且每加一个分类都是一次
+-- 迁移，而不是多一个枚举值。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_project;
 CREATE TABLE t_event_project (
@@ -48,11 +45,11 @@ CREATE TABLE t_event_project (
   score         DECIMAL(3,1)  NOT NULL DEFAULT 0.0 COMMENT '0.0 means not rated yet',
   status        TINYINT       NOT NULL DEFAULT 0   COMMENT '0=upcoming 1=on sale 2=closed',
 
-  -- film
+  -- 影片专有
   director      VARCHAR(64)   NOT NULL DEFAULT '',
   actors        VARCHAR(512)  NOT NULL DEFAULT '',
 
-  -- performance
+  -- 演出专有
   artist        VARCHAR(128)  NOT NULL DEFAULT ''  COMMENT 'headline act or lead performer',
   organizer     VARCHAR(128)  NOT NULL DEFAULT ''  COMMENT 'presenting company',
   description   VARCHAR(1000) NOT NULL DEFAULT '',
@@ -65,9 +62,8 @@ CREATE TABLE t_event_project (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ticketed project: film, concert, talk show, theatre';
 
 -- ------------------------------------------------------------
--- venue : where it happens
--- A cinema is a venue whose places are screens; an arena is a venue whose
--- places are seating blocks.
+-- venue：演出发生的场所
+-- 影院是「place 为影厅」的场所；体育馆是「place 为坐席分区」的场所。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_venue;
 CREATE TABLE t_event_venue (
@@ -89,13 +85,13 @@ CREATE TABLE t_event_venue (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='venue';
 
 -- ------------------------------------------------------------
--- place : a room or seating area within a venue
+-- place：场所内的一个厅或一片坐席区
 --
--- seating_mode is what makes standing-only performances expressible:
---   SEATED     every ticket has a seat; the bitmap is the seat map
---   STANDING   no seats; the bitmap degrades to an admission counter, with
---              each bit standing for one unit of capacity
---   MIXED      part of the floor is seated, the rest is standing
+-- seating_mode 让「只有站席」的演出变得可表达：
+--   SEATED     每张票都有座位；bitmap 就是座位图
+--   STANDING   没有座位；bitmap 退化成入场计数器，
+--              每一位代表一个容量单位
+--   MIXED      场地内一部分有座，其余是站席
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_place;
 CREATE TABLE t_event_place (
@@ -117,14 +113,13 @@ CREATE TABLE t_event_place (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='place: room or seating area within a venue';
 
 -- ------------------------------------------------------------
--- session : one screening or one performance
+-- session：一场放映或一场演出
 --
--- price keeps the "from" price so a listing can show one number. What a
--- specific seat actually costs comes from its tier.
+-- price 存的是「起价」，好让列表页只展示一个数字。某个具体座位实际多少钱，
+-- 由它所属的票档决定。
 --
--- sale_start_time / purchase_limit / require_real_name are the admission
--- controls a concert needs and a film does not. Defaults leave film
--- behaviour unchanged: on sale immediately, no limit, no real-name check.
+-- sale_start_time / purchase_limit / require_real_name 是演唱会有、电影没有的
+-- 入场控制。默认值让影片的行为保持不变：立即开售、不限购、不校验实名。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_session;
 CREATE TABLE t_event_session (
@@ -141,13 +136,21 @@ CREATE TABLE t_event_session (
   sold_seat         INT           NOT NULL DEFAULT 0,
   status            TINYINT       NOT NULL DEFAULT 0   COMMENT '0=pending 1=on sale 2=running 3=finished 4=cancelled',
 
-  -- admission controls
+  -- 入场控制
   sale_start_time   DATETIME(3)   NULL                 COMMENT 'when tickets open; NULL = already open',
   purchase_limit    INT           NOT NULL DEFAULT 0   COMMENT 'max tickets per order; 0 = unlimited',
   require_real_name TINYINT       NOT NULL DEFAULT 0   COMMENT '1 = every ticket must name an attendee',
 
   rush_mode         TINYINT       NOT NULL DEFAULT 0,
   rush_start_time   DATETIME(3)   NULL,
+
+  -- 谁来挑座位：0 = 买家，1 = 系统。和场馆的 seating_mode 是两个不同的轴 ——
+  -- 后者说的是这个地方有没有固定座位，前者说的是这次售卖让不让买家挑。
+  seat_mode         TINYINT       NOT NULL DEFAULT 0   COMMENT '0=buyer picks seats, 1=system assigns adjacent seats',
+
+  -- 这个场次是谁创建的。生成器的重置只清它自己建的，否则管理员录入的演出
+  -- 会被无声删掉。
+  source            VARCHAR(16)   NOT NULL DEFAULT 'ADMIN' COMMENT 'DEMO = generated, ADMIN = entered by hand',
 
   create_time       DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   update_time       DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -160,14 +163,13 @@ CREATE TABLE t_event_session (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='session: one screening or performance';
 
 -- ------------------------------------------------------------
--- price tier : a price band within a session
+-- price tier：一场演出内部的票档
 --
--- A film session has exactly one tier covering every seat, so the same
--- lookup works for both kinds and pricing never branches on category.
+-- 影片场次只有一个票档、覆盖全部座位，于是两类演出的取价逻辑完全相同，
+-- 定价永远不需要按 category 分支。
 --
--- Bands are expressed as row ranges, which is how venues sell them in
--- practice ("rows 1-5 are VIP"). A seat is assigned to a tier once, when the
--- session is generated, and that assignment is what the seat map colours by.
+-- 票档用排号区间来表达，这也是场馆实际卖票的方式（「1-5 排是 VIP」）。
+-- 座位在生成场次时被一次性划入某个票档，座位图就是按这个归属来上色的。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_price_tier;
 CREATE TABLE t_event_price_tier (
@@ -184,14 +186,13 @@ CREATE TABLE t_event_price_tier (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='price tier within a session';
 
 -- ------------------------------------------------------------
--- session seat : the durable ledger, one row per seat
+-- session seat：持久台账，每个座位一行
 --
--- tier_id is what makes tiered pricing work: the seat map colours by tier,
--- the price comes from the tier, and the order line records which tier was
--- bought so a refund returns the right amount.
+-- 分级定价能成立靠的就是 tier_id：座位图按票档上色，价格取自票档，
+-- 订单行记录买的是哪个票档，退款时才能退对金额。
 --
--- For STANDING places, seat_index is still the bitmap offset but row_num and
--- col_num are synthetic - the bitmap is used as a counter rather than a map.
+-- 对 STANDING 的场地，seat_index 依然是 bitmap 偏移量，但 row_num 和
+-- col_num 是合成的 —— 此时 bitmap 被当成计数器用，而不是座位图。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_session_seat;
 CREATE TABLE t_event_session_seat (
@@ -222,11 +223,10 @@ CREATE TABLE t_event_session_seat (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='session seat ledger';
 
 -- ------------------------------------------------------------
--- attendee : named person on a ticket
+-- attendee：票上署名的实际观演人
 --
--- Only used when the session sets require_real_name. The id number is stored
--- hashed for the same reason passwords are: the check is "same person",
--- which does not require keeping the original.
+-- 只有场次设置了 require_real_name 时才用。身份证号以哈希形式存储，
+-- 理由和密码一样：要校验的是「是不是同一个人」，并不需要保留原文。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_event_attendee;
 CREATE TABLE t_event_attendee (

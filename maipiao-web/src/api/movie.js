@@ -1,30 +1,27 @@
 import request from './request'
 
 /**
- * movie-service endpoints, as reached through the gateway.
+ * movie-service 的接口，都是经网关访问的。
  *
- * Browsing is public - the gateway whitelists /api/movie/**, so no token is
- * required to look at what is showing. A token is still sent when the user
- * has one, which is what lets the backend personalise later without a
- * separate "logged-in" endpoint.
+ * 浏览是公开的 —— 网关把 /api/movie/** 放进了白名单，看有什么在映不需要
+ * token。用户手上要是有 token，仍然会带上，这样后端以后要做个性化，
+ * 不必再单开一个「已登录」版本的接口。
  */
 
 /**
- * The catalogue.
+ * 剧目列表。
  *
  * @param {object} params
- * @param {number} [params.status]   0=upcoming 1=on sale 2=closed
- * @param {string} [params.category] MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL.
- *                                   Omit for everything - filtering happens
- *                                   server-side, so a category page does not
- *                                   download the whole catalogue to discard most
- *                                   of it.
+ * @param {number} [params.status]   0=即将开售 1=在售 2=已结束
+ * @param {string} [params.category] MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL。
+ *                                   不传就是全部 —— 过滤在服务端做，这样分类页
+ *                                   不用把整个剧目库拉下来再丢掉大部分。
  */
 export function fetchFilms(params = {}) {
   return request.get('/movie/film/list', { params })
 }
 
-/** Categories the catalogue actually uses, for building the nav tabs. */
+/** 剧目库实际用到的分类，用来拼导航标签。 */
 export const CATEGORIES = [
   { value: 'MOVIE', label: '电影' },
   { value: 'CONCERT', label: '演唱会' },

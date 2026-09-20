@@ -20,17 +20,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * User administration.
+ * 用户管理。
  *
- * <p>Two rules run through everything here, and both are about not locking
- * everybody out of the console:
+ * <p>这里有两条规则贯穿始终，而两条都是为了防止把所有人锁在后台外面：
  *
  * <ul>
- *   <li>You cannot disable your own account. The one action guaranteed to be
- *       regretted is the one that ends the session doing it.</li>
- *   <li>You cannot remove your own admin role, and the last remaining
- *       administrator cannot be demoted at all. There is no recovery path
- *       from "nobody can administer this", short of editing the database.</li>
+ *   <li>你不能停用自己的账号。最必定会被后悔的那个操作，
+ *       就是那个会终结执行它的这次会话的操作。</li>
+ *   <li>你不能摘掉自己的管理员角色，而最后一个管理员根本不能被降级。
+ *       从「没人能管理这个系统」这个状态里没有恢复路径，除非去改数据库。</li>
  * </ul>
  */
 @Slf4j
@@ -51,9 +49,8 @@ public class UserAdminService {
         var query = Wrappers.<User>lambdaQuery().orderByDesc(User::getId);
         if (keyword != null && !keyword.isBlank()) {
             String trimmed = keyword.trim();
-            // Phone or nickname. Phone is exact-prefix because a partial match
-            // on a nine-digit number returns most of the table; nickname is a
-            // contains because that is how people search a name.
+            // 手机号或昵称。手机号走精确前缀，因为在一个九位数字上做部分匹配，
+            // 返回的会是表里的大半；昵称走包含匹配，因为人搜名字就是这么搜的。
             query.and(w -> w.likeRight(User::getPhone, trimmed)
                     .or().like(User::getNickname, trimmed));
         }
@@ -90,9 +87,8 @@ public class UserAdminService {
                 paid = toDecimal(stats.get("paidAmount"));
             }
         } catch (Exception e) {
-            // A user record is worth showing even when one number about it is
-            // not available. Failing the whole screen because order-service
-            // blinked would be the wrong trade.
+            // 即使关于某个用户的一个数字拿不到，这条用户记录本身也值得显示。
+            // 因为 order-service 眨了下眼就让整个页面挂掉，是不划算的取舍。
             log.warn("could not read order stats for user {}: {}", userId, e.getMessage());
         }
 
@@ -142,8 +138,8 @@ public class UserAdminService {
             throw new BizException(ErrorCode.FORBIDDEN, "不能撤销自己的管理员权限");
         }
         if (demoting && adminCount() <= 1) {
-            // The one state with no way out: nobody can administer anything,
-            // and the only fix is at the database.
+            // 唯一一个没有出路的处境：没人能管理任何东西，
+            // 而唯一的修复手段是在数据库上动手。
             throw new BizException(ErrorCode.FORBIDDEN, "这是最后一个管理员，不能撤销");
         }
 
@@ -152,7 +148,7 @@ public class UserAdminService {
         log.warn("user role changed: userId={}, role={}, by={}", userId, role, callerId);
     }
 
-    /** Live administrators. Disabled ones do not count - they cannot log in. */
+    /** 还活着的管理员。被停用的不算 —— 他们登不进来。 */
     private long adminCount() {
         Long count = userMapper.selectCount(Wrappers.<User>lambdaQuery()
                 .eq(User::getRole, JwtUtil.ROLE_ADMIN)

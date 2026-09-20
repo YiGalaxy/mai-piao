@@ -53,12 +53,11 @@ const router = createRouter({
 })
 
 /**
- * A redirect for somebody who has not signed in, not a security boundary.
+ * 给没登录的人一个重定向，不是安全边界。
  *
- * The token in localStorage says nothing about whether it is an admin one, and
- * this guard does not pretend to check. The gateway refuses the admin API to a
- * non-admin token, so a user who gets past this sees empty pages and errors -
- * which is the correct outcome, and the reason the real check lives there.
+ * localStorage 里的 token 完全说明不了它是不是管理员的，这个守卫也不假装去查。
+ * 网关会拒绝非管理员 token 调管理端 API，所以绕过这里的人看到的会是空页面和
+ * 报错 —— 这正是应有的结果，也是真正的检查放在那边的理由。
  */
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !getToken()) {

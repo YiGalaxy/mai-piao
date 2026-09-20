@@ -9,9 +9,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_user.t_user_coupon_template} - the coupon definition that
- * admins manage. Claiming one copies {@code amount} / {@code threshold} onto
- * the issued {@link Coupon}.
+ * 映射 {@code maipiao_user.t_user_coupon_template} —— 管理员维护的优惠券定义。
+ * 领取一张时，会把 {@code amount} / {@code threshold} 复制到发出去的那张 {@link Coupon} 上。
  */
 @Data
 @TableName("t_user_coupon_template")
@@ -29,10 +28,10 @@ public class CouponTemplate {
 
     private BigDecimal threshold;
 
-    /** Validity in days, counted from the moment a user claims it. */
+    /** 有效天数，从用户领取的那一刻起算。 */
     private Integer validDays;
 
-    /** 0 means unlimited. */
+    /** 0 表示不限量。 */
     private Integer totalQuantity;
 
     private Integer claimedQuantity;

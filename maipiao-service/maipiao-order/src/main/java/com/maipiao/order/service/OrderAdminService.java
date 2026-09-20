@@ -24,12 +24,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Order lookup, for the people who answer the phone.
+ * 订单查询，给接电话的那些人用。
  *
- * <p>Every query here has the same shape: somebody rings up with a phone
- * number and a complaint, and the order number is what they do not have. So
- * the filters lead with what an administrator is actually holding - phone
- * first, then status, then a date range.
+ * <p>这里每个查询长的都是一个样：有人打来电话，手里有一个手机号和一肚子抱怨，
+ * 而订单号恰恰是他没有的。所以筛选条件要先从管理员手上真正握着的那个开始 ——
+ * 先手机号，再状态，最后才是日期区间。
  */
 @Slf4j
 @Service
@@ -43,12 +42,11 @@ public class OrderAdminService {
     private static final int MAX_PAGE_SIZE = 100;
 
     /**
-     * Searches orders.
+     * 搜索订单。
      *
-     * <p>{@code phone} is resolved to a user id first, through user-service.
-     * The alternative - storing the phone on the order - was rejected when the
-     * order was designed: it would be a second copy of a value that changes,
-     * on a historical record that must not.
+     * <p>{@code phone} 会先经由 user-service 换成一个用户 id。
+     * 另一条路 —— 把手机号存在订单上 —— 在设计订单时就否决了：
+     * 那等于在一个必须凝固的历史记录上，放一份会变的值的副本。
      */
     public AdminOrderDtos.OrderPage search(String orderNo, String phone, Long userId,
                                            Integer status, LocalDate from, LocalDate to,
@@ -58,8 +56,8 @@ public class OrderAdminService {
         if (effectiveUserId == null && phone != null && !phone.isBlank()) {
             effectiveUserId = resolvePhone(phone.trim());
             if (effectiveUserId == null) {
-                // An unknown phone is not an error, it is an empty result.
-                // Answering "no such user" would leak which numbers exist.
+                // 未知手机号不是错误，是一个空结果。
+                // 回答「没有这个用户」，等于泄露了哪些号是存在的。
                 return new AdminOrderDtos.OrderPage(List.of(), 0, page, size);
             }
         }
@@ -104,7 +102,7 @@ public class OrderAdminService {
         return new AdminOrderDtos.OrderDetail(order, items, OrderStatus.name(order.getStatus()));
     }
 
-    /** What a user has bought, for the user detail screen. */
+    /** 某个用户买了什么，给用户详情页用。 */
     public AdminOrderDtos.UserOrderStats statsOf(Long userId) {
         List<Order> orders = orderMapper.selectList(Wrappers.<Order>lambdaQuery()
                 .eq(Order::getUserId, userId));
@@ -113,8 +111,8 @@ public class OrderAdminService {
         BigDecimal paid = BigDecimal.ZERO;
         for (Order order : orders) {
             int status = order.getStatus() == null ? -1 : order.getStatus();
-            // Cancelled and refunded are not purchases. Everything else is
-            // something the customer is holding or waiting on.
+            // 已取消和已退款不算购买。其余的都是客户手上握着、
+            // 或者正在等着的东西。
             if (status == OrderStatus.CANCELLED || status == OrderStatus.REFUNDED) {
                 continue;
             }
@@ -127,14 +125,13 @@ public class OrderAdminService {
     // ------------------------------------------------------------
 
     /**
-     * Turns a phone number into a user id.
+     * 把手机号换成用户 id。
      *
-     * <p>The id arrives as a <b>string</b>, not a number. A global Jackson
-     * customiser serialises every Long that way so that ids survive
-     * JavaScript's 2^53 limit - which is right, and applies to Feign responses
-     * exactly as it does to browser ones. Reading it as a Number silently
-     * matched nothing, so every phone search returned an empty list while the
-     * orders it was looking for sat in the table.
+     * <p>这个 id 到达时是<b>字符串</b>，不是数字。有一个全局 Jackson 定制器把每个 Long
+     * 都这样序列化，好让 id 能扛过 JavaScript 的 2^53 上限 —— 这么做是对的，
+     * 而且它对 Feign 响应的作用和对浏览器响应完全一样。
+     * 把它当 Number 读会静默地什么都匹配不上，于是每一次按手机号搜索都返回空列表，
+     * 而它要找的那些订单就躺在表里。
      */
     private Long resolvePhone(String phone) {
         try {
@@ -148,19 +145,19 @@ public class OrderAdminService {
             }
             return id == null ? null : Long.valueOf(String.valueOf(id));
         } catch (NumberFormatException e) {
-            // A non-numeric id is a contract break, not an absent user, so it
-            // is worth saying rather than returning an empty list.
+            // 一个非数字的 id 是契约被打破，不是用户不存在，所以值得说出来，
+            // 而不是返回一个空列表。
             log.error("user service returned an unreadable id for phone {}", phone, e);
             throw new BizException(ErrorCode.SERVICE_UNAVAILABLE, "用户服务返回了意外的数据");
         } catch (Exception e) {
-            // Failing open here would match every order in the system, so this
-            // refuses instead and says so.
+            // 在这里放开（fail-open）会匹配到系统里的每一笔订单，
+            // 所以这里选择拒绝，并且说明原因。
             log.error("could not resolve phone to a user: {}", phone, e);
             throw new BizException(ErrorCode.SERVICE_UNAVAILABLE, "用户服务暂不可用");
         }
     }
 
-    /** Phone numbers for a page of orders, in one call rather than one each. */
+    /** 一页订单的手机号，一次调用取回，而不是每行各来一次。 */
     private Map<Long, String> phonesOf(List<Long> userIds) {
         Map<Long, String> phones = new HashMap<>();
         if (userIds.isEmpty()) {
@@ -172,7 +169,7 @@ public class OrderAdminService {
                 response.getData().forEach((key, value) -> phones.put(key, String.valueOf(value)));
             }
         } catch (Exception e) {
-            // Blank phones in a list is a degraded screen, not a broken one.
+            // 列表里手机号空着，是一个降级了的页面，不是一个坏掉的页面。
             log.warn("could not load phone numbers for {} users", userIds.size(), e);
         }
         return phones;

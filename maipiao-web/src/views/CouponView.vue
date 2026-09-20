@@ -41,8 +41,8 @@ const coupons = ref([])
 const loading = ref(true)
 
 /**
- * Mirrors the server's enum on t_user_coupon:
- * 0 unused, 1 locked by an order, 2 used, 3 expired.
+ * 与服务端 t_user_coupon 上的枚举一一对应：
+ * 0 未使用，1 被订单锁定，2 已使用，3 已过期。
  */
 const STATUS_MAP = {
   0: { text: '未使用', type: 'primary' },
@@ -65,7 +65,7 @@ function statusTag(status) {
   return STATUS_MAP[status] || { text: '未知', type: 'info' }
 }
 
-/** Drops a trailing .00 so ¥30 reads as "30" and ¥30.5 stays "30.5". */
+/** 去掉结尾的 .00，这样 ¥30 显示成「30」，而 ¥30.5 仍然是「30.5」。 */
 function formatAmount(amount) {
   const value = Number(amount)
   return Number.isInteger(value) ? String(value) : value.toFixed(2)

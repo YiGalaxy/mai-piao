@@ -12,12 +12,11 @@ import java.util.List;
 public interface OrderItemMapper extends BaseMapper<OrderItem> {
 
     /**
-     * Inserts every seat of an order in one statement.
+     * 一条语句把一笔订单的所有座位都插进去。
      *
-     * <p>One round trip instead of one per seat, and inside the global
-     * transaction the difference is real: each statement is a Seata branch
-     * write with its own undo log entry, so six seats would otherwise mean six
-     * times the bookkeeping for the same outcome.
+     * <p>一次往返，而不是每个座位一次；在全局事务里这个差别是实打实的：
+     * 每条语句都是一次带自己 undo log 记录的 Seata 分支写入，
+     * 否则六个座位就等于用六倍的记账量换同一个结果。
      */
     @Insert("""
             <script>

@@ -12,11 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 
 /**
- * Service-to-service refund endpoints.
+ * 服务间调用的退款接口。
  *
- * <p>Reachable only from inside the cluster: the gateway rejects
- * {@code /api/*&#47;inner/**} before consulting its whitelist. That matters
- * more here than anywhere else - these endpoints move money.
+ * <p>只能从集群内部访问：网关会在查白名单之前就把 {@code /api/*&#47;inner/**} 拒掉。
+ * 这一点在这里比在任何地方都更要紧 —— 这些接口是要动钱的。
  */
 @Slf4j
 @RestController
@@ -27,14 +26,13 @@ public class PayInternalController {
     private final RefundService refundService;
 
     /**
-     * Records a refund and sends it to the provider.
+     * 记下一笔退款，然后发给渠道方。
      *
-     * <p>Called by order-service after it has moved the order to REFUNDING.
-     * That order is not an accident: the intent is written down before the
-     * provider is asked, so a provider that is down leaves a retryable refund
-     * rather than a customer who pressed a button that did nothing.
+     * <p>由 order-service 在把订单推进到 REFUNDING 之后调用。这个先后顺序不是偶然：
+     * 先写下意图，再去问渠道方，这样渠道方挂掉时留下的是「一笔可以重试的退款」，
+     * 而不是一个按了按钮却什么都没发生的用户。
      *
-     * @return the refund number, existing or newly created
+     * @return 退款单号，可能是已有的，也可能是新建的
      */
     @PostMapping("/refund")
     public R<String> refund(@RequestParam String orderNo,

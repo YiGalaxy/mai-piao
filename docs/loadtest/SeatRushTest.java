@@ -16,28 +16,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Concurrent seat-lock load generator.
+ * 并发锁座压测生成器。
  *
- * <p>The claim under test is the one the whole seat design rests on: when many
- * users reach for the same seats at once, every seat goes to exactly one of
- * them. Counting successes is therefore not enough - the number that matters is
- * successes versus distinct seats, and any seat locked twice is the bug.
+ * <p>这里要验证的，是整个选座设计赖以成立的那条断言：当大量用户同时来抢
+ * 同一批座位时，每个座位只能归其中恰好一个人。所以光统计成功次数是不够的——
+ * 真正要看的是成功数对比不重复座位数，任何一个座位被锁两次就是 bug。
  *
- * <p>Each request asks for one random seat rather than a fixed one, which is
- * what makes the contention realistic: a few seats are hit by many requests,
- * most by few, and the arbiter has to be right in both cases.
+ * <p>每个请求抢的是一个随机座位而不是固定座位，这才让竞争显得真实：
+ * 少数座位被大量请求砸，大部分座位只有零星几个请求，而仲裁者在这两种
+ * 情况下都必须判对。
  *
- * <p>Usage:
+ * <p>用法：
  * <pre>
  *   java SeatRushTest &lt;baseUrl&gt; &lt;token&gt; &lt;scheduleId&gt; &lt;seatCount&gt; &lt;threads&gt; &lt;requestsPerThread&gt;
  * </pre>
  *
- * <p>Run it against a screening with no traffic on it. The seats it locks are
- * real holds and are not released, so the screening is used up afterwards.
+ * <p>要跑就挑一场没有流量的场次。它锁掉的座位是真实的占用，不会释放，
+ * 所以跑完之后这场次也就废了。
  */
 public final class SeatRushTest {
 
-    /** Endpoint under test. Change here if the route moves. */
+    /** 被测接口。路由挪了地方就改这里。 */
     private static final String LOCK_PATH = "/api/seat/lock";
 
     public static void main(String[] args) throws Exception {
@@ -64,15 +63,15 @@ public final class SeatRushTest {
         AtomicInteger transportError = new AtomicInteger();
         AtomicLong totalLatencyNanos = new AtomicLong();
 
-        // One slot per seat, so a seat locked twice is visible rather than
-        // merely counted. Sized by seat count, not by request count.
+        // 每个座位一个计数槽，这样"某个座位被锁了两次"是看得见的，
+        // 而不只是被计个数。数组按座位数开，不是按请求数开。
         AtomicInteger[] perSeat = new AtomicInteger[seatCount];
         for (int i = 0; i < seatCount; i++) {
             perSeat[i] = new AtomicInteger();
         }
 
-        // HTTP/1.1 with a generous pool: the gateway is the bottleneck we want
-        // to measure, not connection setup.
+        // HTTP/1.1，连接池开得足够大：我们要测的瓶颈是网关，
+        // 不是建连接。
         HttpClient client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(5))
@@ -113,7 +112,7 @@ public final class SeatRushTest {
                                 locked.incrementAndGet();
                                 perSeat[seat].incrementAndGet();
                             } else if (text.contains("\"code\":10001")) {
-                                // Seat already taken - the expected loser.
+                                // 座位已被占——这是预期中的失败方。
                                 conflict.incrementAndGet();
                             } else {
                                 otherError.incrementAndGet();
@@ -140,8 +139,7 @@ public final class SeatRushTest {
         pool.shutdown();
         pool.awaitTermination(5, TimeUnit.SECONDS);
 
-        // A seat that succeeded twice is an oversell, and there is no reading
-        // of the numbers under which that is acceptable.
+        // 一个座位成功锁了两次就是超卖，这种事怎么解读数据都是不可接受的。
         int doubled = 0;
         int maxPerSeat = 0;
         for (AtomicInteger count : perSeat) {
@@ -177,7 +175,7 @@ public final class SeatRushTest {
     }
 
 
-    /** Daemon threads, so the JVM exits when main returns instead of hanging. */
+    /** 守护线程，这样 main 返回后 JVM 就退出，不会挂在那里。 */
     private static java.util.concurrent.ExecutorService daemonPool(int threads) {
         return Executors.newFixedThreadPool(Math.min(threads, 512), r -> {
             Thread t = new Thread(r);
@@ -189,7 +187,7 @@ public final class SeatRushTest {
     private SeatRushTest() {
     }
 
-    // Kept for reference: the percentile helper used during development.
+    // 留作参考：开发期间用的百分位辅助方法。
     @SuppressWarnings("unused")
     private static long percentile(List<Long> sorted, double p) {
         List<Long> copy = new ArrayList<>(sorted);

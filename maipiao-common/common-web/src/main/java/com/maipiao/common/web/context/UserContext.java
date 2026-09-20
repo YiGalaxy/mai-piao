@@ -4,16 +4,14 @@ import com.maipiao.common.core.exception.BizException;
 import com.maipiao.common.core.result.ErrorCode;
 
 /**
- * Holds the authenticated user id for the duration of one request.
+ * 在一次请求的期间持有已认证的用户 id。
  *
- * <p>The gateway verifies the JWT and forwards the user id in
- * {@code X-User-Id}. Downstream services trust that header - it is the
- * gateway's job to strip any client-supplied copy, so a request that reached
- * a service directly from outside cannot forge it.
+ * <p>网关校验 JWT，并把用户 id 放在 {@code X-User-Id} 里转发下来。下游服务信任这个
+ * 头 —— 剥掉客户端自带的那一份是网关的职责，所以一个从外部直接打到服务的请求伪造
+ * 不了它。
  *
- * <p>This is a ThreadLocal, so it must be cleared at the end of the request or
- * a pooled thread will leak the previous caller's identity into the next one.
- * {@link UserContextInterceptor} handles both ends.
+ * <p>这是一个 ThreadLocal，所以必须在请求结束时清掉，否则被池化的线程会把上一个
+ * 调用方的身份泄漏给下一个。{@link UserContextInterceptor} 两头都管了。
  */
 public final class UserContext {
 
@@ -26,14 +24,14 @@ public final class UserContext {
         CURRENT_USER_ID.set(userId);
     }
 
-    /** @return the current user id, or {@code null} for anonymous requests. */
+    /** @return 当前用户 id；匿名请求返回 {@code null}。 */
     public static Long get() {
         return CURRENT_USER_ID.get();
     }
 
     /**
-     * @return the current user id
-     * @throws BizException with {@link ErrorCode#UNAUTHORIZED} when there is none
+     * @return 当前用户 id
+     * @throws BizException 没有用户 id 时，携带 {@link ErrorCode#UNAUTHORIZED}
      */
     public static Long require() {
         Long userId = CURRENT_USER_ID.get();
@@ -44,9 +42,8 @@ public final class UserContext {
     }
 
     /**
-     * @return the current user id, or {@code fallback} when the request is anonymous.
-     *         Used by endpoints that behave differently when signed in but do not
-     *         require it (film detail, seat map).
+     * @return 当前用户 id；请求为匿名时返回 {@code fallback}。
+     *         供那些"登录后行为不同、但不强制登录"的接口使用（影片详情、座位图）。
      */
     public static Long getOrDefault(Long fallback) {
         Long userId = CURRENT_USER_ID.get();
@@ -57,7 +54,7 @@ public final class UserContext {
         return CURRENT_USER_ID.get() != null;
     }
 
-    /** Must be called in a finally block. */
+    /** 必须在 finally 块里调用。 */
     public static void clear() {
         CURRENT_USER_ID.remove();
     }

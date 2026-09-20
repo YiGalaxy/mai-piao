@@ -4,17 +4,14 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * A stand-in for a payment provider.
+ * 支付服务商的替身。
  *
- * <p>Real providers push a callback once and retry on a fixed schedule that
- * cannot be triggered on demand. The failures that actually break payment
- * handling - a callback that arrives twice, arrives before its predecessor,
- * arrives after the order was cancelled, or carries a bad signature - are
- * therefore very hard to reproduce against a real sandbox.
+ * <p>真实的支付服务商只会推一次回调，之后按一个固定的、无法按需触发的节奏重试。于是
+ * 那些真正会击穿支付处理的故障 —— 回调来了两次、比前一条先到、在订单已取消之后才到、
+ * 或者带着一个错误的签名 —— 在真实的沙箱环境里极难复现。
  *
- * <p>This service can produce all of them on command, which is the point: the
- * idempotency logic in pay-service is only worth anything if it has actually
- * been hit with duplicates and out-of-order arrivals.
+ * <p>本服务可以按命令把它们全都造出来，这正是重点所在：pay-service 里的幂等逻辑，
+ * 只有在真的被重复和乱序的回调砸过之后，才算数。
  */
 @SpringBootApplication
 public class MaipiaoMockPayApplication {

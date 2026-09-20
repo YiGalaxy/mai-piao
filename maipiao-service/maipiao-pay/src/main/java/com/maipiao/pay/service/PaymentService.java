@@ -21,17 +21,16 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * Payment creation, callbacks and refunds.
+ * 支付的创建、回调与退款。
  *
- * <p>The callback path is where the interesting failures live, and each guard
- * there exists because of a specific one:
+ * <p>真正有意思的失败都集中在回调这条路径上，那里的每一道防线都是被某个具体的失败逼出来的：
  *
  * <ul>
- *   <li>the same callback twice</li>
- *   <li>a failure then a success, out of order</li>
- *   <li>a success after the order was already cancelled</li>
- *   <li>a callback whose signature does not check out</li>
- *   <li>a callback quoting a different amount</li>
+ *   <li>同一个回调来了两次</li>
+ *   <li>先失败后成功，顺序颠倒</li>
+ *   <li>订单已经取消之后才成功</li>
+ *   <li>验签不通过的回调</li>
+ *   <li>金额与订单对不上的回调</li>
  * </ul>
  */
 @Slf4j
@@ -50,16 +49,14 @@ public class PaymentService {
     private int paymentMinutes;
 
     // ============================================================
-    // creating a payment
+    // 创建支付
     // ============================================================
 
     /**
-     * Creates (or reuses) the payment for an order and asks the provider to
-     * open it.
+     * 为一个订单创建（或复用）支付单，并请渠道方把它开出来。
      *
-     * <p>Idempotent by order: a user who reloads the payment page gets the
-     * same payment order and the same provider trade rather than a second one
-     * that could be paid in parallel.
+     * <p>按订单幂等：用户刷新收银台页面拿到的还是同一个支付单、同一笔渠道交易，
+     * 而不是又开一笔可以并行付款的单子。
      */
     @Transactional(rollbackFor = Exception.class)
     public Payment createForOrder(String orderNo, Long userId, BigDecimal amount, String channelType) {
@@ -87,8 +84,8 @@ public class PaymentService {
         PaymentChannel.PrepayResult prepay = channel.prepay(new PaymentChannel.PrepayCommand(
                 payment.getPaymentNo(), orderNo, amount, "麦票订单 " + orderNo));
 
-        // The provider's trade number is written back now so a callback that
-        // arrives before this method returns can still be matched.
+        // 渠道方的交易号在这里就回写落库，这样即使回调在这个方法返回之前
+        // 就到了，也还能被匹配上。
         Payment update = new Payment();
         update.setId(payment.getId());
         update.setChannelTradeNo(prepay.channelTradeNo());
@@ -102,28 +99,26 @@ public class PaymentService {
     }
 
     // ============================================================
-    // the callback
+    // 回调
     // ============================================================
 
     /**
-     * Handles a provider callback.
+     * 处理渠道方发来的回调。
      *
-     * <p>Runs as the G2 global transaction when the payment succeeds: marking
-     * the order paid, issuing the tickets and confirming the seat holds all
-     * have to happen together or not at all.
+     * <p>支付成功时以 G2 全局事务执行：把订单置为已支付、出票、确认座位占用，
+     * 这三件事必须一起成立，否则就一件都不做。
      *
-     * @return the body to send back to the provider
+     * @return 要回给渠道方的响应体
      */
     public String handleNotify(String channelType, String rawBody, Map<String, String> headers) {
 
         PaymentChannel channel = channelFactory.get(channelType);
 
-        // ---- verify ----
+        // ---- 验签 ----
         PaymentChannel.NotifyResult notify = channel.parseNotify(rawBody, headers);
         if (!notify.signVerified()) {
-            // Recorded with the failed verification so it is visible, but not
-            // processed. The provider is told to retry, which will not help -
-            // that is why it is logged rather than silently accepted.
+            // 照实记录下「验签失败」，让它看得见，但不做任何业务处理。回给渠道方的是
+            // 「请重试」，而重试也不会有用 —— 这正是要记日志而不是默默放过的原因。
             log.warn("rejected callback with bad signature: channel={}", channelType);
             notifyLogService.record(channelType, notify.channelTradeNo(), "PAY", rawBody, false);
             return channel.failResponse();
@@ -134,7 +129,7 @@ public class PaymentService {
             return channel.failResponse();
         }
 
-        // ---- L1: log dedup, which only tells us whether to reprocess ----
+        // ---- L1：日志去重，它只告诉我们「要不要重新处理」 ----
         NotifyLogService.RecordResult record =
                 notifyLogService.record(channelType, notify.channelTradeNo(), "PAY", rawBody, true);
 
@@ -144,9 +139,8 @@ public class PaymentService {
         }
 
         try {
-            // The transactional half lives in PaymentTxService, reached through
-            // its proxy. Calling it here directly would bypass the proxy and
-            // quietly drop the global transaction - see that class.
+            // 带事务的那一半在 PaymentTxService 里，必须经由它的代理调过去。
+            // 在这里直接调会把代理绕开，全局事务就悄无声息地没了 —— 见那个类的说明。
             boolean success = notify.isSuccess()
                     ? paymentTxService.markPaid(notify)
                     : paymentTxService.markFailed(notify);
@@ -154,11 +148,9 @@ public class PaymentService {
                     success ? 1 : 0, success ? "handled" : "ignored");
 
             if (success && notify.isSuccess()) {
-                // After the transaction, never inside it: Redis cannot be
-                // rolled back, so a marker written within would outlive a
-                // rollback and pin the seat as sold with nothing behind it.
-                // Best-effort - a failure here is logged, not fatal, because
-                // the payment and the order are already correct.
+                // 放在事务之后，绝不放进事务里：Redis 回滚不了，写在事务里的标记
+                // 会在回滚之后留下来，把座位钉死成已售，后面却什么都没有。
+                // 尽力而为 —— 这里失败只记日志，不算致命，因为支付和订单本身已经是正确的。
                 confirmSeatHold(notify.orderNo());
             }
 
@@ -171,12 +163,11 @@ public class PaymentService {
     }
 
     /**
-     * Marks the Redis seat hold as sold once the money has landed.
+     * 钱到账之后，把 Redis 里的座位占用标记为「已售」。
      *
-     * <p>Kept out of the global transaction on purpose. The seat bit is already
-     * set, so a missed marker does not oversell anything; what it would lose is
-     * the distinction between a hold and a sale, which is what stops a later
-     * release from putting a paid-for seat back on sale.
+     * <p>刻意放在全局事务之外。座位位已经占住了，所以少打一个标记并不会超卖；
+     * 丢掉的只是「占用」和「售出」的区别 —— 而正是这个区别，拦住了后续的释放逻辑
+     * 把已经付过钱的座位重新放回市场。
      */
     private void confirmSeatHold(String orderNo) {
         try {

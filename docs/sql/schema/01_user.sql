@@ -1,15 +1,14 @@
--- Force utf8mb4 on this connection.
+-- 强制本连接使用 utf8mb4。
 --
--- Without it the mysql client negotiates latin1, the server re-interprets the
--- UTF-8 bytes of Chinese text as latin1 characters, and stores them
--- double-encoded (C3A6 C2B7 C2B1 where E6 B7 B1 was intended). The damage
--- happens on write; reading with the correct charset afterwards cannot undo it.
+-- 不加这一句，mysql 客户端会协商成 latin1，服务端随即把中文文本的 UTF-8
+-- 字节按 latin1 字符重新解释，再以双重编码的形式存进去（本该是 E6 B7 B1，
+-- 实际存成了 C3A6 C2B7 C2B1）。损坏发生在写入的那一刻；事后再用正确的
+-- 字符集读取，也已经挽不回来了。
 SET NAMES utf8mb4;
 
 -- ============================================================
--- maipiao_user : user-service's private schema
--- No cross-schema JOIN is allowed. Other services reach this data
--- through Feign only.
+-- maipiao_user : user-service 的私有库
+-- 不允许跨库 JOIN。其他服务只能通过 Feign 拿到这些数据。
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS maipiao_user
@@ -18,7 +17,7 @@ CREATE DATABASE IF NOT EXISTS maipiao_user
 USE maipiao_user;
 
 -- ------------------------------------------------------------
--- user account
+-- 用户账号
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_user_user;
 CREATE TABLE t_user_user (
@@ -28,6 +27,9 @@ CREATE TABLE t_user_user (
   nickname    VARCHAR(50)   NOT NULL DEFAULT ''     COMMENT 'display name',
   avatar      VARCHAR(255)  NOT NULL DEFAULT ''     COMMENT 'avatar url',
   status      TINYINT       NOT NULL DEFAULT 1      COMMENT '0=disabled 1=active',
+  -- 角色存在账号上，而不是由登录路径碰巧调用了哪个签发方法决定。
+  -- 网关在 /api/*/admin/** 上校验它。
+  role        VARCHAR(16)   NOT NULL DEFAULT 'USER' COMMENT 'USER or ADMIN',
   create_time DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   update_time DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
@@ -35,7 +37,7 @@ CREATE TABLE t_user_user (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='user account';
 
 -- ------------------------------------------------------------
--- coupon template (managed by admin, issued to users)
+-- 优惠券模板（由管理员维护，发放给用户）
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_user_coupon_template;
 CREATE TABLE t_user_coupon_template (
@@ -53,15 +55,15 @@ CREATE TABLE t_user_coupon_template (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='coupon template';
 
 -- ------------------------------------------------------------
--- user coupon
+-- 用户优惠券
 --
--- status transitions (the concurrency boundary is the WHERE clause):
---   0 unused --lock-->  1 locked --use-->  2 used
---                       1 locked --rollback--> 0 unused
---   0 unused --expire--> 3 expired
--- Locking must always be:
+-- 状态流转（并发边界就在 WHERE 子句里）：
+--   0 未使用 --锁定-->  1 已锁定 --使用-->  2 已使用
+--                       1 已锁定 --回滚--> 0 未使用
+--   0 未使用 --过期--> 3 已过期
+-- 锁定时必须始终写成：
 --   UPDATE ... SET status=1 WHERE id=? AND user_id=? AND status=0
--- and must verify affected rows = 1.
+-- 并且必须校验影响行数 = 1。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS t_user_coupon;
 CREATE TABLE t_user_coupon (

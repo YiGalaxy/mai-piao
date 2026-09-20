@@ -19,20 +19,19 @@ public class FilmService {
     private final FilmMapper filmMapper;
 
     /**
-     * The catalogue, filtered.
+     * 片库/剧库，带筛选。
      *
-     * @param status   0 upcoming, 1 on sale, 2 closed; null for all
-     * @param category MOVIE / CONCERT / TALK_SHOW / ...; null for all.
-     *                 Filtering here rather than in the client means a category
-     *                 page does not download the whole catalogue to discard
-     *                 most of it - and it is one indexed column.
+     * @param status   0 待映，1 在售，2 已下线；null 表示全部
+     * @param category MOVIE / CONCERT / TALK_SHOW / ...；null 表示全部。
+     *                 在这里筛而不是让客户端筛，一个分类页就不必把整个库拉下来再丢掉
+     *                 绝大部分 —— 而且它只是一列，走得上索引。
      */
     public List<Film> list(Integer status, String category) {
         return filmMapper.selectList(Wrappers.<Film>lambdaQuery()
                 .eq(status != null, Film::getStatus, status)
                 .eq(category != null && !category.isBlank(), Film::getCategory, category)
-                // Newest first. Unrated (score 0) entries are not filtered out -
-                // an upcoming one legitimately has no score yet.
+                // 最新的在前。没有评分的（score 为 0）不筛掉 —— 一部待映的作品本来
+                // 就还没有评分。
                 .orderByDesc(Film::getShowDate)
                 .orderByDesc(Film::getId));
     }

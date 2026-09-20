@@ -20,14 +20,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The fake provider's API, plus a cashier page a human can click through.
+ * 假服务商的 API，外加一个可以手动点着走的收银台页面。
  *
- * <p>Two audiences:
+ * <p>面向两类使用者：
  * <ul>
- *   <li>pay-service, which calls {@code /precreate} the way it would call a
- *       real provider's order-creation endpoint.</li>
- *   <li>The operator, who uses {@code /admin/**} to deliver callbacks in
- *       shapes a real provider will not produce on request.</li>
+ *   <li>pay-service，它调用 {@code /precreate} 的方式，和调用真实服务商的下单接口
+ *       一模一样。</li>
+ *   <li>运维人员，他用 {@code /admin/**} 投递那些真实服务商不会应要求造出来的回调
+ *       形态。</li>
  * </ul>
  */
 @Slf4j
@@ -43,7 +43,7 @@ public class MockPayController {
     private long callbackDelayMs;
 
     // ============================================================
-    // provider-facing
+    // 面向服务商协议的那一面
     // ============================================================
 
     @Data
@@ -61,10 +61,10 @@ public class MockPayController {
     }
 
     /**
-     * Creates a payment session and returns where to send the user.
+     * 创建一个支付会话，并返回该把用户送去哪里。
      *
-     * <p>Mirrors what a provider returns from its order-creation call: an
-     * identifier on their side plus a URL the client opens.
+     * <p>照着真实服务商下单接口的返回来做：一个他们那边的标识，加上一个客户端要打开的
+     * URL。
      */
     @PostMapping("/precreate")
     public PrecreateResponse precreate(@RequestBody PrecreateRequest request) {
@@ -81,7 +81,7 @@ public class MockPayController {
     }
 
     // ============================================================
-    // the cashier page a human clicks through
+    // 一个由人手动点着走的收银台页面
     // ============================================================
 
     @GetMapping(value = "/cashier/{channelTradeNo}", produces = MediaType.TEXT_HTML_VALUE)
@@ -97,11 +97,10 @@ public class MockPayController {
     }
 
     /**
-     * The user pressing "pay".
+     * 用户按下"支付"。
      *
-     * <p>Deliberately asynchronous: the provider returns immediately and
-     * delivers the result by callback, which is how a real one behaves and
-     * why the client has to poll rather than being told on the spot.
+     * <p>刻意做成异步的：服务商立刻返回，结果通过回调送达，真实服务商就是这么做的，
+     * 这也是为什么客户端必须轮询，而不能当场就得到答复。
      */
     @PostMapping("/cashier/{channelTradeNo}/confirm")
     public Map<String, Object> confirm(@PathVariable String channelTradeNo) {
@@ -112,7 +111,7 @@ public class MockPayController {
 
         store.markSuccess(channelTradeNo);
 
-        // Fire and forget, on a timer, like a real provider.
+        // 发出去就不管了，延迟一小会儿，就像真实服务商那样。
         new Thread(() -> notifySender.sendAfter(
                 session.getChannelTradeNo(), session.getPaymentNo(), session.getOrderNo(),
                 session.getAmount(), "SUCCESS", callbackDelayMs)).start();
@@ -121,7 +120,7 @@ public class MockPayController {
     }
 
     // ============================================================
-    // operator controls
+    // 运维控制
     // ============================================================
 
     @GetMapping("/admin/sessions")
@@ -135,13 +134,13 @@ public class MockPayController {
         private String paymentNo;
         private String orderNo;
         private BigDecimal amount;
-        /** SUCCESS or FAILED */
+        /** SUCCESS 或 FAILED */
         private String status = "SUCCESS";
-        /** Deliver the same callback this many times. */
+        /** 同一条回调投递多少次。 */
         private int times = 1;
-        /** Delay before delivering, milliseconds. */
+        /** 投递前延迟多少毫秒。 */
         private long delayMs = 0;
-        /** Send an invalid signature. */
+        /** 发送一个无效签名。 */
         private boolean breakSignature = false;
     }
 
@@ -153,12 +152,11 @@ public class MockPayController {
     }
 
     /**
-     * Delivers a callback in whatever shape the operator asks for.
+     * 按运维人员要求的形态投递一条回调。
      *
-     * <p>This is the reason this service exists. Reproducing "the provider
-     * sent it twice" or "the provider sent a success after we cancelled"
-     * against a real sandbox means waiting for a retry schedule that may never
-     * produce that exact sequence.
+     * <p>这个服务存在的理由就在这里。想在真实沙箱上复现"服务商发了两次"或者"服务商在
+     * 我们取消之后又发来一条成功"，意味着要等一个可能永远不会产生那个确切序列的重试
+     * 节奏。
      */
     @PostMapping("/admin/notify")
     public NotifyResult notify(@RequestBody NotifyRequest request) {

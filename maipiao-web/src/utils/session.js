@@ -2,16 +2,14 @@ const TOKEN_KEY = 'maipiao_token'
 const USER_KEY = 'maipiao_user'
 
 /**
- * Session persistence.
+ * 会话持久化。
  *
- * localStorage rather than a cookie: the API is called with a Bearer header
- * and nothing else, so there is no cookie to protect against CSRF and no
- * server-side session to keep in sync.
+ * 用 localStorage 而不是 cookie：调 API 只靠 Bearer 头，别的什么都不用，
+ * 所以没有 cookie 需要防 CSRF，也没有服务端会话要保持同步。
  *
- * The trade-off is real and worth stating: anything that can run script on
- * this origin can read the token. That is acceptable for a project where the
- * API and the app are served from the same place and no third-party script is
- * loaded; it would not be for a page embedding untrusted widgets.
+ * 代价是真实存在的，值得说清楚：任何能在这个源上跑脚本的东西都能读到 token。
+ * 对于一个 API 和应用同源部署、又不加载任何第三方脚本的项目来说，这可以接受；
+ * 但如果页面上嵌了不可信的组件，就不行了。
  */
 
 export function getToken() {
@@ -30,7 +28,7 @@ export function getStoredUser() {
   try {
     return JSON.parse(raw)
   } catch {
-    // Corrupted entry - drop it rather than crashing every page that reads it.
+    // 数据坏了 —— 直接丢掉，而不是让每个读它的页面都崩掉。
     localStorage.removeItem(USER_KEY)
     return null
   }

@@ -4,25 +4,23 @@ import router from '../router'
 import { clearSession, getToken } from '../utils/session'
 
 /**
- * The single axios instance the app uses.
+ * 全应用共用的那一个 axios 实例。
  *
- * Two conventions this enforces, so no caller has to remember them:
+ * 它强制了两条约定，调用方不必自己记着：
  *
- * 1. Unwrap the envelope. Every backend response is `{code, message, data}`
- *    where `code: 0` means success. Callers get `data` directly and never
- *    write `res.data.data`.
+ * 1. 拆信封。后端每个响应都是 `{code, message, data}`，`code: 0` 表示成功。
+ *    调用方直接拿到 `data`，永远不用写 `res.data.data`。
  *
- * 2. A failed business call rejects. The backend returns HTTP 200 for
- *    expected failures (seat taken, coupon unusable) with a non-zero code;
- *    without this, `await login()` would resolve on a wrong password and the
- *    caller would carry on with `undefined`.
+ * 2. 业务调用失败就 reject。对于可预期的失败（座位被占、优惠券不可用），
+ *    后端返回的是 HTTP 200 加一个非 0 的 code；不这样处理的话，
+ *    `await login()` 在密码错误时照样会 resolve，调用方就拿着 `undefined`
+ *    继续往下走了。
  *
- * 401 is handled centrally: the session is dropped and the user is sent to
- * the login page, remembering where they were.
+ * 401 统一处理：丢掉会话，把用户送回登录页，并记住他原来在哪。
  */
 const request = axios.create({
-  // Relative, so the Vite dev proxy (and Nginx in production) handles it.
-  // The browser never needs to know the gateway's address.
+  // 用相对路径，交给 Vite 开发代理（生产环境则是 Nginx）去转发。
+  // 浏览器始终不需要知道网关的地址。
   baseURL: '/api',
   timeout: 15000
 })
@@ -42,8 +40,8 @@ request.interceptors.response.use(
   (response) => {
     const body = response.data
 
-    // Not an envelope (a file download, or a service that does not use the
-    // shared handler). Hand it back untouched rather than mangling it.
+    // 不是信封格式（比如文件下载，或者某个没用统一处理器的服务）。
+    // 原样交回去，别去动它。
     if (body === null || typeof body !== 'object' || !('code' in body)) {
       return body
     }
@@ -55,11 +53,10 @@ request.interceptors.response.use(
     handleUnauthorized(body.code)
     ElMessage.error(body.message || '请求失败')
 
-    // The business code rides along on the rejection. Not every failure is
-    // the same kind of failure - "no adjacent seats in this band" is an
-    // ordinary outcome with a remedy, not an error to show and forget - and a
-    // caller that can only see the message has to pattern-match prose to tell
-    // them apart.
+    // 业务 code 跟着 rejection 一起带出去。失败跟失败并不是同一回事 ——
+    // 「这一档里没有连座了」是个正常结果，而且有补救办法，不是弹个提示
+    // 就完事的错误 —— 而只能看到 message 的调用方，就得去匹配文案
+    // 才能把它们区分开。
     const failure = new Error(body.message || 'request failed')
     failure.code = body.code
     failure.data = body.data

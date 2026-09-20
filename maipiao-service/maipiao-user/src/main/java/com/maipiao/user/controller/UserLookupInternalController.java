@@ -16,15 +16,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * User lookups for other services.
+ * 供其他服务调用的用户查询。
  *
- * <p>A separate controller from the coupon one because it is a different kind
- * of thing: the coupon endpoints are transactional branches that throw, these
- * are reads that return empty. Mixing them would mean one class whose methods
- * need different rules about failure.
+ * <p>和优惠券那个 controller 分开，因为它们是两种不同的东西：
+ * 优惠券接口是抛异常的事务分支，而这些是返回空结果的读操作。
+ * 混在一起就变成一个类里的方法各自需要不同的失败规则。
  *
- * <p>Not routed from outside. The gateway rejects {@code /api/*&#47;inner/**}
- * before consulting its whitelist.
+ * <p>不从外部路由。网关会在查白名单之前就拒掉 {@code /api/*&#47;inner/**}。
  */
 @Slf4j
 @RestController
@@ -35,15 +33,13 @@ public class UserLookupInternalController {
     private final UserMapper userMapper;
 
     /**
-     * Finds a user by phone.
+     * 按手机号查一个用户。
      *
-     * <p>Returns the id, nickname and status but never the password hash. A
-     * caller has no use for it and the surest way for it not to leak through
-     * an endpoint is for the endpoint not to select it.
+     * <p>返回 id、昵称和状态，但绝不返回密码哈希。调用方拿着它没有任何用，
+     * 而要让它绝不可能从一个接口泄露出去，最稳妥的办法就是这个接口根本不去查它。
      *
-     * <p>A phone that matches nothing returns {@code null} rather than an
-     * error: "no such user" is an ordinary answer to a search, and the caller
-     * turns it into an empty result.
+     * <p>没匹配到任何人的手机号返回 {@code null} 而不是错误：
+     * 「没有这个用户」是搜索的一种普通答案，由调用方把它变成一个空结果。
      */
     @GetMapping("/find-by-phone")
     public R<Map<String, Object>> findByPhone(@RequestParam String phone) {
@@ -63,11 +59,11 @@ public class UserLookupInternalController {
     }
 
     /**
-     * Phone numbers for a set of user ids.
+     * 一批用户 id 对应的手机号。
      *
-     * <p>Batched on purpose: the order list needs a phone per row, and one
-     * call per row would turn a page of twenty orders into twenty round trips
-     * to render something nobody reads closely.
+     * <p>故意做成批量：订单列表每行都要一个手机号，
+     * 而每行一次调用会把一页二十笔订单变成二十次往返，
+     * 只为渲染一个没人细看的东西。
      */
     @GetMapping("/phones")
     public R<Map<Long, String>> phones(@RequestParam List<Long> userIds) {

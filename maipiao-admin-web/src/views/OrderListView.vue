@@ -171,9 +171,8 @@ const detailOpen = ref(false)
 const detail = ref(null)
 
 onMounted(() => {
-  // Arriving from a user detail page carries the user; the phone filter is
-  // still what an administrator would type, so the id is passed through as a
-  // hidden filter rather than reverse-engineered into a phone number.
+  // 从用户详情页跳过来时会带上用户；但手机号才是管理员会去填的筛选项，
+  // 所以这里把 id 当作一个隐藏筛选项透传下去，而不是反查成手机号。
   if (route.query.userId) {
     filters.userId = route.query.userId
   }

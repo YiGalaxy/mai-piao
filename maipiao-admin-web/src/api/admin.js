@@ -1,20 +1,18 @@
 import request from './request'
 
 /**
- * Admin endpoints, all under /api/movie/admin.
+ * 管理端接口，都在 /api/movie/admin 下。
  *
- * Through the gateway, which refuses the whole /api/*&#47;admin/** surface to a
- * token without the admin role. The frontend does not enforce that and must
- * not appear to: hiding a button is not access control, and the check that
- * matters is the one the gateway does on every call.
+ * 全部经网关访问，网关会把整个 /api/*&#47;admin/** 面拒绝给不带管理员角色的
+ * token。前端不做这个校验，也不该让人觉得它在做：藏起一个按钮不是访问控制，
+ * 真正算数的是网关在每次调用上做的那道检查。
  */
 
 /**
- * Venues and their rooms, nested, for the picker and the management screen.
+ * 场馆及其下属场地，嵌套返回，供选择器和管理页使用。
  *
- * includeClosed defaults to true because this list is also where a venue taken
- * out of service has to remain visible - otherwise taking it out looks like
- * deleting it.
+ * includeClosed 默认为 true，因为这份列表也是停用场馆必须继续露面的地方 ——
+ * 否则「停用」看起来就跟「删除」一样了。
  */
 export function fetchVenues() {
   return request.get('/movie/admin/venues', { params: { includeClosed: true } })
@@ -51,22 +49,21 @@ export function updateProject(projectId, payload) {
 }
 
 /**
- * Changes how a session sells, not what it is selling.
+ * 改的是场次怎么卖，不是卖什么。
  *
- * Date, time and price bands are not accepted here on purpose: moving a
- * session moves every seat it sold, and re-banding one remaps seats people
- * already hold.
+ * 这里刻意不接受日期、时间和票价档位：改场次时间会连带挪动它已经卖出的每一个
+ * 座位，重划档位则会把用户手里已经持有的座位重新映射一遍。
  */
 export function updateSession(sessionId, payload) {
   return request.put(`/movie/admin/sessions/${sessionId}`, payload)
 }
 
-/** Projects, newest first; optionally narrowed to one category. */
+/** 剧目列表，最新的在前；可选地只筛一个分类。 */
 export function fetchProjects(category) {
   return request.get('/movie/admin/projects', { params: { category } })
 }
 
-/** A project's dates. What an administrator checks after adding one. */
+/** 某个剧目的所有场次日期。管理员加完之后就是来看这个的。 */
 export function fetchProjectSessions(projectId) {
   return request.get(`/movie/admin/projects/${projectId}/sessions`)
 }
@@ -76,10 +73,9 @@ export function createProject(payload) {
 }
 
 /**
- * Puts a project on sale for one date at one place.
+ * 把一个剧目在某一天、某个场地开卖。
  *
- * One call, one night. A three-night run is three calls, because they are
- * three separate things to put on sale.
+ * 一次调用就是一场。连演三晚就是三次调用，因为那本来就是三件要分别上架的事。
  */
 export function createSession(payload) {
   return request.post('/movie/admin/sessions', payload)
@@ -90,7 +86,7 @@ export function deleteSession(sessionId) {
 }
 
 // ------------------------------------------------------------
-// users
+// 用户
 // ------------------------------------------------------------
 
 export function fetchUsers(params) {
@@ -101,18 +97,18 @@ export function fetchUser(userId) {
   return request.get(`/user/admin/users/${userId}`)
 }
 
-/** 0 disables the account, 1 re-enables it. Disabling is the only removal. */
+/** 0 停用账号，1 重新启用。停用是唯一的「删除」方式。 */
 export function setUserStatus(userId, status) {
   return request.put(`/user/admin/users/${userId}/status`, null, { params: { status } })
 }
 
-/** 'ADMIN' or 'USER'. Refused for yourself, and for the last administrator. */
+/** 'ADMIN' 或 'USER'。改自己会被拒，改最后一个管理员也会被拒。 */
 export function setUserRole(userId, role) {
   return request.put(`/user/admin/users/${userId}/role`, null, { params: { role } })
 }
 
 // ------------------------------------------------------------
-// orders
+// 订单
 // ------------------------------------------------------------
 
 export function fetchOrders(params) {

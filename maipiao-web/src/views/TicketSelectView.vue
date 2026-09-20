@@ -12,10 +12,9 @@
       </div>
 
       <!--
-        No seat map on this page, by design. The screening is one where the
-        venue assigns seats; showing 2000 of them and letting someone scroll
-        would promise a choice that does not exist, and would put a seat-map
-        query on the busiest path in the system.
+        这一页刻意不放座位图。这种场次是场馆直接分配座位的；把两千个座位
+        画出来让人去翻，等于承诺了一个根本不存在的选择，还会把座位图查询
+        压到系统最繁忙的那条路径上。
       -->
       <div class="mp-card panel">
         <h2>选择票档</h2>
@@ -106,12 +105,11 @@ const selectedTierId = ref('')
 const quantity = ref(1)
 
 /**
- * The session's own limit when it has one, the platform ceiling otherwise.
+ * 场次自己有购买上限就用它的，没有就用平台上限。
  *
- * Both are real constraints and the smaller one binds. Six is the platform
- * maximum the seat endpoints enforce; a screening can narrow it further -
- * the rush sale in the demo allows two - and the server rejects anything
- * over either, so the control should not offer it.
+ * 两个都是真实约束，取更小的那个。6 是座位相关接口强制的平台上限；场次可以
+ * 收得更紧 —— 演示里的抢票场次只允许 2 张 —— 而超过任何一个服务端都会拒，
+ * 所以控件不该把这个选项摆出来。
  */
 const maxQuantity = computed(() => {
   const limit = Number(seatMap.value?.purchaseLimit || 0)
@@ -142,12 +140,11 @@ async function load() {
 }
 
 /**
- * Asks the server which seats we got.
+ * 问服务端分到了哪几个座位。
  *
- * The seats are not chosen here and the price is not computed here. Both come
- * back from the call, and both are carried to the checkout as they arrived -
- * a client that recomputed either would be guessing at things only the
- * server knows.
+ * 座位不在这里挑，价格也不在这里算。两者都由这次调用返回，并原样带到
+ * 结算页去 —— 客户端要是自己重算其中任何一个，就是在猜只有服务端
+ * 才知道的事情。
  */
 async function onSubmit() {
   if (submitting.value) return
@@ -177,16 +174,15 @@ async function onSubmit() {
 
     router.push({ name: 'checkout' })
   } catch (e) {
-    // No run of that length in the band. Nothing was taken and nothing broke -
-    // the request was simply more seats together than this band can seat, and
-    // the server's message says how many it could. Offer that rather than
-    // failing flat, because splitting the party up is the buyer's call to
-    // make, not ours to make silently.
+    // 这一档里找不到这么长的一段连座。没占走任何东西，也没出故障 ——
+    // 只是要的连座张数超过了这一档能凑出来的数量，服务端返回的 message
+    // 会说明最多能给几张。把这个方案摆出来，而不是干脆失败：拆不拆开
+    // 是买家该做的决定，不该由我们默默替他做。
     if (e?.code === 10010) {
       await offerSplit(e.message)
       return
     }
-    // request.js surfaced anything else
+    // 其他错误 request.js 已经提示过了
   } finally {
     submitting.value = false
   }
@@ -200,7 +196,7 @@ async function offerSplit(reason) {
       type: 'warning'
     })
   } catch {
-    // Backed out. The band is still selected, so "换个票档" is one tap away.
+    // 用户退出了。票档还选着，点一下就能「换个票档」。
     return
   }
 
@@ -210,8 +206,7 @@ async function offerSplit(reason) {
       scheduleId,
       tierId: selectedTierId.value,
       quantity: quantity.value,
-      // The one place the buyer is allowed to give up adjacency, and only
-      // after being asked.
+      // 这是唯一一处允许买家放弃连座的地方，而且必须先问过他。
       adjacent: false
     })
 
@@ -232,7 +227,7 @@ async function offerSplit(reason) {
     ElMessage.warning('已按不连座出票')
     router.push({ name: 'checkout' })
   } catch {
-    // surfaced by request.js
+    // 由 request.js 负责提示
   } finally {
     submitting.value = false
   }

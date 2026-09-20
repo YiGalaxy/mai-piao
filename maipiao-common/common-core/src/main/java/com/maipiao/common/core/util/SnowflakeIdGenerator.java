@@ -1,27 +1,25 @@
 package com.maipiao.common.core.util;
 
 /**
- * Snowflake id generator.
+ * Snowflake id 生成器。
  *
- * <p>Layout (64 bits, sign bit unused):
+ * <p>位布局（64 位，符号位不用）：
  * <pre>
- *   0 | 41 bits timestamp | 5 bits datacenter | 5 bits worker | 12 bits sequence
+ *   0 | 41 位 timestamp | 5 位 datacenter | 5 位 worker | 12 位 sequence
  * </pre>
- * 41 bits of millisecond timestamp is ~69 years from the epoch below; 12 bits of
- * sequence allows 4096 ids per millisecond per node.
+ * 41 位的毫秒时间戳从下面那个 epoch 起算约 69 年；12 位序列号允许每个节点每毫秒
+ * 生成 4096 个 id。
  *
- * <p>Why this matters to the project: order numbers and payment numbers are
- * snowflake ids. They are globally unique without a database round trip, which
- * keeps the hot path off the DB, and they are time-ordered, which is what makes
- * them usable as a future sharding gene.
+ * <p>这对本项目意味着什么：订单号和支付号都是 snowflake id。它们不需要一次数据库
+ * 往返就能做到全局唯一，让热点路径不碰 DB；而且它们是按时间递增的，这才使它们将来
+ * 能当分片键用。
  *
- * <p>Clock rollback: if the wall clock moves backwards we refuse to generate
- * rather than risk emitting a duplicate id. For a small rollback (<= 5ms) we
- * briefly spin; anything larger is a real problem and must surface loudly.
+ * <p>时钟回拨：如果墙上时钟往回走，我们宁可拒绝生成，也不冒着发出重复 id 的风险。
+ * 小幅回拨（<= 5ms）就短暂自旋等过去；再大就是真问题了，必须大声暴露出来。
  */
 public final class SnowflakeIdGenerator {
 
-    /** Custom epoch: 2024-01-01T00:00:00Z. Buying ~69 years from here. */
+    /** 自定义 epoch：2024-01-01T00:00:00Z。从这里起算能买到约 69 年。 */
     private static final long EPOCH = 1704067200000L;
 
     private static final long WORKER_ID_BITS = 5L;
@@ -36,7 +34,7 @@ public final class SnowflakeIdGenerator {
     private static final long DATACENTER_ID_SHIFT = SEQUENCE_BITS + WORKER_ID_BITS;                 // 17
     private static final long TIMESTAMP_SHIFT = SEQUENCE_BITS + WORKER_ID_BITS + DATACENTER_ID_BITS; // 22
 
-    /** Smallest rollback we tolerate by waiting it out. */
+    /** 我们愿意靠等来容忍的最大回拨幅度。 */
     private static final long MAX_TOLERATED_ROLLBACK_MS = 5L;
 
     private final long workerId;
@@ -57,7 +55,7 @@ public final class SnowflakeIdGenerator {
     }
 
     /**
-     * @return a unique, time-ordered 64-bit id
+     * @return 一个唯一的、按时间递增的 64 位 id
      */
     public synchronized long nextId() {
         long timestamp = currentTime();
@@ -68,19 +66,19 @@ public final class SnowflakeIdGenerator {
                 throw new IllegalStateException(
                         "clock moved backwards by " + offset + "ms, refusing to generate an id");
             }
-            // Short rollback: wait for the clock to catch up.
+            // 小幅回拨：等时钟追上来。
             timestamp = waitUntil(lastTimestamp);
         }
 
         if (timestamp == lastTimestamp) {
             sequence = (sequence + 1) & SEQUENCE_MASK;
             if (sequence == 0) {
-                // Sequence exhausted for this millisecond - advance to the next one.
+                // 这一毫秒的序列号用完了 —— 推进到下一毫秒。
                 timestamp = waitUntil(lastTimestamp + 1);
             }
         } else {
-            // New millisecond: resetting the sequence to 0 makes ids within the
-            // same millisecond monotonically increasing, which the sharding gene relies on.
+            // 新的毫秒：把序列号归 0，可以让同一毫秒内的 id 单调递增，分片键正是
+            // 依赖这一点。
             sequence = 0L;
         }
 
@@ -92,7 +90,7 @@ public final class SnowflakeIdGenerator {
                 | sequence;
     }
 
-    /** Convenience for id types that are rendered as strings (order_no, payment_no). */
+    /** 方便那些以字符串形式呈现的 id 类型（order_no、payment_no）。 */
     public String nextIdString() {
         return Long.toString(nextId());
     }
@@ -111,12 +109,11 @@ public final class SnowflakeIdGenerator {
     }
 
     // ------------------------------------------------------------
-    // Default instance for services that do not configure a node id.
+    // 给没有配置节点 id 的服务用的默认实例。
     //
-    // In a real multi-node deployment each instance needs a distinct
-    // (datacenterId, workerId). Deriving it from the hostname / pod ordinal
-    // is the usual approach; a hard-coded pair is fine for local dev but
-    // will produce collisions if two instances share it.
+    // 在真实的多节点部署里，每个实例都需要一对不同的
+    // (datacenterId, workerId)。常见做法是从 hostname / pod 序号推导；
+    // 写死一对值在本地开发没问题，但两个实例共用它就会撞出重复 id。
     // ------------------------------------------------------------
     private static final SnowflakeIdGenerator DEFAULT =
             new SnowflakeIdGenerator(workerIdFromEnv(), datacenterIdFromEnv());

@@ -181,7 +181,7 @@ async function onToggleStatus(row) {
     ElMessage.success('已更新')
     await load()
   } catch {
-    // surfaced - the server refuses disabling yourself, or the last admin
+    // 已由 request.js 提示 —— 服务端会拒绝停用自己，或停用最后一个管理员
   }
 }
 
@@ -203,7 +203,7 @@ async function onToggleRole(row) {
     ElMessage.success('已更新')
     await load()
   } catch {
-    // surfaced - the server refuses revoking your own, or the last one
+    // 已由 request.js 提示 —— 服务端会拒绝撤销自己的，或撤销最后一个
   }
 }
 

@@ -83,6 +83,20 @@
           <el-button size="large" @click="onCancel">取消订单</el-button>
         </template>
         <template v-else>
+          <!--
+            已出票的订单可以退，但窗口很窄：开场前 2 小时之前、且没验过票。
+            是否可退由服务端判定 —— 退票窗口是票的性质，不是页面的判断。
+          -->
+          <el-button
+            v-if="order.status === 2 || order.status === 3"
+            type="primary"
+            size="large"
+            :disabled="!refundable.allowed"
+            :loading="refunding"
+            @click="onRefund"
+          >
+            {{ refundable.allowed ? '申请退款' : refundable.reason }}
+          </el-button>
           <el-button size="large" @click="router.push('/orders')">返回订单列表</el-button>
         </template>
       </div>
@@ -96,7 +110,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { cancelOrder, fetchOrderDetail } from '../api/order'
+import { cancelOrder, fetchOrderDetail, fetchRefundable, requestRefund } from '../api/order'
 import { collectHintOf, subjectOf, venueOf } from '../utils/eventTerms'
 import { precreatePayment } from '../api/pay'
 
@@ -108,6 +122,9 @@ const loading = ref(true)
 const remainingSeconds = ref(0)
 const paying = ref(false)
 const checking = ref(false)
+const refunding = ref(false)
+// 默认不可退：还没问到服务端之前，按钮不该看起来像能点。
+const refundable = ref({ allowed: false, reason: '…', amount: 0 })
 const paymentNo = ref('')
 
 let timer = null
@@ -118,7 +135,7 @@ const order = computed(() => detail.value?.order)
  * Server-side status values, see OrderStatus.
  *
  * The hint text is what makes the status useful: "待支付" alone does not tell
- * the user what to do about it or what happens if they do nothing.
+ * 用户该拿它怎么办、不办又会怎样。
  */
 const STATUS_TEXT = {
   0: { text: '等待支付', hint: '超时未支付将自动取消，座位会释放', band: 'band-warn' },
@@ -130,17 +147,15 @@ const STATUS_TEXT = {
   6: { text: '已退款', hint: '退款已到账', band: 'band-muted' }
 }
 
-// The order carries its own category, snapshotted when it was placed, so
-// these follow what was actually bought rather than what the catalogue says
-// today.
+// 订单自己带着下单那一刻快照下来的品类，所以这两个词跟着当时买的东西走，
+// 而不是跟着目录今天怎么写。
 const subject = computed(() => subjectOf(order.value?.category))
 const venueWord = computed(() => venueOf(order.value?.category))
 
 const statusText = computed(() => STATUS_TEXT[order.value?.status]?.text || '未知')
 const statusHint = computed(() => {
   const status = order.value?.status
-  // The collect hint depends on where the ticket is collected from, which
-  // depends on what was bought - a concert has no box office machine.
+  // 取票提示取决于是从哪里取，而那又取决于买的是什么 —— 演唱会没有自助取票机。
   if (status === 2) return collectHintOf(order.value?.category)
   return STATUS_TEXT[status]?.hint || ''
 })
@@ -170,6 +185,50 @@ async function load() {
   } finally {
     loading.value = false
   }
+  await loadRefundable()
+}
+
+/**
+ * 问服务端这一单能不能退。
+ *
+ * <p>拿不到就保持「不可退」并显示原因。默认放开会让用户点进一个必然失败的流程，
+ * 而失败原因还说不清楚。
+ */
+async function loadRefundable() {
+  const status = detail.value?.order?.status
+  if (status !== 2 && status !== 3) {
+    return
+  }
+  try {
+    refundable.value = await fetchRefundable(route.params.orderNo)
+  } catch {
+    refundable.value = { allowed: false, reason: '暂时无法确认退票条件', amount: 0 }
+  }
+}
+
+async function onRefund() {
+  if (refunding.value) return
+  try {
+    await ElMessageBox.confirm(
+      `退款 ¥${refundable.value.amount} 将原路退回，座位同时释放给其他人。确定申请吗？`,
+      '申请退款',
+      { confirmButtonText: '确定退款', cancelButtonText: '再想想', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  refunding.value = true
+  try {
+    await requestRefund(order.value.orderNo, 'USER_REQUEST')
+    ElMessage.success('退款已受理，到账后订单状态会更新')
+    // 重新读一次：状态可能已经变成退款中，而那是服务端的事，不该由前端猜。
+    await load()
+  } catch {
+    // request.js 已经提示过原因
+  } finally {
+    refunding.value = false
+  }
 }
 
 function startCountdown() {
@@ -180,8 +239,7 @@ function startCountdown() {
     remainingSeconds.value = Math.max(0, Math.floor((deadline - Date.now()) / 1000))
     if (remainingSeconds.value <= 0 && timer) {
       clearInterval(timer)
-      // The server cancels on its own schedule; reloading shows the truth
-      // rather than guessing at it here.
+      // 服务端有它自己的取消节奏；重新拉一次拿到的是事实，而不是在这里猜。
       load()
     }
   }
@@ -190,14 +248,13 @@ function startCountdown() {
 }
 
 /**
- * Opens the payment provider's cashier.
+ * 打开支付渠道方的收银台。
  *
- * The payment order is created first, then the cashier is opened in a new
- * tab - the provider's page is not part of this app and should not replace it,
- * or the user loses the order they are paying for.
+ * 先创建支付单，再在新标签页里打开收银台 —— 渠道方的页面不属于这个应用，
+ * 不该顶掉它，否则用户会丢掉他正在付款的那张订单。
  *
- * Nothing is assumed about the outcome. Real providers confirm asynchronously,
- * so this page polls rather than waiting for a redirect that may never come.
+ * 对结果不做任何假设。真实渠道是异步确认的，所以这个页面靠轮询，
+ * 而不是干等一个可能永远不来的跳转。
  */
 async function onPay() {
   if (paying.value) return
@@ -215,18 +272,17 @@ async function onPay() {
 
     ElMessage.info('已打开收银台，支付完成后请点击「我已支付」')
   } catch {
-    // request.js already surfaced the reason
+    // request.js 已经提示过原因了
   } finally {
     paying.value = false
   }
 }
 
 /**
- * Asks the server whether the payment has landed.
+ * 问服务端：钱到了没有。
  *
- * Polling rather than SSE or a websocket because the update is a single
- * boolean that arrives once, a second or two after the user pays - a
- * subscription would be more machinery than the problem needs.
+ * 用轮询而不是 SSE 或 websocket，因为要传的就是一个布尔值、只到一次、
+ * 在用户付完款一两秒之后 —— 为它建一条订阅通道，机械结构比问题本身还大。
  */
 async function onCheckPaid() {
   if (checking.value) return
@@ -262,12 +318,11 @@ async function onCancel() {
 
   try {
     const changed = await cancelOrder(order.value.orderNo)
-    // false means the timeout job cancelled it a moment earlier - the outcome
-    // the user asked for either way.
+    // 返回 false 表示超时任务刚刚抢先取消了它 —— 无论哪种，结果都是用户想要的。
     ElMessage.success(changed ? '订单已取消' : '订单已取消')
     await load()
   } catch {
-    // request.js surfaced the reason
+    // request.js 已经提示过原因了
   }
 }
 

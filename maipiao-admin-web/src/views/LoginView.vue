@@ -66,9 +66,8 @@ async function onSubmit() {
     setToken(result.token)
     setStoredUser(result)
 
-    // Ask the admin surface whether this account actually is one, rather than
-    // letting them in and failing later. The gateway answers 403 for a normal
-    // user, which is the answer this page needs.
+    // 直接问管理端这个账号到底是不是管理员，而不是先放进来、之后再失败。
+    // 普通用户会拿到网关返回的 403，这正是本页需要的答案。
     try {
       await request.get('/movie/admin/projects')
     } catch {
@@ -78,7 +77,7 @@ async function onSubmit() {
 
     router.replace(route.query.redirect || '/performances')
   } catch {
-    // request.js surfaced the reason
+    // 原因已经由 request.js 提示过了
   } finally {
     loading.value = false
   }
