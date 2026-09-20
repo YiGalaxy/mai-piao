@@ -478,10 +478,16 @@ public class SeatMapService {
      *         been released or sold, which is not an error
      */
     public int releaseSeats(Long sessionId, String lockToken, boolean force) {
+        return releaseSeats(sessionId, lockToken, force, false);
+    }
+
+    /** @param includeSold true on a refund; see the release script. */
+    public int releaseSeats(Long sessionId, String lockToken, boolean force,
+                            boolean includeSold) {
         if (lockToken == null || lockToken.isBlank()) {
             return 0;
         }
-        return seatBitmapService.release(sessionId, lockToken, force);
+        return seatBitmapService.release(sessionId, lockToken, force, includeSold);
     }
 
     /** Called by order-service after payment succeeds (G2). */

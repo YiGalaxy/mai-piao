@@ -49,4 +49,13 @@ public interface OrderClient {
     @PostMapping("/{orderNo}/refund-success")
     R<Void> markRefunded(@RequestParam("orderNo") String orderNo,
                          @RequestParam("refundAmount") java.math.BigDecimal refundAmount);
+
+    /**
+     * 清掉 Redis 里的座位占用，退款成功之后单独调一次。
+     *
+     * <p>不在事务里。Redis 回滚不了，事务里写下的清除会在回滚后留下来，把座位挂到
+     * 市场上，而订单还读作「已支付」—— 那意味着同一个座位被卖两次。
+     */
+    @PostMapping("/{orderNo}/release-refunded-seats")
+    R<Void> releaseRefundedSeats(@RequestParam("orderNo") String orderNo);
 }

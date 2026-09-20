@@ -247,11 +247,16 @@ public class SeatBitmapService {
      * <p>Idempotent, and safe to run after the seats have moved on: the script
      * only clears a seat whose owner marker still points at this order.
      *
-     * @param force release seats even when the owner marker is gone; for the
-     *              reconciliation job only, never a normal flow
+     * @param force       release seats even when the owner marker is gone; for
+     *                    the reconciliation job only, never a normal flow
+     * @param includeSold also release seats this order has sold, marked
+     *                    {@code SOLD:}. For refunds only: a refunded seat goes
+     *                    back on the market, and without this the bit stays set
+     *                    and the seat is unsellable while the ledger says it is
+     *                    free.
      * @return how many seats were actually released
      */
-    public int release(Long sessionId, String orderNo, boolean force) {
+    public int release(Long sessionId, String orderNo, boolean force, boolean includeSold) {
         List<String> keys = List.of(
                 CommonConstants.SEAT_MAP_KEY + sessionId,
                 CommonConstants.SEAT_OWNER_KEY + sessionId,
@@ -259,7 +264,8 @@ public class SeatBitmapService {
                 CommonConstants.SEAT_ORDER_KEY + orderNo,
                 CommonConstants.SOLD_OUT_KEY + sessionId);
 
-        Long released = execute(RELEASE_SCRIPT, keys, List.of(orderNo, force ? "1" : "0"));
+        Long released = execute(RELEASE_SCRIPT, keys,
+                List.of(orderNo, force ? "1" : "0", includeSold ? "1" : "0"));
         int count = released == null ? 0 : released.intValue();
 
         if (count > 0) {

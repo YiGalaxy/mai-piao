@@ -14,6 +14,8 @@
 -- ARGV[1] = orderNo
 -- ARGV[2] = '1' to force-release seats with no owner (reconciliation repair
 --           only - never pass it from a normal flow)
+-- ARGV[3] = '1' to also release seats this order has already sold, i.e. those
+--           marked SOLD:{orderNo}. For refunds only - see below.
 --
 -- Returns the number of seats actually released.
 -- ============================================================
@@ -24,8 +26,9 @@ local delayKey = KEYS[3]
 local orderKey = KEYS[4]
 local soldKey  = KEYS[5]
 
-local orderNo = ARGV[1]
-local force   = ARGV[2] == '1'
+local orderNo    = ARGV[1]
+local force      = ARGV[2] == '1'
+local includeSold = ARGV[3] == '1'
 
 local seats    = redis.call('SMEMBERS', orderKey)
 local released = 0
@@ -34,13 +37,23 @@ for _, raw in ipairs(seats) do
     local seatIndex = tonumber(raw)
     local owner = redis.call('HGET', ownerKey, seatIndex)
 
-    -- Only free a seat this order still owns.
+    -- Free a seat this order still holds, and - only when the caller says so -
+    -- one it has already sold.
     --
-    -- Without this check, a late timeout message would clear a seat that has
-    -- since been sold to someone else - the map would say "available" while
-    -- the ledger says "sold", and the next user to pick it would be sold a
-    -- seat that already has a ticket.
-    if owner == orderNo or (force and not owner) then
+    -- The two are distinguished by the marker: a held seat carries the order
+    -- number, a sold one carries SOLD: prefixed to it. Loosening this to
+    -- match either would mean a late timeout message could free a seat that
+    -- had been paid for, which is the failure the check exists to prevent.
+    -- So a refund asks for the second kind explicitly rather than the default
+    -- growing to cover it.
+    --
+    -- A sold seat really does go back on the market on a refund - and it has
+    -- to, or the bit stays set and the seat is unsellable forever while the
+    -- ledger says it is free.
+    local mine  = owner == orderNo
+    local wasMine = includeSold and owner == ('SOLD:' .. orderNo)
+
+    if mine or wasMine or (force and not owner) then
         redis.call('SETBIT', mapKey, seatIndex, 0)
         redis.call('HDEL', ownerKey, seatIndex)
         released = released + 1

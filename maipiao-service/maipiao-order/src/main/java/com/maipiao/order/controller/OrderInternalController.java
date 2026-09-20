@@ -9,6 +9,7 @@ import com.maipiao.order.entity.OrderItem;
 import com.maipiao.order.dto.AdminOrderDtos;
 import com.maipiao.order.mapper.OrderItemMapper;
 import com.maipiao.order.service.OrderAdminService;
+import com.maipiao.order.service.OrderRefundService;
 import com.maipiao.order.service.OrderService;
 import com.maipiao.order.service.OrderStateMachine;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class OrderInternalController {
     private final OrderStateMachine stateMachine;
     private final OrderItemMapper orderItemMapper;
     private final OrderAdminService orderAdminService;
+    private final OrderRefundService orderRefundService;
 
     /**
      * How much a user has bought.
@@ -128,17 +130,29 @@ public class OrderInternalController {
         return R.ok();
     }
 
-    /** G3 branch: order to REFUNDED. */
+    /**
+     * G3 分支：订单转已退款，座位回到池子里。
+     *
+     * <p>三件事一起做，因为它们描述的是同一个事实：订单变成已退款、账本里那几行从
+     * 已售改回可选、售出计数减回去。少做任何一件，都会要么票卖不出去，要么卖出去
+     * 却不减计数。
+     */
     @PostMapping("/{orderNo}/refund-success")
     public R<Void> markRefunded(@PathVariable String orderNo,
                                 @RequestParam BigDecimal refundAmount) {
-        boolean moved = stateMachine.markRefunded(orderNo, refundAmount, null);
-        if (!moved) {
-            // Not fatal in the same way as a missed payment: the refund itself
-            // succeeded, so the money is back with the user. The order state
-            // being wrong is worth a warning, not a rollback.
-            log.warn("refund succeeded but order was not in REFUNDING: orderNo={}", orderNo);
-        }
+        orderRefundService.markRefunded(orderNo, refundAmount);
+        return R.ok();
+    }
+
+    /**
+     * 清掉 Redis 里的座位占用。在 G3 提交之后调用。
+     *
+     * <p>单独一个接口，理由和确认出票那个一样：Redis 回滚不了。写在事务里面的话，
+     * 事务一旦回滚，这些位还在，座位就以「已售」的姿态长期占着，而账本说它是空的。
+     */
+    @PostMapping("/{orderNo}/release-refunded-seats")
+    public R<Void> releaseRefundedSeats(@PathVariable String orderNo) {
+        orderRefundService.clearSeatHold(stateMachine.require(orderNo));
         return R.ok();
     }
 

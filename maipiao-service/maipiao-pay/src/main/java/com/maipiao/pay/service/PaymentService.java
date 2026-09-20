@@ -187,63 +187,6 @@ public class PaymentService {
     }
 
     // ============================================================
-    // refunds
-    // ============================================================
-
-    /**
-     * Requests a refund for an order.
-     *
-     * <p>Creates the refund row before calling the provider, so a crash between
-     * the two leaves a record to retry from rather than a refund the provider
-     * knows about and we do not.
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public String applyRefund(String orderNo, BigDecimal amount, String reason) {
-        Payment payment = paymentMapper.selectLatestByOrderNo(orderNo);
-        if (payment == null || payment.getStatus() != Payment.STATUS_SUCCESS) {
-            throw new BizException(ErrorCode.PAYMENT_NOT_FOUND, "订单没有成功的支付记录");
-        }
-
-        // L4: a repeated request collides on payment_no and returns the
-        // existing refund instead of issuing a second one at the provider.
-        String refundNo = SnowflakeIdGenerator.nextString();
-        int created = refundMapper.insertIfAbsent(
-                SnowflakeIdGenerator.next(), refundNo, payment.getPaymentNo(), orderNo,
-                payment.getUserId(), payment.getChannel(),
-                amount == null ? payment.getAmount() : amount,
-                reason, 1);
-
-        if (created == 0) {
-            Refund existing = refundMapper.selectByPaymentNo(payment.getPaymentNo());
-            log.info("refund already exists: orderNo={}, refundNo={}", orderNo, existing.getRefundNo());
-            return existing.getRefundNo();
-        }
-
-        return refundNo;
-    }
-
-    /** Sends a pending refund to the provider. Driven by the retry sweep. */
-    @Transactional(rollbackFor = Exception.class)
-    public void submitRefund(Refund refund) {
-        PaymentChannel channel = channelFactory.get(refund.getChannel());
-
-        PaymentChannel.RefundResult result = channel.refund(new PaymentChannel.RefundCommand(
-                refund.getRefundNo(),
-                refund.getPaymentNo(),
-                null,
-                refund.getRefundAmount(),
-                refund.getReason()));
-
-        if (result.accepted()) {
-            refundMapper.casRefundSuccess(refund.getRefundNo(),
-                    result.channelRefundNo(), refund.getRefundAmount());
-        } else {
-            refundMapper.recordFailure(refund.getRefundNo(), Refund.STATUS_REFUNDING,
-                    result.message());
-        }
-    }
-
-    // ============================================================
 
     public Payment getByPaymentNo(String paymentNo) {
         Payment payment = paymentMapper.selectByPaymentNo(paymentNo);

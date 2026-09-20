@@ -51,20 +51,31 @@ public class SeatInternalController {
     }
 
     /**
-     * Gives a hold back.
+     * Gives a hold back, or - on a refund - a seat that was sold.
      *
      * <p>Idempotent: the release script only clears seats whose owner marker
      * still matches this order, so a repeated call frees nothing extra and
      * cannot disturb a seat that has since been sold to someone else.
      *
+     * <p>{@code includeSold} is a separate flag rather than the default
+     * behaviour, because a held seat and a sold one are distinguished by their
+     * owner marker and only one of them may be freed by a routine release. A
+     * late timeout message that could free a paid-for seat is the failure that
+     * distinction prevents.
+     *
+     * <p>A refund is the case where a sold seat genuinely goes back on the
+     * market, and it is the only one.
+     *
      * @return how many seats were actually freed
      */
     @PostMapping("/release")
-    public R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo) {
-        int released = seatMapService.releaseSeats(sessionId, orderNo, false);
+    public R<Integer> release(@RequestParam Long sessionId,
+                              @RequestParam String orderNo,
+                              @RequestParam(defaultValue = "false") boolean includeSold) {
+        int released = seatMapService.releaseSeats(sessionId, orderNo, false, includeSold);
         if (released > 0) {
-            log.debug("seat hold released: schedule={}, order={}, count={}",
-                    sessionId, orderNo, released);
+            log.debug("seat hold released: schedule={}, order={}, count={}, sold={}",
+                    sessionId, orderNo, released, includeSold);
         }
         return R.ok(released);
     }
