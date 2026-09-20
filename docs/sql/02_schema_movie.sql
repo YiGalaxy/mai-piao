@@ -1,15 +1,15 @@
 -- ============================================================
--- maoyan_movie : movie-service's private schema
+-- maipiao_movie : movie-service's private schema
 -- Holds film / cinema / hall / schedule data AND the seat ledger
 -- (t_movie_schedule_seat). seat-service has no schema of its own:
 -- Redis is the real-time source of truth for seat availability,
 -- this table is the durable ledger it reconciles against.
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS maoyan_movie
+CREATE DATABASE IF NOT EXISTS maipiao_movie
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE maoyan_movie;
+USE maipiao_movie;
 
 -- ------------------------------------------------------------
 -- film

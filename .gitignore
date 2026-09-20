@@ -43,6 +43,11 @@ logs/
 *.hprof
 hs_err_pid*.log
 
+# RocketMQ bind-mounted runtime data (store + logs).
+# Bind mounts rather than named volumes because the image's non-root user
+# cannot write to a root-owned volume.
+docker/data/
+
 # ============================================================
 # OS
 # ============================================================

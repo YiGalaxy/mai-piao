@@ -1,5 +1,5 @@
 -- ============================================================
--- maoyan_order : order-service's private schema
+-- maipiao_order : order-service's private schema
 --
 -- Order status machine (see docs/design-decisions.md):
 --   0 PENDING_PAY    order created, no payment initiated yet
@@ -18,10 +18,10 @@
 -- is forbidden anywhere in the codebase.
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS maoyan_order
+CREATE DATABASE IF NOT EXISTS maipiao_order
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE maoyan_order;
+USE maipiao_order;
 
 -- ------------------------------------------------------------
 -- order

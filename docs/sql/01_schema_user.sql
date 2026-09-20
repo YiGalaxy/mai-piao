@@ -1,13 +1,13 @@
 -- ============================================================
--- maoyan_user : user-service's private schema
+-- maipiao_user : user-service's private schema
 -- No cross-schema JOIN is allowed. Other services reach this data
 -- through Feign only.
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS maoyan_user
+CREATE DATABASE IF NOT EXISTS maipiao_user
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE maoyan_user;
+USE maipiao_user;
 
 -- ------------------------------------------------------------
 -- user account
