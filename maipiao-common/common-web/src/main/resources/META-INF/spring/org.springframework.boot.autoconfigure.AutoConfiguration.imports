@@ -1,1 +1,2 @@
 com.maipiao.common.web.config.CommonWebAutoConfiguration
+com.maipiao.common.web.config.CommonWebFeignConfiguration

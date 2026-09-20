@@ -255,6 +255,28 @@
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>${spring-boot.version}</version>
+          <!--
+            The repackage execution MUST be declared explicitly here.
+
+            Projects that inherit from spring-boot-starter-parent get this
+            binding pre-configured by the parent. We import
+            spring-boot-dependencies as a BOM instead (so the POM stays
+            independent of Boot's opinionated defaults), and a BOM only
+            carries dependency versions - it contributes no plugin
+            executions.
+
+            Without it, `mvn package` produces a plain 34 KB library jar with
+            no Main-Class and no BOOT-INF, and the failure only shows up at
+            runtime as "no main manifest attribute".
+          -->
+          <executions>
+            <execution>
+              <id>repackage</id>
+              <goals>
+                <goal>repackage</goal>
+              </goals>
+            </execution>
+          </executions>
         </plugin>
       </plugins>
     </pluginManagement>
