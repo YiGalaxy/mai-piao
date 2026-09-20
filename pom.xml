@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.maoyan</groupId>
+  <artifactId>maoyan-ticket</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>maoyan-ticket</name>
+  <description>Online movie ticketing system - a portfolio project</description>
+
+  <!--
+    ============================================================
+    VERSION COMPATIBILITY - READ BEFORE UPGRADING ANYTHING
+    ============================================================
+    The chain below is locked together and MUST be upgraded as a whole:
+
+      Spring Boot 3.2.x  <->  Spring Cloud 2023.0.x  <->  SCA 2023.0.3.2
+
+    Facts that are easy to get wrong:
+      - Spring Boot 3.4.x has NO matching Spring Cloud Alibaba release.
+        Do not bump Boot to 3.4 while SCA stays on 2023.x.
+      - SCA 2025.0.x is the branch for Spring Boot 3.5.x. Moving there
+        means Nacos client 3.0.3 + Seata 2.5.0 as well.
+      - The Seata client version must equal the Seata server version.
+        docker/config/seata runs 2.2.0, so seata.version below is 2.2.0.
+        A mismatch fails at runtime, not at compile time.
+    ============================================================
+  -->
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <spring-boot.version>3.2.12</spring-boot.version>
+    <spring-cloud.version>2023.0.3</spring-cloud.version>
+    <spring-cloud-alibaba.version>2023.0.3.2</spring-cloud-alibaba.version>
+
+    <seata.version>2.2.0</seata.version>
+    <mybatis-plus.version>3.5.7</mybatis-plus.version>
+    <rocketmq-spring.version>2.3.1</rocketmq-spring.version>
+    <redisson.version>3.27.2</redisson.version>
+    <shedlock.version>5.13.0</shedlock.version>
+    <springdoc.version>2.3.0</springdoc.version>
+    <hutool.version>5.8.32</hutool.version>
+    <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <jjwt.version>0.12.6</jjwt.version>
+    <testcontainers.version>1.19.8</testcontainers.version>
+
+    <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+    <lombok.version>1.18.34</lombok.version>
+    <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+  </properties>
+
+  <modules>
+    <module>maoyan-common/common-core</module>
+    <module>maoyan-common/common-redis</module>
+    <module>maoyan-common/common-web</module>
+    <module>maoyan-service/maoyan-user</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- ==================== Spring ==================== -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+        <version>${spring-cloud-alibaba.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- ==================== Distributed transaction ==================== -->
+      <!--
+        spring-cloud-starter-alibaba-seata bundles its own
+        seata-spring-boot-starter. We exclude that bundled one in each
+        service and pin the starter to ${seata.version} instead, so the
+        client always matches the server. Never add `seata-all` alongside
+        this starter - the two fight over the same classes.
+      -->
+      <dependency>
+        <groupId>io.seata</groupId>
+        <artifactId>seata-spring-boot-starter</artifactId>
+        <version>${seata.version}</version>
+      </dependency>
+
+      <!-- ==================== Persistence ==================== -->
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+
+      <!-- ==================== Messaging ==================== -->
+      <dependency>
+        <groupId>org.apache.rocketmq</groupId>
+        <artifactId>rocketmq-spring-boot-starter</artifactId>
+        <version>${rocketmq-spring.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <!-- Pin the client to 5.x: arbitrary-timestamp delay messages
+           (deliverTimeMs) are a 5.x broker feature. -->
+      <dependency>
+        <groupId>org.apache.rocketmq</groupId>
+        <artifactId>rocketmq-client</artifactId>
+        <version>5.3.1</version>
+      </dependency>
+
+      <!-- ==================== Cache / lock ==================== -->
+      <dependency>
+        <groupId>org.redisson</groupId>
+        <artifactId>redisson-spring-boot-starter</artifactId>
+        <version>${redisson.version}</version>
+      </dependency>
+
+      <!-- ==================== Scheduled task mutual exclusion ==================== -->
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-provider-redis-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+
+      <!-- ==================== API docs ==================== -->
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+
+      <!-- ==================== Auth ==================== -->
+      <!-- jjwt: JWT signing / parsing -->
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <!-- spring-security-crypto only: we use BCrypt, not the filter chain -->
+      <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-crypto</artifactId>
+        <version>6.2.7</version>
+      </dependency>
+
+      <!-- ==================== Utilities ==================== -->
+      <dependency>
+        <groupId>cn.hutool</groupId>
+        <artifactId>hutool-all</artifactId>
+        <version>${hutool.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>${mapstruct.version}</version>
+      </dependency>
+
+      <!-- ==================== Testing ==================== -->
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Shared by every module -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven-compiler-plugin.version}</version>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+            <parameters>true</parameters>
+            <!--
+              Annotation processor ORDER MATTERS:
+              lombok must run before mapstruct, and lombok-mapstruct-binding
+              must be on the path or generated mappers will be missing their
+              Lombok-generated getters/setters.
+            -->
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok-mapstruct-binding</artifactId>
+                <version>${lombok-mapstruct-binding.version}</version>
+              </path>
+              <path>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>
