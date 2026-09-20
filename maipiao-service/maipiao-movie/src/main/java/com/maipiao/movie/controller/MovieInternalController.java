@@ -127,12 +127,14 @@ public class MovieInternalController {
                            @RequestParam int count,
                            @RequestParam boolean releaseToPool) {
 
-        List<String> seatIds = seatIdsOf(sessionId, orderNo);
+        // releaseToPool 选的其实就是要查哪个归属列：池子里的座位是已售的，
+        // 订单号在 sold_order_no；其余是锁定中的，在 lock_order_no。
+        List<String> seatIds = seatIdsOf(sessionId, orderNo, releaseToPool);
         if (seatIds.isEmpty()) {
-            // Nothing holds these seats any more. Not an error: a retried
-            // cancellation, or the timeout job having got there first. The
-            // caller wanted them free, and they are.
-            log.debug("nothing to release: schedule={}, order={}", sessionId, orderNo);
+            // 这些座位已经不再属于这个订单了。不是错误：可能是重复的取消请求，
+            // 也可能是超时任务先一步处理了。调用方要的是「它们空出来」，而它们空了。
+            log.debug("nothing to release: schedule={}, order={}, soldSeats={}",
+                    sessionId, orderNo, releaseToPool);
             return R.ok();
         }
 
@@ -208,10 +210,30 @@ public class MovieInternalController {
      * be written against different seats than the ones actually held.
      */
     private List<String> seatIdsOf(Long sessionId, String orderNo) {
+        return seatIdsOf(sessionId, orderNo, false);
+    }
+
+    /**
+     * 按订单号找出座位。
+     *
+     * <p>两个归属列，用哪个取决于座位当前处于什么状态，而这不是可以猜的：
+     *
+     * <ul>
+     *   <li>锁定中的座位把订单号写在 {@code lock_order_no}；</li>
+     *   <li>已售座位的 {@code lock_order_no} 在出票时被**置空**了，订单号挪到
+     *       {@code sold_order_no}。</li>
+     * </ul>
+     *
+     * <p>只查锁定列的话，退款会一条都找不到，然后按「没有需要释放的」返回成功 ——
+     * 账本里的座位永远停在已售，售出计数也永远减不下去，而调用方看到的是 200。
+     * 这个 bug 的表现是退款成功、钱退了、票还在账上。
+     */
+    private List<String> seatIdsOf(Long sessionId, String orderNo, boolean soldSeats) {
         return sessionSeatMapper.selectList(
                         com.baomidou.mybatisplus.core.toolkit.Wrappers.<SessionSeat>lambdaQuery()
                                 .eq(SessionSeat::getSessionId, sessionId)
-                                .eq(SessionSeat::getLockOrderNo, orderNo))
+                                .eq(soldSeats, SessionSeat::getSoldOrderNo, orderNo)
+                                .eq(!soldSeats, SessionSeat::getLockOrderNo, orderNo))
                 .stream()
                 .map(SessionSeat::getSeatId)
                 .toList();
