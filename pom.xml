@@ -59,6 +59,7 @@
     <module>maipiao-common/common-core</module>
     <module>maipiao-common/common-redis</module>
     <module>maipiao-common/common-web</module>
+    <module>maipiao-gateway</module>
     <module>maipiao-service/maipiao-user</module>
   </modules>
 

@@ -1,0 +1,110 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: maipiao-gateway
+
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yaml
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8858}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+    gateway:
+      # Route by path prefix. /api is stripped before forwarding, so the
+      # downstream service sees the same path it exposes locally - a controller
+      # mapped at /user/login is reachable as /api/user/login from outside.
+      routes:
+        - id: maipiao-user
+          uri: lb://maipiao-user
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1
+
+      # More routes are added as services come online:
+      #   maipiao-movie  /api/movie/**   :9002
+      #   maipiao-seat   /api/seat/**    :9003
+      #   maipiao-order  /api/order/**   :9004
+      #   maipiao-pay    /api/pay/**     :9005
+      #   maipiao-admin  /api/admin/**   :9006
+      #   maipiao-queue  /api/queue/**   :9008
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            # allowedOriginPatterns (not allowedOrigins) is what permits the
+            # wildcard together with credentials - allowedOrigins refuses "*"
+            # once allowCredentials is true.
+            #
+            # Dev-only. Before this is exposed anywhere real, list the actual
+            # origins: a wildcard with credentials lets any site call the API
+            # with the user's token.
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:maipiao123}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+maipiao:
+  jwt:
+    secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
+    expire-minutes: 120
+    admin-expire-minutes: 60
+
+  gateway:
+    auth:
+      # Everything not listed requires a valid token.
+      # Patterns include the /api prefix, because that is the path the gateway
+      # matches on - before StripPrefix rewrites it.
+      whitelist:
+        - /api/user/login
+        - /api/user/register
+        # Public browsing: film lists, cinema lists, schedules and seat maps are
+        # readable without an account, the same way the real product works.
+        - /api/movie/**
+        - /api/seat/map/**
+        - /api/queue/position
+        - /actuator/health
+      # One Redis round trip per authenticated request. Off means logout stops
+      # taking effect immediately.
+      check-blacklist: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug

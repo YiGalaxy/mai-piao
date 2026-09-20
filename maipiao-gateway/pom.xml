@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.maipiao</groupId>
+    <artifactId>maipiao-ticket</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>maipiao-gateway</artifactId>
+  <name>maipiao-gateway</name>
+  <description>API gateway : routing, JWT verification, rate limiting</description>
+
+  <dependencies>
+    <!-- Gateway is a WebFlux application.
+         It depends on common-core only. Pulling in common-web would drag
+         spring-boot-starter-web (Servlet stack) onto the classpath alongside
+         WebFlux, and Spring Boot refuses to start with both present. -->
+    <dependency>
+      <groupId>com.maipiao</groupId>
+      <artifactId>common-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway</artifactId>
+    </dependency>
+    <!--
+      Required for `lb://<service-name>` route URIs.
+
+      spring-cloud-starter-gateway does NOT bring this in (it used to come via
+      Ribbon, which was removed). Without it the route is registered but no
+      filter can turn the service name into an address, and every request to
+      that route fails with 503 Service Unavailable - with nothing in the log
+      explaining why, because from the gateway's point of view there simply
+      were no instances.
+    -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+    </dependency>
+
+    <!-- Reactive Redis: the token blacklist check runs inside the gateway's
+         filter chain, which is event-loop driven. A blocking Redis call there
+         would stall every other request on the same reactor thread. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Gateway has no servlet container; this starter excludes it. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
