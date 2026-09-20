@@ -36,8 +36,9 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="profile">我的</el-dropdown-item>
+                <el-dropdown-item command="orders">我的订单</el-dropdown-item>
                 <el-dropdown-item command="coupons">我的优惠券</el-dropdown-item>
+                <el-dropdown-item command="profile">账户设置</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -83,6 +84,8 @@ async function onCommand(command) {
     router.push('/profile')
   } else if (command === 'coupons') {
     router.push('/coupons')
+  } else if (command === 'orders') {
+    router.push('/orders')
   } else if (command === 'logout') {
     try {
       await ElMessageBox.confirm('确定要退出当前账号吗？', '退出登录', {

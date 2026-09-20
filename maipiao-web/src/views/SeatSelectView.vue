@@ -293,18 +293,36 @@ async function onConfirm() {
   locking.value = true
   try {
     const result = await lockSeats({
-      scheduleId: Number(scheduleId),
+      // Left as the string it arrived as.
+      //
+      // Number() here would undo the whole reason ids are serialised as
+      // strings: 2101643262211633153 does not fit in a double and comes back
+      // as ...200, so the server would be asked to lock seats on a screening
+      // that does not exist. Jackson parses the string back to a Long on the
+      // other side without any help from us.
+      scheduleId,
       seatIndexes: selected.value.map((s) => s.seatIndex)
     })
 
-    ElMessage.success('选座成功，请尽快完成下单')
+    // Hand the hold to the checkout page.
+    //
+    // sessionStorage rather than the URL: the lock token is a credential for
+    // a held resource, and a query string ends up in browser history, in
+    // referrer headers, and in whatever the user pastes into a chat window.
+    sessionStorage.setItem(
+      'maipiao_pending_seats',
+      JSON.stringify({
+        lockToken: result.lockToken,
+        scheduleId: String(result.scheduleId),
+        expireSeconds: result.expireSeconds,
+        seats: selected.value.map((s) => ({
+          seatIndex: s.seatIndex,
+          label: `${s.row}排${s.col}座`
+        }))
+      })
+    )
 
-    // The order flow is not built yet, so the hold is surfaced and the user
-    // is sent back. The lock expires on its own if nothing consumes it.
-    setTimeout(() => {
-      ElMessage.info(`已锁定 ${result.seatLabels.join('、')}，订单功能待接入`)
-      router.push(`/films`)
-    }, 800)
+    router.push({ name: 'checkout' })
   } catch {
     // Covers the conflict case: someone took a seat between drawing the map
     // and confirming. Reload so the user sees the current state rather than
