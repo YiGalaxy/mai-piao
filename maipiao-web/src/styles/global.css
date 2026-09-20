@@ -1,0 +1,59 @@
+/**
+ * Global styles and theme.
+ *
+ * Vant 4 is themed entirely through CSS custom properties, so the brand colour
+ * is set once here rather than being overridden component by component.
+ */
+
+:root {
+  /* Ticket-stub orange: warm enough to read as "cinema", dark enough to keep
+     white text on it above the WCAG AA contrast threshold. */
+  --van-primary-color: #ff5f2e;
+  --van-danger-color: #ee0a24;
+  --van-success-color: #07c160;
+
+  --mp-bg: #f7f8fa;
+  --mp-card-radius: 12px;
+  --mp-text-muted: #969799;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--mp-bg);
+  color: #323233;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100%;
+}
+
+/* Pages that sit above the bottom tab bar need room to scroll clear of it. */
+.page-with-tabbar {
+  padding-bottom: 60px;
+}
+
+.mp-muted {
+  color: var(--mp-text-muted);
+  font-size: 13px;
+}
+
+.mp-card {
+  background: #fff;
+  border-radius: var(--mp-card-radius);
+  margin: 12px;
+  overflow: hidden;
+}
