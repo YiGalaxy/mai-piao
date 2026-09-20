@@ -22,7 +22,15 @@ public final class SeatDtos {
 
             @NotEmpty(message = "请选择座位")
             @Size(max = 6, message = "一次最多选择 6 个座位")
-            List<Integer> seatIndexes
+            List<Integer> seatIndexes,
+
+            /**
+             * Admission token, required only for a rush sale and ignored
+             * otherwise. Carried on the request because the seat service is
+             * where it is enforced - the gateway's check reads the schedule id
+             * from the query string, which the caller controls.
+             */
+            String queueToken
     ) {
     }
 
@@ -77,7 +85,10 @@ public final class SeatDtos {
             @Max(value = 6, message = "一次最多购买 6 张")
             Integer quantity,
 
-            Boolean adjacent
+            Boolean adjacent,
+
+            /** Admission token; see {@link LockSeatRequest#queueToken}. */
+            String queueToken
     ) {
         public boolean wantsAdjacent() {
             return adjacent == null || adjacent;

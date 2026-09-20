@@ -6,6 +6,7 @@ import com.maipiao.common.core.result.ErrorCode;
 import com.maipiao.common.core.util.SnowflakeIdGenerator;
 import com.maipiao.seat.dto.SeatDtos;
 import com.maipiao.seat.dto.SeatMapVO;
+import com.maipiao.seat.feign.QueueClient;
 import com.maipiao.seat.mapper.SeatQueryMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class SeatMapService {
     private final SeatQueryMapper seatQueryMapper;
     private final SeatBitmapService seatBitmapService;
     private final ObjectMapper objectMapper;
+    private final QueueClient queueClient;
 
     /** Sessions whose seats the buyer picks. */
     private static final int SEAT_MODE_SELF = 0;
@@ -220,6 +222,15 @@ public class SeatMapService {
             throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE);
         }
 
+        // A rush sale is sold by assignment, never from a map. Letting the
+        // pick-your-own path through would hand a ticket to anyone who called
+        // /seat/lock directly, which is the entire queue bypassed with one
+        // request.
+        if (toInt(schedule.get("rushMode")) == 1) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE,
+                    "该场次为抢购场次，请由系统分配座位");
+        }
+
         // Ensure the bitmap exists before locking against it, otherwise the
         // lock script would happily claim seats that the ledger says are sold.
         int totalSeat = toInt(schedule.get("totalSeat"));
@@ -284,6 +295,9 @@ public class SeatMapService {
             throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "该场次需要自行选座");
         }
 
+        // Before anything is taken, for a screening that sells through a line.
+        spendQueueAdmission(schedule, sessionId, userId, request.queueToken());
+
         int totalSeat = toInt(schedule.get("totalSeat"));
 
         // Build the bitmap from the ledger first if it is cold. Skipping this
@@ -339,6 +353,51 @@ public class SeatMapService {
                 labelsOfSeats(sessionId, seatIndexes),
                 amount,
                 (int) ttl.getSeconds());
+    }
+
+    /**
+     * Spends the caller's place in line, for a screening that has one.
+     *
+     * <p>This is the enforcement point, and it is here rather than only at the
+     * gateway on purpose. The gateway reads the schedule id from the query
+     * string - a value the caller supplies - so a caller who lies about which
+     * screening they are buying from gets past it. Here the schedule id is the
+     * one this request is actually for, and the token is checked against the
+     * key derived from it.
+     *
+     * <p>Consumed, not merely checked: an admission that outlived its use
+     * would let one place in line buy repeatedly.
+     *
+     * <p>Fails closed when queue-service is unreachable. An outage cannot be
+     * read as "everyone is admitted" - that would turn the queue off exactly
+     * when the load it exists to absorb is highest.
+     */
+    private void spendQueueAdmission(Map<String, Object> schedule, Long sessionId,
+                                     Long userId, String queueToken) {
+        if (toInt(schedule.get("rushMode")) != 1) {
+            // Ordinary screening: no line to have waited in.
+            return;
+        }
+
+        if (queueToken == null || queueToken.isBlank()) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE, "请先排队等候叫号");
+        }
+
+        boolean admitted;
+        try {
+            admitted = Boolean.TRUE.equals(
+                    queueClient.consumeToken(sessionId, userId, queueToken).getData());
+        } catch (Exception e) {
+            log.error("could not reach the queue, refusing a rush-sale purchase: "
+                    + "schedule={}, user={}", sessionId, userId, e);
+            throw new BizException(ErrorCode.SERVICE_UNAVAILABLE, "排队服务暂不可用，请稍后重试");
+        }
+
+        if (!admitted) {
+            log.info("rush purchase refused, no valid admission: schedule={}, user={}",
+                    sessionId, userId);
+            throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE, "排队资格已失效，请重新排队");
+        }
     }
 
     /** The seats of one price band, as positions the run planner can sort. */

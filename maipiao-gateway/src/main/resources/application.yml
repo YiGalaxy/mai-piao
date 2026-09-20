@@ -55,6 +55,10 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: maipiao-queue
+          uri: lb://maipiao-queue
+          predicates: [ Path=/api/queue/** ]
+          filters: [ StripPrefix=1 ]
         - id: maipiao-pay
           uri: lb://maipiao-pay
           predicates:

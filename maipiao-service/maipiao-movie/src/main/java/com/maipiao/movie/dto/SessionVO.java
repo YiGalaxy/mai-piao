@@ -51,6 +51,9 @@ public class SessionVO {
     /** 0 = the buyer picks a seat, 1 = the system assigns from a price band. */
     private Integer seatMode;
 
+    /** When tickets open, for a screening that is not on sale yet. */
+    private LocalDateTime saleStartTime;
+
     /** Derived, not stored: total - locked - sold, floored at zero. */
     private Integer remainingSeat;
 }

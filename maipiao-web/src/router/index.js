@@ -23,6 +23,22 @@ const routes = [
     component: () => import('../views/SeatSelectView.vue'),
     meta: { requiresAuth: true }
   },
+  // The other way to buy a seat: the venue assigns it. Separate route rather
+  // than a mode inside the seat map, because the two pages share no state -
+  // one fetches a map and tracks selections, the other fetches bands and a
+  // quantity - and the choice between them is made before either loads.
+  {
+    path: '/schedules/:id/tickets',
+    name: 'ticket-select',
+    component: () => import('../views/TicketSelectView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/schedules/:id/queue',
+    name: 'rush-queue',
+    component: () => import('../views/QueueView.vue'),
+    meta: { requiresAuth: true }
+  },
   {
     path: '/checkout',
     name: 'checkout',

@@ -89,9 +89,9 @@
                   type="primary"
                   size="small"
                   :disabled="show.remainingSeat <= 0"
-                  @click="goSeatSelect(show)"
+                  @click="goBuy(show)"
                 >
-                  {{ show.remainingSeat > 0 ? '选座购票' : '已售罄' }}
+                  {{ actionLabel(show) }}
                 </el-button>
               </div>
             </div>
@@ -201,8 +201,35 @@ async function loadSchedules() {
   }
 }
 
-function goSeatSelect(show) {
-  router.push(`/schedules/${show.id}/seats`)
+/**
+ * Where a screening's buy button leads.
+ *
+ * Three destinations, because there are three ways to sell a seat and the
+ * route has to be decided before the page loads - the seat map and the band
+ * picker share no state and fetch different things.
+ *
+ * The order matters: a rush sale is a queue first, whatever the seating mode,
+ * so it is tested before seatMode. Only the seat map needs the buyer to have
+ * an account already; the band picker does too, but the queue is the one that
+ * spends a place in line, so asking for the queue before login would be
+ * wasting it.
+ */
+function goBuy(show) {
+  if (show.rushMode === 1) {
+    router.push(`/schedules/${show.id}/queue`)
+  } else if (show.seatMode === 1) {
+    router.push(`/schedules/${show.id}/tickets`)
+  } else {
+    router.push(`/schedules/${show.id}/seats`)
+  }
+}
+
+/** The button says what the next screen does, which is not the same for all three. */
+function actionLabel(show) {
+  if (show.remainingSeat <= 0) return '已售罄'
+  if (show.rushMode === 1) return '立即抢票'
+  if (show.seatMode === 1) return '立即购买'
+  return '选座购票'
 }
 
 function formatTime(value) {

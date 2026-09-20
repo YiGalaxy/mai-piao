@@ -66,6 +66,22 @@ public final class CommonConstants {
     /** rush:paused:{scheduleId} - emergency pause switch for a rush sale. */
     public static final String RUSH_PAUSED_KEY = "rush:paused:";
 
+    /**
+     * rush:schedules - set of scheduleIds currently running a rush sale.
+     *
+     * <p>Registered by the first joiner and swept when a line empties, so the
+     * dispatcher has a list to walk without asking movie-service which
+     * screenings are on rush. Keeps the two services from having to agree on
+     * a key space.
+     */
+    public static final String RUSH_SCHEDULES_KEY = "rush:schedules";
+
+    /**
+     * queue:session:{scheduleId} - cached rush metadata (total seats, start
+     * times), so the join path does not call movie-service once per arrival.
+     */
+    public static final String QUEUE_SESSION_KEY = "queue:session:";
+
     /** user:token:blacklist:{jti} - logged-out tokens that must be rejected until they expire. */
     public static final String TOKEN_BLACKLIST_KEY = "user:token:blacklist:";
 
