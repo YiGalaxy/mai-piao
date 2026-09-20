@@ -1,0 +1,205 @@
+# ============================================================
+# Maoyan Ticket - Infrastructure
+# Middleware for local development ONLY.
+# Passwords here are dev-only, never use in production.
+#
+# Memory budget (total ~3GB):
+#   nacos 512m | mysql 512m | redis 128m
+#   rocketmq namesrv 256m + broker 1g | seata 512m
+# ============================================================
+
+services:
+
+  # ---------------------------------------------------------
+  # MySQL 8.0 - one instance, multiple schemas (database-per-service)
+  # Schemas are created by the scripts mounted into /docker-entrypoint-initdb.d
+  # NOTE: init scripts only run when the data volume is EMPTY.
+  #       Run `docker compose down -v` to reset and re-init.
+  # ---------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: maoyan-mysql
+    restart: unless-stopped
+    ports:
+      # Host port 3309, NOT 3306: this machine already runs a native MySQL
+      # service on 3306 and three other projects' MySQL containers on 3307/3308/3310.
+      # Override with MYSQL_PORT in .env if that ever collides too.
+      - "${MYSQL_PORT:-3309}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: maoyan123
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      - --max_connections=500
+      - --innodb_buffer_pool_size=256M
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../docs/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pmaoyan123"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - maoyan-net
+
+  # ---------------------------------------------------------
+  # Redis 7 - seat bitmap, queue (ZSet), inventory, cache
+  # AOF enabled: seat occupancy must survive a restart.
+  # ---------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: maoyan-redis
+    restart: unless-stopped
+    ports:
+      # Host port 6381: 6379 is taken by another project's xtdp-redis container,
+      # 6380 by yiguixingtu-redis, 16379 by bulk-trade-redis.
+      - "${REDIS_PORT:-6381}:6379"
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - maoyan123
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "maoyan123", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - maoyan-net
+
+  # ---------------------------------------------------------
+  # Nacos 2.4.3 - service discovery + config center
+  # Standalone mode with embedded Derby storage (dev only).
+  # Auth is DISABLED for local convenience.
+  # gRPC port 9848 is REQUIRED by Nacos 2.x clients.
+  # ---------------------------------------------------------
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    container_name: maoyan-nacos
+    restart: unless-stopped
+    ports:
+      # Host ports 8858/9858: 8848 and 9848 are taken by another project's
+      # zhy-nacos container.
+      #
+      # The gRPC offset matters. A Nacos 2.x client dials <serverPort>+1000 for
+      # gRPC, so a client configured with 127.0.0.1:8858 will open a second
+      # connection to 127.0.0.1:9858. Mapping 9858 -> container 9848 is what
+      # makes that work; there is nothing to configure on the client side.
+      - "${NACOS_PORT:-8858}:8848"
+      - "${NACOS_GRPC_PORT:-9858}:9848"
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+      TZ: Asia/Shanghai
+    volumes:
+      - nacos-data:/home/nacos/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - maoyan-net
+
+  # ---------------------------------------------------------
+  # RocketMQ 5.3.1 - nameserver + broker
+  # brokerIP1 MUST be 127.0.0.1 so that host-side Spring Boot
+  # clients (running outside docker) can reach the broker.
+  # ---------------------------------------------------------
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.1
+    container_name: maoyan-rocketmq-namesrv
+    restart: unless-stopped
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m -Xmn128m"
+      TZ: Asia/Shanghai
+    command: sh mqnamesrv
+    volumes:
+      - rocketmq-namesrv-logs:/home/rocketmq/logs
+    networks:
+      - maoyan-net
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.1
+    container_name: maoyan-rocketmq-broker
+    restart: unless-stopped
+    depends_on:
+      - rocketmq-namesrv
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      JAVA_OPT_EXT: "-Xms512m -Xmx1024m -Xmn256m -XX:MaxDirectMemorySize=256m"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.1/conf/broker.conf:ro
+      - rocketmq-broker-store:/home/rocketmq/store
+      - rocketmq-broker-logs:/home/rocketmq/logs
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.1/conf/broker.conf
+    networks:
+      - maoyan-net
+
+  # ---------------------------------------------------------
+  # Seata 2.2.0 - distributed transaction coordinator
+  # store.mode=file : simplest for a single-node dev setup.
+  #   Global transaction state lives in the container FS.
+  #   Switch to `db` mode (create the `seata` schema + undo_log)
+  #   if you need HA or want to survive container recreation.
+  # Registry = Nacos, so clients discover the TC automatically.
+  # ---------------------------------------------------------
+  seata:
+    image: apache/seata-server:2.2.0
+    container_name: maoyan-seata
+    restart: unless-stopped
+    depends_on:
+      - nacos
+    ports:
+      - "8091:8091"   # TC service port used by clients
+      - "7091:7091"   # console (http://localhost:7091)
+    environment:
+      SEATA_PORT: 8091
+      TZ: Asia/Shanghai
+    volumes:
+      - ./config/seata/application.yml:/seata-server/resources/application.yml:ro
+      - seata-data:/seata-server/sessionStore
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7091/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - maoyan-net
+
+networks:
+  maoyan-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  nacos-data:
+  seata-data:
+  rocketmq-broker-store:
+  rocketmq-broker-logs:
+  rocketmq-namesrv-logs:

@@ -1,0 +1,63 @@
+# ============================================================
+# Build output
+# ============================================================
+target/
+build/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ============================================================
+# IDE
+# ============================================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+.settings/
+.project
+.classpath
+
+# ============================================================
+# Node / frontend
+# ============================================================
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================
+# Logs and runtime
+# ============================================================
+logs/
+*.log
+*.pid
+*.hprof
+hs_err_pid*.log
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Local overrides
+#
+# Note: docker/.env IS tracked on purpose. It holds the host port mapping
+# (3309/6381/8858) which is part of how this project is meant to be run
+# locally, and it contains no secrets - the dev passwords live in
+# docker-compose.yml, which is also tracked because it is a dev-only stack.
+# ============================================================
+*.local.yml
+application-local.yml
+application-dev-local.yml

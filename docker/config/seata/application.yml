@@ -1,0 +1,97 @@
+# ============================================================
+# Seata Server 2.2.0 configuration (local development)
+# Mounted to /seata-server/resources/application.yml
+#
+# IMPORTANT - the client side must match these values:
+#   seata.registry.nacos.server-addr  = nacos:8848 (in docker) / 127.0.0.1:8848 (on host)
+#   seata.registry.nacos.group        = SEATA_GROUP
+#   seata.registry.nacos.application  = seata-server
+#   seata.tx-service-group            = maoyan_tx_group
+#   seata.service.vgroupMapping.maoyan_tx_group = default
+#
+# A mismatch on tx-service-group / vgroupMapping produces:
+#   "can not get cluster name in registry config"
+# ============================================================
+
+server:
+  port: 7091
+
+spring:
+  application:
+    name: seata-server
+
+logging:
+  level:
+    io.seata: info
+    root: info
+  file:
+    name: /seata-server/logs/seata.log
+
+seata:
+  # ---- Configuration source ----
+  # `file` = read config from this file only. Simplest for dev.
+  # Switch to `nacos` once you want to hot-reload TC settings.
+  config:
+    type: file
+
+  # ---- Registry: how clients find the TC ----
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: nacos:8848
+      group: SEATA_GROUP
+      namespace: ""
+      cluster: default
+      username: ""
+      password: ""
+
+  # ---- Transaction storage ----
+  # `file` keeps global transaction state on the container filesystem.
+  # Good enough for a single-node dev environment.
+  # For HA / durability across container recreation, switch to:
+  #   mode: db
+  #   db.datasource: druid
+  #   db.url: jdbc:mysql://mysql:3306/seata?...
+  # (and create the `seata` schema from docs/sql/00_seata_schema.sql)
+  store:
+    mode: file
+    file:
+      dir: /seata-server/sessionStore
+
+  # ---- Server-side security ----
+  security:
+    secretKey: SeataSecretKey0c382ef121d778043159209298fd40bf3850a017
+    tokenValidityInMilliseconds: 1800000
+    ignore:
+      urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.ico,/console-fe/public/**,/api/v1/auth/login
+
+  server:
+    service-port: 8091
+    max-commit-retry-timeout: -1
+    max-rollback-retry-timeout: -1
+    rollback-retry-timeout-unlock-enable: false
+    enable-check-auth: true
+    recovery:
+      # Periodically clean up timed-out global transactions
+      committing-retry-period: 1000
+      async-committing-retry-period: 1000
+      rollbacking-retry-period: 1000
+      timeout-retry-period: 1000
+    undo:
+      # Undo log is compressed to reduce storage; client must be able to decompress.
+      log-serialization: jackson
+      log-table: undo_log
+      only-care-update-columns: true
+      compress:
+        enable: true
+        type: zip
+        threshold: 64k
+
+  transport:
+    type: TCP
+    server: NIO
+    heartbeat: true
+    serialization: seata
+    compressor: none
+    enable-client-batch-send-request: true
