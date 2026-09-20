@@ -24,7 +24,7 @@ public interface SeatClient {
 
     /** Marks a hold as sold. Called after the order is paid. */
     @PostMapping("/inner/confirm")
-    R<Void> confirm(@RequestParam Long scheduleId, @RequestParam String orderNo);
+    R<Void> confirm(@RequestParam Long sessionId, @RequestParam String orderNo);
 
     /**
      * Gives a hold back. Called from the G1 failure path and on cancellation.
@@ -34,5 +34,5 @@ public interface SeatClient {
      * was already cancelled - frees nothing extra.
      */
     @PostMapping("/inner/release")
-    R<Integer> release(@RequestParam Long scheduleId, @RequestParam String orderNo);
+    R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo);
 }

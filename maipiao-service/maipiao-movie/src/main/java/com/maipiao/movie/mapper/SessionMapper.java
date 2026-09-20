@@ -1,8 +1,8 @@
 package com.maipiao.movie.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.maipiao.movie.dto.ScheduleVO;
-import com.maipiao.movie.entity.Schedule;
+import com.maipiao.movie.dto.SessionVO;
+import com.maipiao.movie.entity.Session;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -12,7 +12,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Schedule persistence.
+ * Session persistence.
  *
  * <p>The UPDATE statements at the bottom are concurrency boundaries, not
  * convenience wrappers. Each is a single conditional UPDATE whose affected row
@@ -25,14 +25,14 @@ import java.util.List;
  * interpolated into the SQL as a string.
  */
 @Mapper
-public interface ScheduleMapper extends BaseMapper<Schedule> {
+public interface SessionMapper extends BaseMapper<Session> {
 
     /** Join columns shared by the list and detail queries. */
     String JOIN_AND_LABELS = """
-              FROM t_movie_schedule s
-              JOIN t_movie_film   f ON f.id = s.film_id
-              JOIN t_movie_cinema c ON c.id = s.cinema_id
-              JOIN t_movie_hall   h ON h.id = s.hall_id
+              FROM t_event_session s
+              JOIN t_event_project   f ON f.id = s.project_id
+              JOIN t_event_venue c ON c.id = s.venue_id
+              JOIN t_event_place   h ON h.id = s.place_id
             """;
 
     /**
@@ -44,32 +44,32 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
     @Select("""
             <script>
             SELECT s.*,
-                   f.name AS film_name, f.duration, f.poster_url,
-                   c.name AS cinema_name,
-                   h.name AS hall_name, h.hall_type,
+                   f.title AS project_title, f.duration, f.poster_url,
+                   c.name AS venue_name,
+                   h.name AS place_name, h.place_type,
                    (s.total_seat - s.locked_seat - s.sold_seat) AS remaining_seat
             """ + JOIN_AND_LABELS + """
              WHERE s.status = 1
                AND s.show_date = #{showDate}
-               <if test="filmId != null">   AND s.film_id   = #{filmId}   </if>
-               <if test="cinemaId != null"> AND s.cinema_id = #{cinemaId} </if>
+               <if test="projectId != null">   AND s.project_id   = #{projectId}   </if>
+               <if test="venueId != null"> AND s.venue_id = #{venueId} </if>
              ORDER BY s.start_time, s.id
             </script>
             """)
-    List<ScheduleVO> selectScheduleList(@Param("filmId") Long filmId,
-                                        @Param("cinemaId") Long cinemaId,
+    List<SessionVO> selectScheduleList(@Param("projectId") Long projectId,
+                                        @Param("venueId") Long venueId,
                                         @Param("showDate") LocalDate showDate);
 
     @Select("""
             SELECT s.*,
-                   f.name AS film_name, f.duration, f.poster_url,
-                   c.name AS cinema_name,
-                   h.name AS hall_name, h.hall_type,
+                   f.title AS project_title, f.duration, f.poster_url,
+                   c.name AS venue_name,
+                   h.name AS place_name, h.place_type,
                    (s.total_seat - s.locked_seat - s.sold_seat) AS remaining_seat
             """ + JOIN_AND_LABELS + """
-             WHERE s.id = #{scheduleId}
+             WHERE s.id = #{sessionId}
             """)
-    ScheduleVO selectScheduleDetail(@Param("scheduleId") Long scheduleId);
+    SessionVO selectScheduleDetail(@Param("sessionId") Long sessionId);
 
     /**
      * Film ids that actually have a screening at this cinema on this date, so
@@ -77,13 +77,13 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
      * catalogue.
      */
     @Select("""
-            SELECT DISTINCT s.film_id
-              FROM t_movie_schedule s
-             WHERE s.cinema_id = #{cinemaId}
+            SELECT DISTINCT s.project_id
+              FROM t_event_session s
+             WHERE s.venue_id = #{venueId}
                AND s.show_date = #{showDate}
                AND s.status = 1
             """)
-    List<Long> selectFilmIdsWithScreening(@Param("cinemaId") Long cinemaId,
+    List<Long> selectProjectIdsWithScreening(@Param("venueId") Long venueId,
                                           @Param("showDate") LocalDate showDate);
 
     // ------------------------------------------------------------
@@ -102,14 +102,14 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
      *         longer on sale
      */
     @Update("""
-            UPDATE t_movie_schedule
+            UPDATE t_event_session
                SET locked_seat = locked_seat + #{count},
                    update_time = NOW(3)
-             WHERE id = #{scheduleId}
+             WHERE id = #{sessionId}
                AND status = 1
                AND locked_seat + sold_seat + #{count} <= total_seat
             """)
-    int occupySeats(@Param("scheduleId") Long scheduleId, @Param("count") int count);
+    int occupySeats(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
      * Moves seats from locked to sold once payment succeeds (G2).
@@ -119,14 +119,14 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
      * tickets for seats that are no longer held.
      */
     @Update("""
-            UPDATE t_movie_schedule
+            UPDATE t_event_session
                SET locked_seat = locked_seat - #{count},
                    sold_seat   = sold_seat   + #{count},
                    update_time = NOW(3)
-             WHERE id = #{scheduleId}
+             WHERE id = #{sessionId}
                AND locked_seat >= #{count}
             """)
-    int confirmSold(@Param("scheduleId") Long scheduleId, @Param("count") int count);
+    int confirmSold(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
      * Gives reserved seats back - on cancellation, on timeout, or from a G1
@@ -136,13 +136,13 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
      * negative if a compensation runs twice.
      */
     @Update("""
-            UPDATE t_movie_schedule
+            UPDATE t_event_session
                SET locked_seat = locked_seat - #{count},
                    update_time = NOW(3)
-             WHERE id = #{scheduleId}
+             WHERE id = #{sessionId}
                AND locked_seat >= #{count}
             """)
-    int releaseLocked(@Param("scheduleId") Long scheduleId, @Param("count") int count);
+    int releaseLocked(@Param("sessionId") Long sessionId, @Param("count") int count);
 
     /**
      * Gives <em>sold</em> seats back, for a refund that returns them to the
@@ -155,11 +155,11 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
      * counter still claims it.
      */
     @Update("""
-            UPDATE t_movie_schedule
+            UPDATE t_event_session
                SET sold_seat = sold_seat - #{count},
                    update_time = NOW(3)
-             WHERE id = #{scheduleId}
+             WHERE id = #{sessionId}
                AND sold_seat >= #{count}
             """)
-    int releaseSold(@Param("scheduleId") Long scheduleId, @Param("count") int count);
+    int releaseSold(@Param("sessionId") Long sessionId, @Param("count") int count);
 }

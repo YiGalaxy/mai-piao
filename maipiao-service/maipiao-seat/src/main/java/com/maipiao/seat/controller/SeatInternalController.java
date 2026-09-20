@@ -35,8 +35,8 @@ public class SeatInternalController {
      * stops the timeout sweep from later freeing a seat somebody paid for.
      */
     @PostMapping("/confirm")
-    public R<Void> confirm(@RequestParam Long scheduleId, @RequestParam String orderNo) {
-        seatMapService.confirmSeats(scheduleId, orderNo);
+    public R<Void> confirm(@RequestParam Long sessionId, @RequestParam String orderNo) {
+        seatMapService.confirmSeats(sessionId, orderNo);
         return R.ok();
     }
 
@@ -50,11 +50,11 @@ public class SeatInternalController {
      * @return how many seats were actually freed
      */
     @PostMapping("/release")
-    public R<Integer> release(@RequestParam Long scheduleId, @RequestParam String orderNo) {
-        int released = seatMapService.releaseSeats(scheduleId, orderNo, false);
+    public R<Integer> release(@RequestParam Long sessionId, @RequestParam String orderNo) {
+        int released = seatMapService.releaseSeats(sessionId, orderNo, false);
         if (released > 0) {
             log.debug("seat hold released: schedule={}, order={}, count={}",
-                    scheduleId, orderNo, released);
+                    sessionId, orderNo, released);
         }
         return R.ok(released);
     }

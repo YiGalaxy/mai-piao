@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Java view of the JSON stored in {@code t_movie_hall.seat_template}.
+ * Java view of the JSON stored in {@code t_event_place.seat_template}.
  *
  * <pre>
  * {

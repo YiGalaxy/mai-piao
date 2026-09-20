@@ -3,11 +3,11 @@ package com.maipiao.movie.controller;
 import com.maipiao.common.core.exception.BizException;
 import com.maipiao.common.core.result.ErrorCode;
 import com.maipiao.common.core.result.R;
-import com.maipiao.movie.dto.ScheduleVO;
-import com.maipiao.movie.entity.ScheduleSeat;
-import com.maipiao.movie.mapper.ScheduleMapper;
-import com.maipiao.movie.mapper.ScheduleSeatMapper;
-import com.maipiao.movie.service.ScheduleService;
+import com.maipiao.movie.dto.SessionVO;
+import com.maipiao.movie.entity.SessionSeat;
+import com.maipiao.movie.mapper.SessionMapper;
+import com.maipiao.movie.mapper.SessionSeatMapper;
+import com.maipiao.movie.service.SessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -41,9 +41,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MovieInternalController {
 
-    private final ScheduleMapper scheduleMapper;
-    private final ScheduleSeatMapper scheduleSeatMapper;
-    private final ScheduleService scheduleService;
+    private final SessionMapper sessionMapper;
+    private final SessionSeatMapper sessionSeatMapper;
+    private final SessionService sessionService;
 
     /**
      * G1 branch: reserve seats and mark their ledger rows locked.
@@ -54,7 +54,7 @@ public class MovieInternalController {
      * rolls back everything already done in this transaction.
      */
     @PostMapping("/occupy")
-    public R<Void> occupy(@RequestParam Long scheduleId,
+    public R<Void> occupy(@RequestParam Long sessionId,
                           @RequestParam String orderNo,
                           @RequestParam Long userId,
                           @RequestParam int count,
@@ -62,7 +62,7 @@ public class MovieInternalController {
                           LocalDateTime expireTime,
                           @RequestParam List<Integer> seatIndexes) {
 
-        int inventoryRows = scheduleMapper.occupySeats(scheduleId, count);
+        int inventoryRows = sessionMapper.occupySeats(sessionId, count);
         if (inventoryRows != 1) {
             // Either the screening is no longer on sale, or there are not
             // enough seats left. Both mean "do not proceed".
@@ -74,12 +74,12 @@ public class MovieInternalController {
         // At this point the seats are held in Redis but not yet in this table -
         // the write below is what puts them there. Querying by lock_order_no
         // here finds nothing, which is exactly the bug this replaced.
-        List<String> seatIds = seatIdsByIndex(scheduleId, seatIndexes);
+        List<String> seatIds = seatIdsByIndex(sessionId, seatIndexes);
         if (seatIds.size() != seatIndexes.size()) {
             throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "座位信息与场次不匹配");
         }
 
-        int seatRows = scheduleSeatMapper.lockSeats(scheduleId, seatIds, orderNo, userId, expireTime);
+        int seatRows = sessionSeatMapper.lockSeats(sessionId, seatIds, orderNo, userId, expireTime);
         if (seatRows != seatIds.size()) {
             // Somebody took one of these seats between the Redis lock and here.
             // The Redis lock is the fast path; this is the ledger's own check,
@@ -87,30 +87,30 @@ public class MovieInternalController {
             throw new BizException(ErrorCode.SEAT_OCCUPIED);
         }
 
-        log.debug("inventory reserved: schedule={}, order={}, seats={}", scheduleId, orderNo, seatRows);
+        log.debug("inventory reserved: schedule={}, order={}, seats={}", sessionId, orderNo, seatRows);
         return R.ok();
     }
 
     /** G2 branch: locked ledger rows become sold. */
     @PostMapping("/sold")
-    public R<Void> sold(@RequestParam Long scheduleId,
+    public R<Void> sold(@RequestParam Long sessionId,
                         @RequestParam String orderNo,
                         @RequestParam int count) {
 
-        int inventoryRows = scheduleMapper.confirmSold(scheduleId, count);
+        int inventoryRows = sessionMapper.confirmSold(sessionId, count);
         if (inventoryRows != 1) {
             // The hold was released underneath us - the timeout job won the
             // race. Issuing tickets now would sell seats nobody holds.
             throw new BizException(ErrorCode.ORDER_EXPIRED);
         }
 
-        List<String> seatIds = seatIdsOf(scheduleId, orderNo);
-        int seatRows = scheduleSeatMapper.markSold(scheduleId, seatIds, orderNo);
+        List<String> seatIds = seatIdsOf(sessionId, orderNo);
+        int seatRows = sessionSeatMapper.markSold(sessionId, seatIds, orderNo);
         if (seatRows != seatIds.size()) {
             throw new BizException(ErrorCode.ORDER_STATUS_ILLEGAL, "座位状态与订单不一致");
         }
 
-        log.debug("inventory sold: schedule={}, order={}, seats={}", scheduleId, orderNo, seatRows);
+        log.debug("inventory sold: schedule={}, order={}, seats={}", sessionId, orderNo, seatRows);
         return R.ok();
     }
 
@@ -122,23 +122,23 @@ public class MovieInternalController {
      *                      or were already released by the timeout job
      */
     @PostMapping("/release")
-    public R<Void> release(@RequestParam Long scheduleId,
+    public R<Void> release(@RequestParam Long sessionId,
                            @RequestParam String orderNo,
                            @RequestParam int count,
                            @RequestParam boolean releaseToPool) {
 
-        List<String> seatIds = seatIdsOf(scheduleId, orderNo);
+        List<String> seatIds = seatIdsOf(sessionId, orderNo);
         if (seatIds.isEmpty()) {
             // Nothing holds these seats any more. Not an error: a retried
             // cancellation, or the timeout job having got there first. The
             // caller wanted them free, and they are.
-            log.debug("nothing to release: schedule={}, order={}", scheduleId, orderNo);
+            log.debug("nothing to release: schedule={}, order={}", sessionId, orderNo);
             return R.ok();
         }
 
         int released = releaseToPool
-                ? scheduleSeatMapper.releaseSoldSeats(scheduleId, seatIds, orderNo)
-                : scheduleSeatMapper.releaseLockedSeats(scheduleId, seatIds, orderNo);
+                ? sessionSeatMapper.releaseSoldSeats(sessionId, seatIds, orderNo)
+                : sessionSeatMapper.releaseLockedSeats(sessionId, seatIds, orderNo);
 
         if (released == 0) {
             // The ledger rows moved on without us - already released, or sold
@@ -150,29 +150,29 @@ public class MovieInternalController {
         // Move the matching counter, and only the matching one: held seats
         // live in locked_seat, paid-for seats live in sold_seat.
         if (releaseToPool) {
-            scheduleMapper.releaseSold(scheduleId, released);
+            sessionMapper.releaseSold(sessionId, released);
         } else {
-            scheduleMapper.releaseLocked(scheduleId, released);
+            sessionMapper.releaseLocked(sessionId, released);
         }
 
         log.debug("inventory released: schedule={}, order={}, released={}, toPool={}",
-                scheduleId, orderNo, released, releaseToPool);
+                sessionId, orderNo, released, releaseToPool);
         return R.ok();
     }
 
     /** Snapshot used by order-service to build an order row. */
-    @GetMapping("/{scheduleId}/snapshot")
-    public R<Map<String, Object>> snapshot(@PathVariable Long scheduleId) {
-        ScheduleVO detail = scheduleService.detail(scheduleId);
+    @GetMapping("/{sessionId}/snapshot")
+    public R<Map<String, Object>> snapshot(@PathVariable Long sessionId) {
+        SessionVO detail = sessionService.detail(sessionId);
 
         Map<String, Object> snapshot = new HashMap<>();
-        snapshot.put("scheduleId", detail.getId());
-        snapshot.put("filmId", detail.getFilmId());
-        snapshot.put("filmName", detail.getFilmName());
-        snapshot.put("cinemaId", detail.getCinemaId());
-        snapshot.put("cinemaName", detail.getCinemaName());
-        snapshot.put("hallName", detail.getHallName());
-        snapshot.put("hallType", detail.getHallType());
+        snapshot.put("sessionId", detail.getId());
+        snapshot.put("projectId", detail.getProjectId());
+        snapshot.put("projectTitle", detail.getProjectTitle());
+        snapshot.put("venueId", detail.getVenueId());
+        snapshot.put("venueName", detail.getVenueName());
+        snapshot.put("placeName", detail.getPlaceName());
+        snapshot.put("placeType", detail.getPlaceType());
         snapshot.put("showDate", detail.getShowDate());
         snapshot.put("startTime", detail.getStartTime());
         snapshot.put("price", detail.getPrice());
@@ -193,13 +193,13 @@ public class MovieInternalController {
      * client-supplied mapping between indexes and seat ids would let an order
      * be written against different seats than the ones actually held.
      */
-    private List<String> seatIdsOf(Long scheduleId, String orderNo) {
-        return scheduleSeatMapper.selectList(
-                        com.baomidou.mybatisplus.core.toolkit.Wrappers.<ScheduleSeat>lambdaQuery()
-                                .eq(ScheduleSeat::getScheduleId, scheduleId)
-                                .eq(ScheduleSeat::getLockOrderNo, orderNo))
+    private List<String> seatIdsOf(Long sessionId, String orderNo) {
+        return sessionSeatMapper.selectList(
+                        com.baomidou.mybatisplus.core.toolkit.Wrappers.<SessionSeat>lambdaQuery()
+                                .eq(SessionSeat::getSessionId, sessionId)
+                                .eq(SessionSeat::getLockOrderNo, orderNo))
                 .stream()
-                .map(ScheduleSeat::getSeatId)
+                .map(SessionSeat::getSeatId)
                 .toList();
     }
 
@@ -210,13 +210,13 @@ public class MovieInternalController {
      * yet marked in this table - looking them up by lock order number there
      * would find nothing.
      */
-    private List<String> seatIdsByIndex(Long scheduleId, List<Integer> seatIndexes) {
-        return scheduleSeatMapper.selectList(
-                        com.baomidou.mybatisplus.core.toolkit.Wrappers.<ScheduleSeat>lambdaQuery()
-                                .eq(ScheduleSeat::getScheduleId, scheduleId)
-                                .in(ScheduleSeat::getSeatIndex, seatIndexes))
+    private List<String> seatIdsByIndex(Long sessionId, List<Integer> seatIndexes) {
+        return sessionSeatMapper.selectList(
+                        com.baomidou.mybatisplus.core.toolkit.Wrappers.<SessionSeat>lambdaQuery()
+                                .eq(SessionSeat::getSessionId, sessionId)
+                                .in(SessionSeat::getSeatIndex, seatIndexes))
                 .stream()
-                .map(ScheduleSeat::getSeatId)
+                .map(SessionSeat::getSeatId)
                 .toList();
     }
 }

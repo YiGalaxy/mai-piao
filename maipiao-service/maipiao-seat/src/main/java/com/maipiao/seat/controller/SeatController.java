@@ -27,9 +27,9 @@ public class SeatController {
      * because looking at which seats are free is not something that should
      * require an account.
      */
-    @GetMapping("/map/{scheduleId}")
-    public R<SeatMapVO> seatMap(@PathVariable Long scheduleId) {
-        return R.ok(seatMapService.getSeatMap(scheduleId));
+    @GetMapping("/map/{sessionId}")
+    public R<SeatMapVO> seatMap(@PathVariable Long sessionId) {
+        return R.ok(seatMapService.getSeatMap(sessionId));
     }
 
     /**
@@ -54,7 +54,7 @@ public class SeatController {
     public R<Integer> release(@RequestBody SeatDtos.ReleaseSeatRequest request,
                               @RequestParam String lockToken) {
         UserContext.require();
-        return R.ok(seatMapService.releaseSeats(request.getScheduleId(), lockToken, false));
+        return R.ok(seatMapService.releaseSeats(request.getSessionId(), lockToken, false));
     }
 
     /**
@@ -64,8 +64,8 @@ public class SeatController {
      * outside, and this path is only reachable service-to-service.
      */
     @PostMapping("/inner/confirm")
-    public R<Void> confirm(@RequestParam Long scheduleId, @RequestParam String orderNo) {
-        seatMapService.confirmSeats(scheduleId, orderNo);
+    public R<Void> confirm(@RequestParam Long sessionId, @RequestParam String orderNo) {
+        seatMapService.confirmSeats(sessionId, orderNo);
         return R.ok();
     }
 }

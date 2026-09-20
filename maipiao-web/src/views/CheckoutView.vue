@@ -11,12 +11,12 @@
 
             <div class="film-row">
               <div class="poster" :style="posterStyle">
-                <span class="poster-text">{{ seatMap.filmName.slice(0, 2) }}</span>
+                <span class="poster-text">{{ seatMap.projectTitle.slice(0, 2) }}</span>
               </div>
               <div class="film-info">
-                <h3>{{ seatMap.filmName }}</h3>
+                <h3>{{ seatMap.projectTitle }}</h3>
                 <p class="mp-muted">
-                  {{ seatMap.cinemaName }} · {{ seatMap.hallName }}（{{ seatMap.hallType }}）
+                  {{ seatMap.venueName }} · {{ seatMap.placeName }}（{{ seatMap.placeType }}）
                 </p>
                 <p class="show-time">
                   {{ formatDate(seatMap.startTime) }} {{ formatTime(seatMap.startTime) }}

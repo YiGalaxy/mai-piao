@@ -31,22 +31,22 @@
           <img
             v-if="film.posterUrl && isPosterUsable(film.id)"
             :src="film.posterUrl"
-            :alt="film.name"
+            :alt="film.title"
             @error="markPosterBroken(film.id)"
           />
-          <span v-else class="mp-poster-fallback">{{ film.name.slice(0, 2) }}</span>
+          <span v-else class="mp-poster-fallback">{{ film.title.slice(0, 2) }}</span>
 
           <div v-if="film.status === 1 && film.score > 0" class="mp-score">
             评分 <b>{{ film.score.toFixed(1) }}</b>
           </div>
           <div v-else class="mp-score mp-score-none">
-            {{ film.status === 0 ? `待映 ${film.releaseDate}` : '暂无评分' }}
+            {{ film.status === 0 ? `待映 ${film.showDate}` : '暂无评分' }}
           </div>
         </div>
 
         <div class="mp-film-body">
-          <h3 class="mp-film-title">{{ film.name }}</h3>
-          <p class="mp-film-sub">{{ film.filmType }} · {{ film.duration }}分钟</p>
+          <h3 class="mp-film-title">{{ film.title }}</h3>
+          <p class="mp-film-sub">{{ film.tags }} · {{ film.duration }}分钟</p>
           <p class="mp-film-sub">导演 {{ film.director }}</p>
           <div class="mp-film-action">
             <el-button
@@ -121,8 +121,8 @@ function filterByKeyword(list) {
   }
   return list.filter(
     (f) =>
-      f.name.toLowerCase().includes(needle) ||
-      (f.enName || '').toLowerCase().includes(needle) ||
+      f.title.toLowerCase().includes(needle) ||
+      (f.enTitle || '').toLowerCase().includes(needle) ||
       (f.director || '').toLowerCase().includes(needle)
   )
 }

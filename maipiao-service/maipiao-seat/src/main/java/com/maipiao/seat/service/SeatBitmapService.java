@@ -63,7 +63,7 @@ public class SeatBitmapService {
      * @return success with the number claimed, or a conflict naming the first
      *         seat that was already taken
      */
-    public LockResult lock(Long scheduleId, String orderNo,
+    public LockResult lock(Long sessionId, String orderNo,
                            List<Integer> seatIndexes, Duration ttl) {
 
         if (seatIndexes == null || seatIndexes.isEmpty()) {
@@ -71,9 +71,9 @@ public class SeatBitmapService {
         }
 
         List<String> keys = List.of(
-                CommonConstants.SEAT_MAP_KEY + scheduleId,
-                CommonConstants.SEAT_OWNER_KEY + scheduleId,
-                CommonConstants.SEAT_DELAY_KEY + scheduleId,
+                CommonConstants.SEAT_MAP_KEY + sessionId,
+                CommonConstants.SEAT_OWNER_KEY + sessionId,
+                CommonConstants.SEAT_DELAY_KEY + sessionId,
                 CommonConstants.SEAT_ORDER_KEY + orderNo);
 
         List<String> args = new ArrayList<>(seatIndexes.size() + 2);
@@ -95,11 +95,11 @@ public class SeatBitmapService {
         long value = toLong(result.get(1));
 
         if (flag == 1L) {
-            log.debug("seats locked: schedule={}, order={}, count={}", scheduleId, orderNo, value);
+            log.debug("seats locked: schedule={}, order={}, count={}", sessionId, orderNo, value);
             return LockResult.ok((int) value);
         }
 
-        log.debug("seat conflict: schedule={}, order={}, seatIndex={}", scheduleId, orderNo, value);
+        log.debug("seat conflict: schedule={}, order={}, seatIndex={}", sessionId, orderNo, value);
         return LockResult.conflict((int) value);
     }
 
@@ -117,18 +117,18 @@ public class SeatBitmapService {
      *              reconciliation job only, never a normal flow
      * @return how many seats were actually released
      */
-    public int release(Long scheduleId, String orderNo, boolean force) {
+    public int release(Long sessionId, String orderNo, boolean force) {
         List<String> keys = List.of(
-                CommonConstants.SEAT_MAP_KEY + scheduleId,
-                CommonConstants.SEAT_OWNER_KEY + scheduleId,
-                CommonConstants.SEAT_DELAY_KEY + scheduleId,
+                CommonConstants.SEAT_MAP_KEY + sessionId,
+                CommonConstants.SEAT_OWNER_KEY + sessionId,
+                CommonConstants.SEAT_DELAY_KEY + sessionId,
                 CommonConstants.SEAT_ORDER_KEY + orderNo);
 
         Long released = execute(RELEASE_SCRIPT, keys, List.of(orderNo, force ? "1" : "0"));
         int count = released == null ? 0 : released.intValue();
 
         if (count > 0) {
-            log.debug("seats released: schedule={}, order={}, count={}", scheduleId, orderNo, count);
+            log.debug("seats released: schedule={}, order={}, count={}", sessionId, orderNo, count);
         }
         return count;
     }
@@ -140,10 +140,10 @@ public class SeatBitmapService {
      * locked one. What changes is the owner marker, so a later release can
      * tell a paid seat from a held one.
      */
-    public int confirm(Long scheduleId, String orderNo) {
+    public int confirm(Long sessionId, String orderNo) {
         List<String> keys = List.of(
-                CommonConstants.SEAT_OWNER_KEY + scheduleId,
-                CommonConstants.SEAT_DELAY_KEY + scheduleId,
+                CommonConstants.SEAT_OWNER_KEY + sessionId,
+                CommonConstants.SEAT_DELAY_KEY + sessionId,
                 CommonConstants.SEAT_ORDER_KEY + orderNo);
 
         Long confirmed = execute(CONFIRM_SCRIPT, keys, List.of(orderNo));
@@ -156,8 +156,8 @@ public class SeatBitmapService {
 
     /** @return the occupied seat indexes, ascending */
     @SuppressWarnings("unchecked")
-    public List<Integer> findOccupiedIndexes(Long scheduleId, int totalSeats) {
-        List<String> keys = List.of(CommonConstants.SEAT_MAP_KEY + scheduleId);
+    public List<Integer> findOccupiedIndexes(Long sessionId, int totalSeats) {
+        List<String> keys = List.of(CommonConstants.SEAT_MAP_KEY + sessionId);
         List<?> raw = execute(MAP_QUERY_SCRIPT, keys, List.of(String.valueOf(totalSeats)));
 
         List<Integer> occupied = new ArrayList<>();
@@ -170,8 +170,8 @@ public class SeatBitmapService {
     }
 
     /** True when the bitmap for this screening has been built. */
-    public boolean isInitialised(Long scheduleId) {
-        return Boolean.TRUE.equals(redis.hasKey(CommonConstants.SEAT_MAP_KEY + scheduleId));
+    public boolean isInitialised(Long sessionId) {
+        return Boolean.TRUE.equals(redis.hasKey(CommonConstants.SEAT_MAP_KEY + sessionId));
     }
 
     /**
@@ -187,9 +187,9 @@ public class SeatBitmapService {
      * screening there is. Writing a single zero bit creates the key while
      * leaving every seat available.
      */
-    public void rebuild(Long scheduleId, List<Integer> occupiedIndexes) {
-        String tempKey = CommonConstants.SEAT_MAP_KEY + scheduleId + ":rebuild";
-        String finalKey = CommonConstants.SEAT_MAP_KEY + scheduleId;
+    public void rebuild(Long sessionId, List<Integer> occupiedIndexes) {
+        String tempKey = CommonConstants.SEAT_MAP_KEY + sessionId + ":rebuild";
+        String finalKey = CommonConstants.SEAT_MAP_KEY + sessionId;
 
         redis.delete(tempKey);
 
@@ -205,7 +205,7 @@ public class SeatBitmapService {
         redis.rename(tempKey, finalKey);
 
         int count = occupiedIndexes == null ? 0 : occupiedIndexes.size();
-        log.info("seat bitmap rebuilt: schedule={}, occupied={}", scheduleId, count);
+        log.info("seat bitmap rebuilt: schedule={}, occupied={}", sessionId, count);
     }
 
     /**
@@ -215,11 +215,11 @@ public class SeatBitmapService {
      * whom, and the release path - which checks the owner before clearing a
      * bit - would refuse to ever free it.
      */
-    public void markSoldOwners(Long scheduleId, List<String> soldSeatIndexes, String syntheticOrderNo) {
+    public void markSoldOwners(Long sessionId, List<String> soldSeatIndexes, String syntheticOrderNo) {
         if (soldSeatIndexes.isEmpty()) {
             return;
         }
-        String ownerKey = CommonConstants.SEAT_OWNER_KEY + scheduleId;
+        String ownerKey = CommonConstants.SEAT_OWNER_KEY + sessionId;
         for (String index : soldSeatIndexes) {
             redis.opsForHash().put(ownerKey, index, "SOLD:" + syntheticOrderNo);
         }
