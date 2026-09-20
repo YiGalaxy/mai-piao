@@ -56,16 +56,4 @@ public class SeatController {
         UserContext.require();
         return R.ok(seatMapService.releaseSeats(request.getScheduleId(), lockToken, false));
     }
-
-    /**
-     * Marks a hold as sold. Called by order-service after G2 commits.
-     *
-     * <p>Internal in intent - the gateway does not route {@code /inner/**} from
-     * outside, and this path is only reachable service-to-service.
-     */
-    @PostMapping("/inner/confirm")
-    public R<Void> confirm(@RequestParam Long sessionId, @RequestParam String orderNo) {
-        seatMapService.confirmSeats(sessionId, orderNo);
-        return R.ok();
-    }
 }

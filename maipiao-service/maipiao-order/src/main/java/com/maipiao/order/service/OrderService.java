@@ -196,7 +196,21 @@ public class OrderService {
         return stateMachine.complete(orderNo, "SYSTEM");
     }
 
-    /** Gives back the seats and the coupon of a cancelled order. */
+    /**
+     * Gives back the seats and the coupon of a cancelled order.
+     *
+     * <p>A seat is held in two places: the ledger row in movie-service and the
+     * bitmap bit in seat-service. Cancelling has to undo both. Freeing only the
+     * ledger leaves the seat reading as available in the database while the
+     * seat map still refuses to let anyone select it - a dead seat, and silent,
+     * because nothing else revisits an order that has reached a terminal state.
+     *
+     * <p>The ledger goes first. If the bitmap call then fails, the seat is dead
+     * either way, but freeing the bitmap first would additionally hand a
+     * selectable seat to the next buyer whose G1 would fail on the ledger
+     * compare-and-set - an error for somebody who did nothing wrong, in exchange
+     * for no better outcome.
+     */
     private void releaseResources(Order order) {
         try {
             // releaseToPool = false: the seats were only ever held, never sold,
@@ -204,6 +218,22 @@ public class OrderService {
             movieClient.release(order.getScheduleId(), order.getOrderNo(), order.getSeatCount(), false);
         } catch (Exception e) {
             log.error("could not release seats for cancelled order: {}", order.getOrderNo(), e);
+        }
+
+        try {
+            // Redis is not enlisted in the global transaction, so nothing rolls
+            // this back for us and nothing retries it either - it has to happen
+            // here or not at all.
+            //
+            // Idempotent and owner-checked on the seat side: only bits whose
+            // owner marker still names this order are cleared, so running it
+            // after the timeout job already freed them releases nothing extra.
+            Integer freed = seatClient.release(order.getScheduleId(), order.getOrderNo()).getData();
+            log.debug("seat hold released for cancelled order: orderNo={}, seats={}",
+                    order.getOrderNo(), freed);
+        } catch (Exception e) {
+            log.error("could not release seat hold for cancelled order: {} - seats remain unselectable",
+                    order.getOrderNo(), e);
         }
 
         if (order.getCouponId() != null) {

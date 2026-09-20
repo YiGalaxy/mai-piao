@@ -74,12 +74,28 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        // ---- 2. CORS preflight carries no token by design ----
+        // ---- 2. internal endpoints are never routable from outside ----
+        // Checked before the whitelist, and deliberately so: /api/movie/** is
+        // public for browsing, which also matched /api/movie/inner/schedule/
+        // occupy - the branch that reserves inventory for the order
+        // transaction. Anybody could have called it with no token at all.
+        //
+        // A whitelist cannot express "public except for these", so the rule is
+        // separate and runs first. Service-to-service calls use Feign straight
+        // to the target service and never traverse the gateway, so nothing
+        // legitimate is blocked here.
+        if (isInternal(path)) {
+            log.warn("blocked external call to internal endpoint: {} {}", request.getMethod(), path);
+            // 404 rather than 403: a 403 confirms the endpoint exists.
+            return notFound(exchange);
+        }
+
+        // ---- 3. CORS preflight carries no token by design ----
         if (HttpMethod.OPTIONS.equals(request.getMethod())) {
             return chain.filter(withRequest(exchange, sanitized));
         }
 
-        // ---- 3. public endpoints ----
+        // ---- 4. public endpoints ----
         if (isWhitelisted(path)) {
             return chain.filter(withRequest(exchange, sanitized));
         }
@@ -162,6 +178,24 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             }
         }
         return false;
+    }
+
+    /**
+     * True for the service-to-service surface.
+     *
+     * <p>Every service mounts its internal endpoints under {@code /inner/...},
+     * reached through the gateway as {@code /api/{service}/inner/...}. The
+     * pattern matches at any depth so a service that nests its controllers
+     * differently is still covered.
+     */
+    private boolean isInternal(String path) {
+        return PATH_MATCHER.match("/api/*/inner/**", path)
+                || PATH_MATCHER.match("/api/*/inner", path);
+    }
+
+    private Mono<Void> notFound(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.NOT_FOUND);
+        return exchange.getResponse().setComplete();
     }
 
     private String extractToken(ServerHttpRequest request) {
