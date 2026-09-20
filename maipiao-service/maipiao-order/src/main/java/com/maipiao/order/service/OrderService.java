@@ -190,6 +190,12 @@ public class OrderService {
         return moved;
     }
 
+    /** Marks an order complete once its session has finished. */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean complete(String orderNo) {
+        return stateMachine.complete(orderNo, "SYSTEM");
+    }
+
     /** Gives back the seats and the coupon of a cancelled order. */
     private void releaseResources(Order order) {
         try {

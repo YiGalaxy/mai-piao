@@ -69,7 +69,17 @@
 
       <div class="actions">
         <template v-if="order.status === 0">
-          <el-button type="primary" size="large" @click="onPay">立即支付</el-button>
+          <el-button type="primary" size="large" :loading="paying" @click="onPay">
+            立即支付
+          </el-button>
+          <!--
+            The provider confirms asynchronously, so the user has to come back
+            and say so. Without this the page would sit on "waiting to pay"
+            while the payment had already succeeded.
+          -->
+          <el-button size="large" :loading="checking" @click="onCheckPaid">
+            我已支付
+          </el-button>
           <el-button size="large" @click="onCancel">取消订单</el-button>
         </template>
         <template v-else>
@@ -87,6 +97,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { cancelOrder, fetchOrderDetail } from '../api/order'
+import { precreatePayment } from '../api/pay'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,6 +105,9 @@ const router = useRouter()
 const detail = ref(null)
 const loading = ref(true)
 const remainingSeconds = ref(0)
+const paying = ref(false)
+const checking = ref(false)
+const paymentNo = ref('')
 
 let timer = null
 
@@ -162,10 +176,64 @@ function startCountdown() {
   timer = setInterval(tick, 1000)
 }
 
-function onPay() {
-  // Payment lands with pay-service. Until then, say so plainly rather than
-  // opening a page that cannot work.
-  ElMessage.info('支付功能开发中（pay-service 待接入）')
+/**
+ * Opens the payment provider's cashier.
+ *
+ * The payment order is created first, then the cashier is opened in a new
+ * tab - the provider's page is not part of this app and should not replace it,
+ * or the user loses the order they are paying for.
+ *
+ * Nothing is assumed about the outcome. Real providers confirm asynchronously,
+ * so this page polls rather than waiting for a redirect that may never come.
+ */
+async function onPay() {
+  if (paying.value) return
+  paying.value = true
+
+  try {
+    const payment = await precreatePayment({
+      orderNo: order.value.orderNo,
+      amount: order.value.payAmount,
+      channel: 'MOCK'
+    })
+
+    paymentNo.value = payment.paymentNo
+    window.open(payment.cashierUrl, '_blank', 'noopener')
+
+    ElMessage.info('已打开收银台，支付完成后请点击「我已支付」')
+  } catch {
+    // request.js already surfaced the reason
+  } finally {
+    paying.value = false
+  }
+}
+
+/**
+ * Asks the server whether the payment has landed.
+ *
+ * Polling rather than SSE or a websocket because the update is a single
+ * boolean that arrives once, a second or two after the user pays - a
+ * subscription would be more machinery than the problem needs.
+ */
+async function onCheckPaid() {
+  if (checking.value) return
+  checking.value = true
+
+  try {
+    const current = await fetchOrderDetail(route.params.orderNo)
+    detail.value = current
+
+    if (current.order.status === 2) {
+      ElMessage.success('支付成功，出票完成')
+      if (timer) clearInterval(timer)
+    } else {
+      ElMessage.warning('还没有收到支付结果，请稍候再试')
+    }
+  } catch {
+    // request.js surfaced it
+  } finally {
+    checking.value = false
+  }
 }
 
 async function onCancel() {

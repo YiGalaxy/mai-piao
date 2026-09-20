@@ -13,8 +13,24 @@
 
       <nav class="nav">
         <router-link to="/" :class="{ active: route.path === '/' }">首页</router-link>
-        <router-link to="/films" :class="{ active: route.path.startsWith('/films') }">
+        <router-link
+          to="/films"
+          :class="{ active: isCategory('MOVIE') }"
+        >
           电影
+        </router-link>
+        <router-link
+          to="/films?category=CONCERT"
+          :class="{ active: isStage() }"
+        >
+          演出
+        </router-link>
+        <router-link
+          v-if="userStore.isLoggedIn"
+          to="/orders"
+          :class="{ active: route.path.startsWith('/orders') }"
+        >
+          我的订单
         </router-link>
       </nav>
 
@@ -72,6 +88,16 @@ const avatarText = computed(() => {
   const name = userStore.profile?.nickname
   return name ? name.slice(0, 1) : '我'
 })
+
+/** True when the film list is showing films - "演出" covers everything else. */
+function isCategory(value) {
+  return route.path.startsWith('/films') && (route.query.category ?? 'MOVIE') === value
+}
+
+/** Any non-film category, so one nav item covers concerts, comedy and stage. */
+function isStage() {
+  return route.path.startsWith('/films') && route.query.category && route.query.category !== 'MOVIE'
+}
 
 function onSearch() {
   const value = keyword.value.trim()
