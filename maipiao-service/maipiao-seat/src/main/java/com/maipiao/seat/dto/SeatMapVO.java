@@ -16,7 +16,7 @@ import java.util.List;
 @Data
 public class SeatMapVO {
 
-    private Long sessionId;
+    private Long scheduleId;
 
     private String projectTitle;
     private String venueName;

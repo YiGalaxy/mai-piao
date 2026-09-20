@@ -80,7 +80,7 @@ public class SeatMapService {
         }
 
         SeatMapVO vo = new SeatMapVO();
-        vo.setSessionId(sessionId);
+        vo.setScheduleId(sessionId);
         vo.setProjectTitle(str(schedule.get("projectTitle")));
         vo.setVenueName(str(schedule.get("venueName")));
         vo.setPlaceName(str(schedule.get("placeName")));
@@ -180,7 +180,7 @@ public class SeatMapService {
     // ------------------------------------------------------------
 
     public SeatDtos.LockSeatResponse lockSeats(SeatDtos.LockSeatRequest request, Long userId) {
-        Long sessionId = request.sessionId();
+        Long sessionId = request.scheduleId();
         List<Integer> seatIndexes = request.seatIndexes();
 
         Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(sessionId);
