@@ -55,8 +55,19 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: maipiao-pay
+          uri: lb://maipiao-pay
+          predicates:
+            # Callbacks are NOT routed here. A provider posts to the URL it was
+            # given at onboarding, and that URL points straight at pay-service -
+            # payment notifications do not travel through our gateway, and
+            # putting them behind it would mean verifying a provider's
+            # signature with our own auth filter first.
+            - Path=/api/pay/**
+          filters:
+            - StripPrefix=1
+
       # More routes are added as services come online:
-      #   maipiao-pay    /api/pay/**     :9005
       #   maipiao-admin  /api/admin/**   :9006
       #   maipiao-queue  /api/queue/**   :9008
 

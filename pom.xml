@@ -60,10 +60,12 @@
     <module>maipiao-common/common-redis</module>
     <module>maipiao-common/common-web</module>
     <module>maipiao-gateway</module>
+    <module>maipiao-mock-pay</module>
     <module>maipiao-service/maipiao-user</module>
     <module>maipiao-service/maipiao-movie</module>
     <module>maipiao-service/maipiao-seat</module>
     <module>maipiao-service/maipiao-order</module>
+    <module>maipiao-service/maipiao-pay</module>
   </modules>
 
   <dependencyManagement>

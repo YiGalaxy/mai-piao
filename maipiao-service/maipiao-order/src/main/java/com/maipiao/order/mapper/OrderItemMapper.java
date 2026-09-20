@@ -22,11 +22,11 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     @Insert("""
             <script>
             INSERT INTO t_order_item
-              (id, order_no, session_id, seat_id, seat_index, seat_label,
+              (id, order_no, schedule_id, seat_id, seat_index, seat_label,
                price, ticket_no, check_status, create_time, update_time)
             VALUES
             <foreach collection="items" item="i" separator=",">
-              (#{i.id}, #{i.orderNo}, #{i.sessionId}, #{i.seatId}, #{i.seatIndex},
+              (#{i.id}, #{i.orderNo}, #{i.scheduleId}, #{i.seatId}, #{i.seatIndex},
                #{i.seatLabel}, #{i.price}, #{i.ticketNo}, #{i.checkStatus}, NOW(3), NOW(3))
             </foreach>
             </script>

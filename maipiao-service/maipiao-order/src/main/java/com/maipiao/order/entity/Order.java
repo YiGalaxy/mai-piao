@@ -29,7 +29,7 @@ public class Order {
 
     private Long userId;
 
-    private Long sessionId;
+    private Long scheduleId;
     private Long projectId;
     private String projectTitle;
 

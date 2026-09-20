@@ -1,0 +1,98 @@
+server:
+  port: 9005
+
+spring:
+  application:
+    name: maipiao-pay
+
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yaml
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8858}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3309}/maipiao_pay?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:maipiao123}
+    hikari:
+      minimum-idle: 3
+      maximum-pool-size: 15
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:maipiao123}
+      database: 0
+      timeout: 3000ms
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.maipiao.pay.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+
+# ============================================================
+# Seata - same shape as order-service.
+#
+# The TC address is configured directly rather than discovered through Nacos:
+# the Seata server runs in a container and registers its Docker-internal IP,
+# which the services on the host cannot route to. See the note in
+# order-service's application.yml for the full explanation.
+# ============================================================
+seata:
+  enabled: true
+  application-id: ${spring.application.name}
+  tx-service-group: maipiao_tx_group
+  enable-auto-data-source-proxy: true
+  service:
+    vgroup-mapping:
+      maipiao_tx_group: default
+    grouplist:
+      default: ${SEATA_ADDR:127.0.0.1:8091}
+  registry:
+    type: file
+  config:
+    type: file
+
+maipiao:
+  jwt:
+    secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
+  pay:
+    # How long a payment stays open before it is closed and the hold released.
+    payment-minutes: 15
+    mock:
+      gateway-url: ${MOCK_PAY_URL:http://127.0.0.1:9007}
+      # Must match the gateway's maipiao.mock-pay.sign-key, or every callback
+      # fails verification and looks like a provider problem.
+      sign-key: ${MOCK_PAY_SIGN_KEY:maipiao-mock-pay-sign-key-2026}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug
+    io.seata: info

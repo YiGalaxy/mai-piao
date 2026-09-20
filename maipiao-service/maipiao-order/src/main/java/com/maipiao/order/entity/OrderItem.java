@@ -24,7 +24,7 @@ public class OrderItem {
 
     private String orderNo;
 
-    private Long sessionId;
+    private Long scheduleId;
 
     private String seatId;
 

@@ -90,7 +90,7 @@ public class OrderService {
             throw new BizException(ErrorCode.ORDER_DUPLICATE);
         }
 
-        Map<String, Object> schedule = fetchSchedule(request.sessionId());
+        Map<String, Object> schedule = fetchSchedule(request.scheduleId());
         int seatCount = request.seatIndexes().size();
 
         LocalDateTime now = LocalDateTime.now();
@@ -104,7 +104,7 @@ public class OrderService {
         try {
             // ---- branch 1: reserve screening inventory ----
             // expireTime crosses the wire as ISO-8601; see MovieClient.occupy.
-            requireOk(movieClient.occupy(request.sessionId(), orderNo, userId, seatCount,
+            requireOk(movieClient.occupy(request.scheduleId(), orderNo, userId, seatCount,
                             expireTime.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                             request.seatIndexes()),
                     "锁定场次库存失败");
@@ -133,7 +133,7 @@ public class OrderService {
             //
             // Safe to run more than once: the release script only clears seats
             // whose owner marker still points at this order.
-            compensateSeatLock(request.sessionId(), orderNo, e);
+            compensateSeatLock(request.scheduleId(), orderNo, e);
             throw e;
         }
     }
@@ -145,14 +145,14 @@ public class OrderService {
      * one the caller needs to see, and the hold expires on its own anyway.
      * The reconciliation job picks up anything this misses.
      */
-    private void compensateSeatLock(Long sessionId, String orderNo, Exception cause) {
+    private void compensateSeatLock(Long scheduleId, String orderNo, Exception cause) {
         log.warn("order creation failed, releasing seat hold: orderNo={}, reason={}",
                 orderNo, cause.getMessage());
         try {
             // Goes through seat-service's owner-checked release rather than a
             // force-release, so this cannot clear seats that a concurrent
             // retry has since claimed.
-            seatClient.release(sessionId, orderNo);
+            seatClient.release(scheduleId, orderNo);
         } catch (Exception e) {
             // Logged, not rethrown - and recoverable regardless, because the
             // hold carries a TTL and the timeout sweep will find it.
@@ -195,7 +195,7 @@ public class OrderService {
         try {
             // releaseToPool = false: the seats were only ever held, never sold,
             // so the sold counter must not be decremented.
-            movieClient.release(order.getSessionId(), order.getOrderNo(), order.getSeatCount(), false);
+            movieClient.release(order.getScheduleId(), order.getOrderNo(), order.getSeatCount(), false);
         } catch (Exception e) {
             log.error("could not release seats for cancelled order: {}", order.getOrderNo(), e);
         }
@@ -235,8 +235,8 @@ public class OrderService {
     // ============================================================
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> fetchSchedule(Long sessionId) {
-        var response = movieClient.scheduleSnapshot(sessionId);
+    private Map<String, Object> fetchSchedule(Long scheduleId) {
+        var response = movieClient.scheduleSnapshot(scheduleId);
         if (response == null || !response.isSuccess() || response.getData() == null) {
             throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
         }
@@ -251,7 +251,7 @@ public class OrderService {
         Order order = new Order();
         order.setOrderNo(orderNo);
         order.setUserId(userId);
-        order.setSessionId(request.sessionId());
+        order.setScheduleId(request.scheduleId());
         order.setProjectId(toLong(schedule.get("projectId")));
         order.setProjectTitle(str(schedule.get("projectTitle")));
         order.setVenueId(toLong(schedule.get("venueId")));
@@ -278,7 +278,7 @@ public class OrderService {
         for (int i = 0; i < request.seatIndexes().size(); i++) {
             OrderItem item = new OrderItem();
             item.setOrderNo(order.getOrderNo());
-            item.setSessionId(order.getSessionId());
+            item.setScheduleId(order.getScheduleId());
             item.setSeatIndex(request.seatIndexes().get(i));
             item.setSeatLabel(request.seatLabels() != null && i < request.seatLabels().size()
                     ? request.seatLabels().get(i) : "");

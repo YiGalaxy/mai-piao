@@ -37,7 +37,7 @@ public final class OrderDtos {
             String lockToken,
 
             @NotNull(message = "场次不能为空")
-            Long sessionId,
+            Long scheduleId,
 
             @NotEmpty(message = "座位不能为空")
             @Size(max = 6, message = "一次最多购买 6 张票")

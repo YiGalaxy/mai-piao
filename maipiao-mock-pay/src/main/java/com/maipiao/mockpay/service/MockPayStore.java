@@ -68,6 +68,17 @@ public class MockPayStore {
         return sessions.get(channelTradeNo);
     }
 
+    /** By our payment number, for the operator tooling. */
+    public Session findByPaymentNo(String paymentNo) {
+        String channelTradeNo = byPaymentNo.get(paymentNo);
+        return channelTradeNo == null ? null : sessions.get(channelTradeNo);
+    }
+
+    /** Everything the fake provider has seen, newest first. */
+    public java.util.Collection<Session> list() {
+        return sessions.values();
+    }
+
     public void markSuccess(String channelTradeNo) {
         Session session = sessions.get(channelTradeNo);
         if (session != null) {

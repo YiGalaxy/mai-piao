@@ -54,7 +54,7 @@ public class SeatController {
     public R<Integer> release(@RequestBody SeatDtos.ReleaseSeatRequest request,
                               @RequestParam String lockToken) {
         UserContext.require();
-        return R.ok(seatMapService.releaseSeats(request.getSessionId(), lockToken, false));
+        return R.ok(seatMapService.releaseSeats(request.getScheduleId(), lockToken, false));
     }
 
     /**
