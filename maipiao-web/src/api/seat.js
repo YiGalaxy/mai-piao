@@ -27,3 +27,18 @@ export function lockSeats(payload) {
 export function releaseSeats(scheduleId, lockToken) {
   return request.post('/seat/release', { scheduleId }, { params: { lockToken } })
 }
+
+/**
+ * Asks the system for seats instead of naming them.
+ *
+ * For screenings that do not offer a seat map - a stadium concert cannot let
+ * everyone browse 2000 seats - the buyer picks a price band and a quantity.
+ * The reply has the same shape as a lock, so the checkout does not care which
+ * one produced it.
+ *
+ * @param {{scheduleId: number, tierId: number, quantity: number, adjacent?: boolean}} payload
+ * @returns {Promise<{lockToken: string, seatIndexes: number[], seatLabels: string[], amount: number}>}
+ */
+export function assignSeats(payload) {
+  return request.post('/seat/assign', payload)
+}

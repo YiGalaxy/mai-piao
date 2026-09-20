@@ -160,7 +160,16 @@ public class MovieInternalController {
         return R.ok();
     }
 
-    /** Snapshot used by order-service to build an order row. */
+    /**
+     * Snapshot used by order-service to build an order row, and by
+     * queue-service to size a rush sale's admission.
+     *
+     * <p>{@code totalSeat} is what the queue needs: its dispatcher decides how
+     * many people to let through from how many seats are left, and it reads
+     * that as {@code totalSeat - BITCOUNT(seat:map)}. Deriving the total
+     * instead - from the bitmap, or from a counter it kept itself - would be a
+     * second source of truth for the one number the whole sale turns on.
+     */
     @GetMapping("/{sessionId}/snapshot")
     public R<Map<String, Object>> snapshot(@PathVariable Long sessionId) {
         SessionVO detail = sessionService.detail(sessionId);
@@ -176,8 +185,12 @@ public class MovieInternalController {
         snapshot.put("showDate", detail.getShowDate());
         snapshot.put("startTime", detail.getStartTime());
         snapshot.put("price", detail.getPrice());
+        snapshot.put("totalSeat", detail.getTotalSeat());
         snapshot.put("remainingSeat", detail.getRemainingSeat());
         snapshot.put("status", detail.getStatus());
+        snapshot.put("rushMode", detail.getRushMode());
+        snapshot.put("rushStartTime", detail.getRushStartTime());
+        snapshot.put("saleStartTime", detail.getSaleStartTime());
         return R.ok(snapshot);
     }
 

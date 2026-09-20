@@ -54,7 +54,16 @@ request.interceptors.response.use(
 
     handleUnauthorized(body.code)
     ElMessage.error(body.message || '请求失败')
-    return Promise.reject(new Error(body.message || 'request failed'))
+
+    // The business code rides along on the rejection. Not every failure is
+    // the same kind of failure - "no adjacent seats in this band" is an
+    // ordinary outcome with a remedy, not an error to show and forget - and a
+    // caller that can only see the message has to pattern-match prose to tell
+    // them apart.
+    const failure = new Error(body.message || 'request failed')
+    failure.code = body.code
+    failure.data = body.data
+    return Promise.reject(failure)
   },
   (error) => {
     const status = error.response?.status

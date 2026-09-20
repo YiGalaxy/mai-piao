@@ -66,6 +66,7 @@
     <module>maipiao-service/maipiao-seat</module>
     <module>maipiao-service/maipiao-order</module>
     <module>maipiao-service/maipiao-pay</module>
+    <module>maipiao-service/maipiao-queue</module>
   </modules>
 
   <dependencyManagement>
