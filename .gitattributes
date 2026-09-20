@@ -1,0 +1,30 @@
+# ============================================================
+# Normalize line endings.
+#
+# Without this, Git on Windows rewrites text files to CRLF on checkout,
+# which breaks shell scripts inside containers and produces a noisy diff
+# for anyone on macOS or Linux.
+#
+# `text=auto` lets Git decide per file; the explicit rules below pin the
+# cases where the decision matters.
+# ============================================================
+
+* text=auto eol=lf
+
+# Shell scripts must be LF or the container refuses to execute them.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary - never touch these.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.jar   binary
+*.woff  binary
+*.woff2 binary
