@@ -20,26 +20,40 @@ import java.util.Map;
 @Mapper
 public interface SeatQueryMapper {
 
-    /** Screening plus its hall geometry template. */
+    /**
+     * Screening plus its hall geometry template.
+     *
+     * <p>Every column the seat map reads has to be selected here. Four of them
+     * were not - {@code seatingMode}, {@code purchaseLimit}, {@code
+     * requireRealName}, {@code saleStartTime} - and the map set them from a
+     * key that was never in the result, so they came back null and the fields
+     * silently meant "no limit" for as long as nothing depended on them.
+     */
     @Select("""
-            SELECT s.id             AS sessionId,
-                   s.start_time     AS startTime,
-                   s.price          AS price,
-                   s.total_seat     AS totalSeat,
-                   s.locked_seat    AS lockedSeat,
-                   s.sold_seat      AS soldSeat,
-                   s.status         AS status,
-                   s.rush_mode      AS rushMode,
+            SELECT s.id                AS sessionId,
+                   s.start_time        AS startTime,
+                   s.price             AS price,
+                   s.total_seat        AS totalSeat,
+                   s.locked_seat       AS lockedSeat,
+                   s.sold_seat         AS soldSeat,
+                   s.status            AS status,
+                   s.rush_mode         AS rushMode,
+                   s.rush_start_time   AS rushStartTime,
+                   s.seat_mode         AS seatMode,
+                   s.sale_start_time   AS saleStartTime,
+                   s.purchase_limit    AS purchaseLimit,
+                   s.require_real_name AS requireRealName,
                    f.title           AS projectTitle,
-                   c.name           AS venueName,
-                   h.name           AS placeName,
+                   c.name            AS venueName,
+                   h.name            AS placeName,
                    h.place_type      AS placeType,
-                   h.row_count      AS rowCount,
-                   h.col_count      AS colCount,
-                   h.seat_template  AS seatTemplate
+                   h.seating_mode    AS seatingMode,
+                   h.row_count       AS rowCount,
+                   h.col_count       AS colCount,
+                   h.seat_template   AS seatTemplate
               FROM t_event_session s
-              JOIN t_event_project   f ON f.id = s.project_id
-              JOIN t_event_venue c ON c.id = s.venue_id
+              JOIN t_event_project f ON f.id = s.project_id
+              JOIN t_event_venue   c ON c.id = s.venue_id
               JOIN t_event_place   h ON h.id = s.place_id
              WHERE s.id = #{sessionId}
             """)
@@ -62,6 +76,34 @@ public interface SeatQueryMapper {
              ORDER BY seat_index
             """)
     List<Map<String, Object>> selectSeatLayout(@Param("sessionId") Long sessionId);
+
+    /**
+     * What these seats cost, from the band each one sits in.
+     *
+     * <p>This is the authoritative price of a booking, and it lives here
+     * because this is where the seat-to-band mapping already is. The session's
+     * own {@code price} column is a listing figure - "from ¥580" - and using it
+     * for an order total charges a VIP seat and a stand seat the same, which is
+     * how a concert with four bands ended up with one price.
+     *
+     * <p>LEFT JOIN, and the caller asserts the row count: a seat with no band
+     * comes back with a zero price rather than disappearing, so a hole in the
+     * data is visible instead of silently shrinking the total.
+     */
+    @Select("""
+            <script>
+            SELECT s.seat_index        AS seatIndex,
+                   s.tier_id           AS tierId,
+                   COALESCE(t.price, 0) AS price
+              FROM t_event_session_seat s
+              LEFT JOIN t_event_price_tier t ON t.id = s.tier_id
+             WHERE s.session_id = #{sessionId}
+               AND s.seat_index IN
+               <foreach collection="seatIndexes" item="i" open="(" separator="," close=")">#{i}</foreach>
+            </script>
+            """)
+    List<Map<String, Object>> selectSeatPrices(@Param("sessionId") Long sessionId,
+                                               @Param("seatIndexes") List<Integer> seatIndexes);
 
     /**
      * Price bands for a session.

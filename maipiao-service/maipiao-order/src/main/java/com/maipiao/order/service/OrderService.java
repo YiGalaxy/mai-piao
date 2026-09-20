@@ -103,7 +103,7 @@ public class OrderService {
         // own status = 0 compare-and-set; what this prevents is the realistic
         // version - a page left open past the hold, then submitted - where the
         // holder who won the seat fairly is the one who gets refused.
-        requireHeld(request.scheduleId(), orderNo, request.seatIndexes());
+        HeldSeats held = requireHeld(request.scheduleId(), orderNo, request.seatIndexes());
 
         Map<String, Object> schedule = fetchSchedule(request.scheduleId());
         int seatCount = request.seatIndexes().size();
@@ -111,8 +111,12 @@ public class OrderService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expireTime = now.plusMinutes(lockMinutes);
 
-        BigDecimal unitPrice = toDecimal(schedule.get("price"));
-        BigDecimal totalAmount = unitPrice.multiply(BigDecimal.valueOf(seatCount));
+        // Priced from the bands the seats actually sit in, not from the
+        // session's listing figure. That figure is the "from ¥580" headline on
+        // the detail page; charging it for an 1880 VIP seat is an undercharge,
+        // and a concert selling four bands at once made it the only price there
+        // was.
+        BigDecimal totalAmount = held.amount();
         BigDecimal discount = request.discountAmount() == null ? BigDecimal.ZERO : request.discountAmount();
         BigDecimal payAmount = totalAmount.subtract(discount).max(BigDecimal.ZERO);
 
@@ -134,7 +138,7 @@ public class OrderService {
             Order order = buildOrder(request, userId, schedule, orderNo, now, expireTime,
                     seatCount, totalAmount, discount, payAmount);
             orderMapper.insert(order);
-            orderItemMapper.insertBatch(buildItems(order, request));
+            orderItemMapper.insertBatch(buildItems(order, request, held));
 
             log.info("order created: orderNo={}, user={}, seats={}, amount={}",
                     orderNo, userId, seatCount, payAmount);
@@ -392,27 +396,58 @@ public class OrderService {
         return order;
     }
 
-    private List<OrderItem> buildItems(Order order, OrderDtos.CreateOrderRequest request) {
+    private List<OrderItem> buildItems(Order order, OrderDtos.CreateOrderRequest request,
+                                       HeldSeats held) {
         List<OrderItem> items = new ArrayList<>(request.seatIndexes().size());
-        BigDecimal price = order.getTotalAmount()
-                .divide(BigDecimal.valueOf(Math.max(1, order.getSeatCount())), 2, java.math.RoundingMode.HALF_UP);
 
         for (int i = 0; i < request.seatIndexes().size(); i++) {
+            int seatIndex = request.seatIndexes().get(i);
+
             OrderItem item = new OrderItem();
             item.setOrderNo(order.getOrderNo());
             item.setScheduleId(order.getScheduleId());
-            item.setSeatIndex(request.seatIndexes().get(i));
+            item.setSeatIndex(seatIndex);
             item.setSeatLabel(request.seatLabels() != null && i < request.seatLabels().size()
                     ? request.seatLabels().get(i) : "");
             // seatId is derived from the label's row/col when available; the
             // ledger's unique key is (session_id, seat_id), so it has to be set.
-            item.setSeatId(seatIdFromLabel(item.getSeatLabel(), request.seatIndexes().get(i)));
-            item.setPrice(price);
+            item.setSeatId(seatIdFromLabel(item.getSeatLabel(), seatIndex));
+
+            // Each line carries what that seat cost and which band it came
+            // from. Dividing the order total by the seat count - what this did
+            // before - is only right when every seat has the same price, and a
+            // refund needs the line's own figure rather than an average.
+            HeldSeats.Line line = held.lineFor(seatIndex);
+            item.setPrice(line == null ? BigDecimal.ZERO : line.price());
+            item.setTierId(line == null ? null : line.tierId());
+
             item.setTicketNo("");
             item.setCheckStatus(0);
             items.add(item);
         }
         return items;
+    }
+
+    /**
+     * The seats an order is buying, and what they cost.
+     *
+     * <p>Both facts come back from the same call, which is the point: the price
+     * is derived from seats the seat service resolved and confirmed are held by
+     * this order. There is no path by which a caller supplies one.
+     */
+    public record HeldSeats(BigDecimal amount, List<Line> lines) {
+
+        public record Line(int seatIndex, Long tierId, BigDecimal price) {
+        }
+
+        public Line lineFor(int seatIndex) {
+            for (Line line : lines) {
+                if (line.seatIndex() == seatIndex) {
+                    return line;
+                }
+            }
+            return null;
+        }
     }
 
     /** "5排7座" -> "5_7"; falls back to the index when the label is missing. */
@@ -430,26 +465,58 @@ public class OrderService {
 
     /**
      * Refuses the order unless the seat service still shows this order holding
-     * every seat it named.
+     * every seat it named, and returns what those seats cost.
      *
      * <p>Fail-closed on a seat-service error: an unavailable seat service
      * cannot confirm the hold, and letting the order through would fall back to
      * the ledger alone - which is what this call exists to stop relying on.
+     *
+     * <p>An unreadable price is refused for the same reason. Charging zero
+     * because a field was missing is worse than not selling the ticket.
      */
-    private void requireHeld(Long scheduleId, String orderNo, List<Integer> seatIndexes) {
-        Boolean held;
+    @SuppressWarnings("unchecked")
+    private HeldSeats requireHeld(Long scheduleId, String orderNo, List<Integer> seatIndexes) {
+        Map<String, Object> body;
         try {
-            held = seatClient.verify(scheduleId, orderNo, seatIndexes).getData();
+            body = seatClient.verify(scheduleId, orderNo, seatIndexes).getData();
         } catch (Exception e) {
             log.error("could not verify seat hold, refusing order: orderNo={}", orderNo, e);
             throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE);
         }
 
-        if (!Boolean.TRUE.equals(held)) {
+        if (body == null || !Boolean.TRUE.equals(body.get("held"))) {
             log.info("order rejected, seat hold no longer valid: orderNo={}, seats={}",
                     orderNo, seatIndexes);
             throw new BizException(ErrorCode.SEAT_LOCK_EXPIRED);
         }
+
+        Object amount = body.get("amount");
+        if (amount == null) {
+            log.error("seat service returned no price for a valid hold: orderNo={}", orderNo);
+            throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE);
+        }
+
+        List<HeldSeats.Line> lines = new ArrayList<>(seatIndexes.size());
+        Object rawSeats = body.get("seats");
+        if (rawSeats instanceof List<?> seatList) {
+            for (Object entry : seatList) {
+                if (entry instanceof Map<?, ?> row) {
+                    lines.add(new HeldSeats.Line(
+                            toInt(row.get("seatIndex")),
+                            toLong(row.get("tierId")),
+                            toDecimal(row.get("price"))));
+                }
+            }
+        }
+
+        return new HeldSeats(toDecimal(amount), lines);
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return value == null ? 0 : Integer.parseInt(value.toString());
     }
 
     private void requireOk(com.maipiao.common.core.result.R<?> response, String message) {

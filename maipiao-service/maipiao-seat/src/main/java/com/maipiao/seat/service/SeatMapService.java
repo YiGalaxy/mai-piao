@@ -96,10 +96,12 @@ public class SeatMapService {
         vo.setTotalSeat(totalSeat);
         vo.setRemainingSeat(Math.max(0, totalSeat - occupied.size()));
         vo.setRushMode(toInt(schedule.get("rushMode")));
+        vo.setRushStartTime(toDateTime(schedule.get("rushStartTime")));
+        vo.setSeatMode(toInt(schedule.get("seatMode")));
         vo.setSeatingMode(str(schedule.get("seatingMode")));
         vo.setPurchaseLimit(toInt(schedule.get("purchaseLimit")));
         vo.setRequireRealName(toInt(schedule.get("requireRealName")));
-        vo.setSaleStartTime((LocalDateTime) schedule.get("saleStartTime"));
+        vo.setSaleStartTime(toDateTime(schedule.get("saleStartTime")));
         return vo;
     }
 
@@ -228,11 +230,10 @@ public class SeatMapService {
             throw new BizException(ErrorCode.SEAT_OCCUPIED, "座位 " + label + " 已被选走，请重新选择");
         }
 
-        BigDecimal price = (BigDecimal) schedule.get("price");
-        BigDecimal amount = price.multiply(BigDecimal.valueOf(seatIndexes.size()));
+        BigDecimal amount = priceOf(sessionId, seatIndexes).total();
 
-        log.info("seats locked: schedule={}, user={}, token={}, count={}",
-                sessionId, userId, lockToken, seatIndexes.size());
+        log.info("seats locked: schedule={}, user={}, token={}, count={}, amount={}",
+                sessionId, userId, lockToken, seatIndexes.size(), amount);
 
         return new SeatDtos.LockSeatResponse(
                 lockToken,
@@ -241,6 +242,53 @@ public class SeatMapService {
                 labelsOfSeats(sessionId, seatIndexes),
                 amount,
                 (int) ttl.getSeconds());
+    }
+
+    /**
+     * What a set of seats costs, seat by seat and in total.
+     *
+     * <p>The band each seat sits in, not the session's listing price. A
+     * performance sells several bands at once and the only correct total is the
+     * sum over the seats actually taken - {@code schedule.price} is the
+     * "from ¥580" headline, and charging it for a 1880 VIP seat is a real
+     * undercharge rather than a rounding difference.
+     *
+     * <p>Exposed so the verification call can return the price along with the
+     * hold. The client never sends a price and never has one to send: it is
+     * derived here from the seats the server itself resolved.
+     */
+    public SeatPricing priceOf(Long sessionId, List<Integer> seatIndexes) {
+        List<Map<String, Object>> rows = seatQueryMapper.selectSeatPrices(sessionId, seatIndexes);
+
+        if (rows.size() != seatIndexes.size()) {
+            // Some requested seats are not in this session. Pricing part of a
+            // booking would produce a total the customer never agreed to.
+            throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "座位与场次不匹配");
+        }
+
+        BigDecimal total = BigDecimal.ZERO;
+        List<SeatPricing.Line> lines = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            BigDecimal price = row.get("price") instanceof BigDecimal value
+                    ? value : BigDecimal.ZERO;
+            lines.add(new SeatPricing.Line(toInt(row.get("seatIndex")),
+                    toLong(row.get("tierId")), price));
+            total = total.add(price);
+        }
+        return new SeatPricing(lines, total);
+    }
+
+    /**
+     * A priced set of seats.
+     *
+     * <p>Lines rather than a bare total because the order records which band
+     * each ticket was sold at - a refund has to give back what that seat
+     * actually cost, and it cannot be reconstructed from an average.
+     */
+    public record SeatPricing(List<Line> lines, BigDecimal total) {
+
+        public record Line(int seatIndex, Long tierId, BigDecimal price) {
+        }
     }
 
     /**
@@ -342,5 +390,23 @@ public class SeatMapService {
 
     private String str(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    /**
+     * Null-tolerant, and tolerant of the type the driver actually returns.
+     *
+     * <p>A column that is null in the database arrives as null, not as a
+     * LocalDateTime, and casting it straight to one throws. Null is the normal
+     * value for all three timestamps here - most sessions are neither a rush
+     * sale nor scheduled in advance.
+     */
+    private LocalDateTime toDateTime(Object value) {
+        if (value instanceof LocalDateTime time) {
+            return time;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        return null;
     }
 }

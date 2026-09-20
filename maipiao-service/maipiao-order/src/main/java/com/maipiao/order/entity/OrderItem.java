@@ -36,6 +36,15 @@ public class OrderItem {
 
     private BigDecimal price;
 
+    /**
+     * The price band this seat was sold at.
+     *
+     * <p>Recorded rather than reconstructed: a refund has to give back what
+     * this seat cost, and an order holding a 1880 VIP seat next to a 580 stand
+     * seat has no single figure to derive it from.
+     */
+    private Long tierId;
+
     /** Admission code, empty until the order is paid. */
     private String ticketNo;
 

@@ -59,7 +59,9 @@
 
             <div class="line">
               <span>票价</span>
-              <span>{{ seatCount }} × ¥{{ seatMap.price }}</span>
+              <!-- Not "N x unit price": a booking can span price bands, so
+                   there is no single unit price to show. -->
+              <span>{{ seatCount }} 张</span>
             </div>
             <div class="line">
               <span>小计</span>
@@ -139,10 +141,17 @@ const pending = computed(() => {
 })
 
 const seatCount = computed(() => pending.value.seats?.length || 0)
-const totalAmount = computed(() => {
-  const price = Number(seatMap.value?.price || 0)
-  return (price * seatCount.value).toFixed(2)
-})
+
+/**
+ * The amount the seat service priced when it took the hold.
+ *
+ * It used to be recomputed here as seatMap.price x seatCount, where
+ * seatMap.price is the session's listing figure - the cheapest band, shown on
+ * the detail page as "from ¥580". On a concert selling four bands that charged
+ * every seat the cheapest price, and the checkout would have disagreed with
+ * the order the server was about to create.
+ */
+const totalAmount = computed(() => Number(pending.value.amount || 0).toFixed(2))
 
 const discountAmount = computed(() => {
   if (!selectedCouponId.value) return 0

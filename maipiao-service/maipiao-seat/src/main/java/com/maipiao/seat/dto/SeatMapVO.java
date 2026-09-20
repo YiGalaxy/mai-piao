@@ -53,6 +53,19 @@ public class SeatMapVO {
     /** 1 = rush sale, meaning the client must hold a queue token first. */
     private Integer rushMode;
 
+    /** When the rush opens; null for a session that is not a rush sale. */
+    private LocalDateTime rushStartTime;
+
+    /**
+     * Who picks the seat: 0 = the buyer, 1 = the system.
+     *
+     * <p>Not the same question as {@link #seatingMode}. A seated stadium is
+     * SEATED and still assigns, because letting a hundred thousand people
+     * browse a seat map at once is not a service anybody can run. The client
+     * reads this to decide whether to draw a map at all.
+     */
+    private Integer seatMode;
+
     /** SEATED / STANDING. Standing sessions have no map to draw. */
     private String seatingMode;
 

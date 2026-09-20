@@ -69,7 +69,7 @@
         <el-empty v-else-if="groupedSchedules.length === 0" description="该日期暂无排片，换个日期试试" />
 
         <div v-else class="cinema-groups">
-          <div v-for="group in groupedSchedules" :key="group.cinemaId" class="cinema-group mp-card">
+          <div v-for="group in groupedSchedules" :key="group.venueId" class="cinema-group mp-card">
             <div class="cinema-head">
               <h3>{{ group.venueName }}</h3>
             </div>
@@ -147,17 +147,26 @@ const dateOptions = computed(() => {
   return options
 })
 
+/**
+ * Shows grouped by venue.
+ *
+ * The field is venueId. This read cinemaId, which the API has never returned -
+ * so the key was undefined for every show and they all landed in one unnamed
+ * group. It looked like a grouping bug only once there was more than one
+ * venue to tell apart; before that, one group is what a correct grouping
+ * produces anyway.
+ */
 const groupedSchedules = computed(() => {
   const groups = new Map()
   for (const show of schedules.value) {
-    if (!groups.has(show.cinemaId)) {
-      groups.set(show.cinemaId, {
-        cinemaId: show.cinemaId,
+    if (!groups.has(show.venueId)) {
+      groups.set(show.venueId, {
+        venueId: show.venueId,
         venueName: show.venueName,
         shows: []
       })
     }
-    groups.get(show.cinemaId).shows.push(show)
+    groups.get(show.venueId).shows.push(show)
   }
   return [...groups.values()]
 })
