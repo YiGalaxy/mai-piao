@@ -1,8 +1,9 @@
 package com.maipiao.common.web.config;
 
+import com.maipiao.common.core.config.JwtProperties;
+import com.maipiao.common.core.util.JwtUtil;
 import com.maipiao.common.web.context.UserContextInterceptor;
 import com.maipiao.common.web.exception.GlobalExceptionHandler;
-import com.maipiao.common.web.util.JwtUtil;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;

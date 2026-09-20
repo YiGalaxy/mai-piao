@@ -1,4 +1,4 @@
-package com.maipiao.common.web.config;
+package com.maipiao.common.core.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

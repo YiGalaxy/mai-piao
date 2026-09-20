@@ -3,7 +3,7 @@ package com.maipiao.user.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.maipiao.common.core.exception.BizException;
 import com.maipiao.common.core.result.ErrorCode;
-import com.maipiao.common.web.util.JwtUtil;
+import com.maipiao.common.core.util.JwtUtil;
 import com.maipiao.user.dto.UserDtos;
 import com.maipiao.user.entity.User;
 import com.maipiao.user.mapper.UserMapper;
