@@ -5,35 +5,50 @@ const routes = [
   {
     path: '/',
     name: 'home',
-    component: () => import('../views/HomeView.vue'),
-    meta: { title: '首页' }
+    component: () => import('../views/HomeView.vue')
+  },
+  {
+    path: '/films',
+    name: 'films',
+    component: () => import('../views/FilmListView.vue')
+  },
+  {
+    path: '/films/:id',
+    name: 'film-detail',
+    component: () => import('../views/FilmDetailView.vue')
+  },
+  {
+    path: '/schedules/:id/seats',
+    name: 'seat-select',
+    component: () => import('../views/SeatSelectView.vue'),
+    meta: { requiresAuth: true }
   },
   {
     path: '/login',
     name: 'login',
     component: () => import('../views/LoginView.vue'),
-    meta: { title: '登录', guestOnly: true }
+    meta: { guestOnly: true }
   },
   {
     path: '/register',
     name: 'register',
     component: () => import('../views/RegisterView.vue'),
-    meta: { title: '注册', guestOnly: true }
+    meta: { guestOnly: true }
   },
   {
     path: '/profile',
     name: 'profile',
     component: () => import('../views/ProfileView.vue'),
-    meta: { title: '我的', requiresAuth: true }
+    meta: { requiresAuth: true }
   },
   {
     path: '/coupons',
     name: 'coupons',
     component: () => import('../views/CouponView.vue'),
-    meta: { title: '我的优惠券', requiresAuth: true }
+    meta: { requiresAuth: true }
   },
   {
-    // Anything unrecognised goes home rather than showing a blank screen.
+    // Anything unrecognised goes home rather than showing a blank page.
     path: '/:pathMatch(.*)*',
     redirect: '/'
   }
@@ -48,10 +63,10 @@ const router = createRouter({
 /**
  * Route guard.
  *
- * This is a UX guard, not a security boundary. Everything it protects is also
- * protected server-side by the gateway - a user who edits localStorage or
- * calls the API directly still gets a 401. Its job is to avoid showing a
- * screen that is guaranteed to fail.
+ * A UX guard, not a security boundary. Everything it protects is also enforced
+ * server-side by the gateway - editing localStorage or calling the API directly
+ * still yields a 401. Its job is to avoid showing a screen that is guaranteed
+ * to fail.
  */
 router.beforeEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · 麦票` : '麦票'
@@ -59,7 +74,6 @@ router.beforeEach((to) => {
   const loggedIn = Boolean(getToken())
 
   if (to.meta.requiresAuth && !loggedIn) {
-    // Keep the destination so login can return there.
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 

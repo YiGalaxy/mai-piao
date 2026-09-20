@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { showToast } from 'vant'
+import { ElMessage } from 'element-plus'
 import router from '../router'
 import { clearSession, getToken } from '../utils/session'
 
@@ -8,17 +8,17 @@ import { clearSession, getToken } from '../utils/session'
  *
  * Two conventions this enforces, so no caller has to remember them:
  *
- * 1. Unwrap the envelope. Every backend response is
- *    `{code, message, data}`, where `code: 0` means success. Callers get
- *    `data` directly and never write `res.data.data` again.
+ * 1. Unwrap the envelope. Every backend response is `{code, message, data}`
+ *    where `code: 0` means success. Callers get `data` directly and never
+ *    write `res.data.data`.
  *
  * 2. A failed business call rejects. The backend returns HTTP 200 for
  *    expected failures (seat taken, coupon unusable) with a non-zero code;
  *    without this, `await login()` would resolve on a wrong password and the
- *    caller would happily continue with `undefined`.
+ *    caller would carry on with `undefined`.
  *
- * 401 is handled centrally: the token is dropped and the user is sent to the
- * login page. That is the one failure every screen would otherwise repeat.
+ * 401 is handled centrally: the session is dropped and the user is sent to
+ * the login page, remembering where they were.
  */
 const request = axios.create({
   // Relative, so the Vite dev proxy (and Nginx in production) handles it.
@@ -42,8 +42,8 @@ request.interceptors.response.use(
   (response) => {
     const body = response.data
 
-    // Non-envelope response (a file download, or a service that does not use
-    // the shared handler). Hand it back untouched rather than mangling it.
+    // Not an envelope (a file download, or a service that does not use the
+    // shared handler). Hand it back untouched rather than mangling it.
     if (body === null || typeof body !== 'object' || !('code' in body)) {
       return body
     }
@@ -53,7 +53,7 @@ request.interceptors.response.use(
     }
 
     handleUnauthorized(body.code)
-    showToast(body.message || '请求失败')
+    ElMessage.error(body.message || '请求失败')
     return Promise.reject(new Error(body.message || 'request failed'))
   },
   (error) => {
@@ -70,7 +70,7 @@ request.interceptors.response.use(
           ? '请求超时，请检查网络'
           : '网络异常，请稍后重试'
 
-    showToast(message)
+    ElMessage.error(message)
     return Promise.reject(error)
   }
 )
@@ -82,7 +82,6 @@ function handleUnauthorized(code) {
   clearSession()
   const current = router.currentRoute.value
   if (current.name !== 'login') {
-    // Remember where the user was, so login can send them back.
     router.replace({ name: 'login', query: { redirect: current.fullPath } })
   }
 }
