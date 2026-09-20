@@ -128,6 +128,7 @@ const totalAmount = computed(() => {
 onMounted(async () => {
   try {
     seatMap.value = await fetchSeatMap(scheduleId)
+    normaliseSeatIndexes()
     // The canvas is only in the DOM after seatMap resolves, hence nextTick-free
     // direct draw here: the template has already re-rendered by this point.
     requestAnimationFrame(draw)
@@ -137,6 +138,23 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+/**
+ * Converts seatIndex back to a number.
+ *
+ * <p>The backend serialises every Long as a JSON string, because a 19-digit
+ * snowflake id does not survive JavaScript's double-precision parse. seatIndex
+ * is small enough to be safe either way, but it arrives as a string all the
+ * same - and a string index compared against a number index silently matches
+ * nothing, which shows up as selections that will not toggle.
+ */
+function normaliseSeatIndexes() {
+  if (!seatMap.value?.seats) return
+  seatMap.value.seats = seatMap.value.seats.map((seat) => ({
+    ...seat,
+    seatIndex: Number(seat.seatIndex)
+  }))
+}
 
 /**
  * Draws the hall.
@@ -300,6 +318,7 @@ async function onConfirm() {
 async function reload() {
   try {
     seatMap.value = await fetchSeatMap(scheduleId)
+    normaliseSeatIndexes()
     selected.value = []
     requestAnimationFrame(draw)
   } catch {
