@@ -62,6 +62,8 @@
     <module>maipiao-gateway</module>
     <module>maipiao-service/maipiao-user</module>
     <module>maipiao-service/maipiao-movie</module>
+    <module>maipiao-service/maipiao-seat</module>
+    <module>maipiao-service/maipiao-order</module>
   </modules>
 
   <dependencyManagement>
@@ -91,14 +93,23 @@
 
       <!-- ==================== Distributed transaction ==================== -->
       <!--
+        Seata's coordinates changed in 2.x: the groupId moved from `io.seata`
+        to `org.apache.seata`. Older 2.x artifacts still exist under the old
+        groupId, so a wrong groupId does not fail loudly at build time on every
+        mirror - it fails with "could not find artifact" and looks like a
+        repository problem.
+
         spring-cloud-starter-alibaba-seata bundles its own
-        seata-spring-boot-starter. We exclude that bundled one in each
-        service and pin the starter to ${seata.version} instead, so the
-        client always matches the server. Never add `seata-all` alongside
-        this starter - the two fight over the same classes.
+        seata-spring-boot-starter, which is not the version the server runs.
+        Services exclude it (both groupIds, in case the bundled one predates
+        the rename) and declare the starter explicitly here, pinned by
+        ${seata.version}, so client and server always match.
+
+        Never add `seata-all` alongside the starter - the two provide the same
+        classes and the resulting startup failure is not obviously about that.
       -->
       <dependency>
-        <groupId>io.seata</groupId>
+        <groupId>org.apache.seata</groupId>
         <artifactId>seata-spring-boot-starter</artifactId>
         <version>${seata.version}</version>
       </dependency>
