@@ -1,1 +1,2 @@
 com.maipiao.common.redis.config.RedisConfig
+com.maipiao.common.redis.config.SchedulerLockConfig

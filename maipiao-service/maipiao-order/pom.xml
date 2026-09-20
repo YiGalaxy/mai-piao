@@ -91,6 +91,20 @@
       <groupId>org.apache.rocketmq</groupId>
       <artifactId>rocketmq-spring-boot-starter</artifactId>
     </dependency>
+    <!--
+      必须显式声明。父 POM 把 starter 自带的 rocketmq-client 排除了（starter 会拖进
+      4.9.x），再由 dependencyManagement 统一钉到 5.3.1 —— 而 dependencyManagement
+      只是「管版本」，不负责把依赖加进来。少了这一条，starter 的类都在，
+      rocketmq-client 的类却一个都没有：编译能过（因为没引用到具体类型），
+      一运行就是说找不到 DefaultMQProducer。
+
+      钉到 5.x 是为了任意时刻的延时消息。4.9.x 的客户端只支持 broker 那 18 个
+      固定档位，最接近 15 分钟的是 20 分钟。
+    -->
+    <dependency>
+      <groupId>org.apache.rocketmq</groupId>
+      <artifactId>rocketmq-client</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>com.baomidou</groupId>

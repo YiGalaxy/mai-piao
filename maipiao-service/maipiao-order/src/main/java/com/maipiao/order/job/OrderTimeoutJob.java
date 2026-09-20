@@ -6,6 +6,7 @@ import com.maipiao.order.mapper.OrderMapper;
 import com.maipiao.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -24,9 +25,15 @@ import java.util.List;
  * 如果释放失败，订单仍然已经正确地取消了，对账任务之后可以把座位放掉；
  * 反过来做，则会在订单还自称可支付的时候，短暂地把座位显示成可选。
  *
- * <p>在更大的部署里，延迟消息本该是主触发器，这次清扫只是兜底。
- * 这里清扫是唯一的触发器，这样做更简单、少一个活动部件 ——
- * 一条延迟消息没能送达时，座位反正也要卡到这次清扫跑起来，所以两条路都还是需要它。
+ * <h3>它现在是兜底，不再是主路径</h3>
+ *
+ * <p>准时的那条路径是 {@code OrderTimeoutProducer} 投递的延时消息：订单到期那一刻
+ * 就送达，所以占用时长正好是配置里写的 15 分钟。这个任务每 60 秒才醒一次，
+ * 走它的话实际会占到 15 分 59 秒。
+ *
+ * <p>但兜底不等于「可以删」。消息会因为没有 broker、因为生产者在崩溃窗口里没发出去、
+ * 因为磁盘故障而消失，而「这个座位能不能放出来」不该押在一条消息上。
+ * 两条路各自覆盖对方的失败模式，缺一条，另一条就要独自承担它本来没打算承担的事。
  */
 @Slf4j
 @Component
@@ -40,6 +47,17 @@ public class OrderTimeoutJob {
     @Value("${maipiao.order.timeout-batch:200}")
     private int batchSize;
 
+    // lockAtMostFor 比任务本身可能花的时间宽裕得多：一轮最多 200 笔，
+    // 每笔几次数据库往返，正常是秒级。持锁实例要是直接死了，锁会在 5 分钟后自动放开，
+    // 而不是把后面所有实例一起挡住 —— 一个死掉的实例不该让这个任务永远不再运行。
+    //
+    // lockAtLeastFor 是下限，不是「略短于间隔」：任务跑完后锁不立即删除，
+    // 而是留到至少 10 秒之后再放开（实现上是把 TTL 改成剩余时间，而不是 DELETE）。
+    // 静止状态下它不起作用 —— 下一轮本来就是 60 秒之后。它真正管的是
+    // 间隔被调得很短的情况：那时没有它，锁会在实例之间被抢来抢去，
+    // 每一轮都换一个实例执行，日志会碎得没法读。
+    @SchedulerLock(name = "order-timeout-sweep",
+            lockAtMostFor = "PT5M", lockAtLeastFor = "PT10S")
     @Scheduled(fixedDelayString = "${maipiao.order.timeout-interval-ms:60000}")
     public void cancelExpiredOrders() {
         List<Order> expired = orderMapper.selectExpired(LocalDateTime.now(), batchSize);
@@ -71,6 +89,8 @@ public class OrderTimeoutJob {
      * <p>置为完成就是关上退款窗口的那个动作，所以它由场次的结束时间来驱动，
      * 而不是单靠一个定时器 —— 订单不能在它的场次还在放映时就变得不可退。
      */
+    @SchedulerLock(name = "order-complete-sweep",
+            lockAtMostFor = "PT5M", lockAtLeastFor = "PT10S")
     @Scheduled(fixedDelayString = "${maipiao.order.complete-interval-ms:300000}")
     public void completeFinishedOrders() {
         List<Order> finished = orderMapper.selectCompletable(

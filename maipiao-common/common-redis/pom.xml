@@ -37,5 +37,23 @@
       <groupId>org.redisson</groupId>
       <artifactId>redisson-spring-boot-starter</artifactId>
     </dependency>
+
+    <!--
+      ShedLock —— 只被 SchedulerLockConfig 用到，所以标成 optional：
+      这个模块被所有连 Redis 的服务依赖，而其中只有 order 和 pay 需要给定时任务加锁。
+      不标的话，每个服务都会平白多出一个定时任务锁框架。
+
+      order 和 pay 仍要各自声明这两个依赖 —— optional 不传递，这正是它的定义。
+    -->
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-spring</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-provider-redis-spring</artifactId>
+      <optional>true</optional>
+    </dependency>
   </dependencies>
 </project>

@@ -46,14 +46,18 @@ spring:
           min-idle: 2
 
   # ------------------------------------------------------------
-  # RocketMQ. The timeout-cancel message is the primary path for
-  # releasing seats; the scheduled sweep is the fallback.
+  # RocketMQ。
+  #
+  # 超时取消的延时消息是主路径，定时扫描是兜底。两者都存在是设计的一部分，
+  # 理由见 OrderTimeoutConsumer 的类注释 —— 简单说，消息负责准时，扫表负责一定。
   # ------------------------------------------------------------
 rocketmq:
   name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
   producer:
     group: maipiao-order-producer
     send-message-timeout: 5000
+    # 生产者自己重试两次。收到的是 broker 明确说没写成功的失败；
+    # 三次都没成功就往上抛，由 OrderTimeoutProducer 吞掉并记日志 —— 扫表会兜住。
     retry-times-when-send-failed: 2
 
 mybatis-plus:
@@ -67,30 +71,27 @@ mybatis-plus:
       id-type: assign_id
 
 # ============================================================
-# Seata client
+# Seata 客户端
 #
-# The TC address is configured directly rather than discovered through Nacos.
+# TC 的地址直接写死，而不是走 Nacos 发现。
 #
-# Why: the Seata server runs in a container and registers itself with the IP
-# it detects, which is the Docker-internal one. The services run on the host
-# and cannot route to 172.x.x.x, so Nacos discovery hands back an address that
-# is guaranteed unreachable:
+# 原因：Seata 服务端跑在容器里，注册上去的是它自己探测到的 IP，也就是容器内网地址。
+# 而各个服务跑在宿主机上，根本路由不到 172.x.x.x，于是 Nacos 发现返回的是一个
+# 保证连不上的地址：
 #     can not connect to [172.28.0.8:8091]
-# which reads like the TC is down when it is perfectly healthy.
+# 看起来像 TC 挂了，其实它健康得很。
 #
-# SEATA_IP is the documented way to override what gets registered, but it is
-# documented not to accept 127.0.0.1, and a host LAN address would be a
-# hard-coded value that changes with DHCP. Pointing the client straight at the
-# published port removes the problem instead of working around it.
+# SEATA_IP 是官方用来覆盖注册地址的变量，但官方文档明确说不接受 127.0.0.1；
+# 而写宿主机的局域网地址，会变成一个随 DHCP 变化的硬编码值。
+# 让客户端直接连映射出来的端口，是把问题去掉，而不是绕开它。
 #
-# To switch back to discovery once the services also run in Docker, change
-# registry.type to `nacos` and drop the grouplist.
+# 等哪天服务也搬进 Docker，把 registry.type 改回 `nacos`、删掉 grouplist 即可。
 # ============================================================
 seata:
   enabled: true
   application-id: ${spring.application.name}
-  # Must match service.vgroupMapping on the server, or startup fails with
-  # "can not get cluster name in registry config".
+  # 必须和服务端的 service.vgroupMapping 对上，否则启动就报
+  # "can not get cluster name in registry config"。
   tx-service-group: maipiao_tx_group
   enable-auto-data-source-proxy: true
   service:
@@ -108,6 +109,10 @@ maipiao:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
   order:
     lock-minutes: 15
+    # 延时消息的 topic 与消费者组。写成可配的，是为了让压测能把它们指到别处，
+    # 不和生产用的队列互相干扰。
+    timeout-topic: ${MAIPIAO_ORDER_TIMEOUT_TOPIC:maipiao-order-timeout}
+    timeout-consumer-group: ${MAIPIAO_ORDER_TIMEOUT_GROUP:maipiao-order-timeout-consumer}
 
 springdoc:
   api-docs:
