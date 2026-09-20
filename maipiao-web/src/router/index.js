@@ -24,6 +24,24 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/checkout',
+    name: 'checkout',
+    component: () => import('../views/CheckoutView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/orders',
+    name: 'orders',
+    component: () => import('../views/OrderListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/orders/:orderNo',
+    name: 'order-detail',
+    component: () => import('../views/OrderDetailView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('../views/LoginView.vue'),
