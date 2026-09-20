@@ -41,6 +41,8 @@ public class SeatBitmapService {
             LuaScriptLoader.ofList("lua/seat_map_query.lua");
     private static final RedisScript<Long> VERIFY_SCRIPT =
             LuaScriptLoader.ofLong("lua/seat_verify.lua");
+    private static final RedisScript<List> ALLOCATE_SCRIPT =
+            LuaScriptLoader.ofList("lua/seat_allocate.lua");
 
     private final StringRedisTemplate redis;
 
@@ -66,7 +68,7 @@ public class SeatBitmapService {
      * @return success with the number claimed, or a conflict naming the first
      *         seat that was already taken
      */
-    public LockResult lock(Long sessionId, String orderNo,
+    public LockResult lock(Long sessionId, String orderNo, int totalSeat,
                            List<Integer> seatIndexes, Duration ttl) {
 
         if (seatIndexes == null || seatIndexes.isEmpty()) {
@@ -77,11 +79,13 @@ public class SeatBitmapService {
                 CommonConstants.SEAT_MAP_KEY + sessionId,
                 CommonConstants.SEAT_OWNER_KEY + sessionId,
                 CommonConstants.SEAT_DELAY_KEY + sessionId,
-                CommonConstants.SEAT_ORDER_KEY + orderNo);
+                CommonConstants.SEAT_ORDER_KEY + orderNo,
+                CommonConstants.SOLD_OUT_KEY + sessionId);
 
-        List<String> args = new ArrayList<>(seatIndexes.size() + 2);
+        List<String> args = new ArrayList<>(seatIndexes.size() + 3);
         args.add(orderNo);
         args.add(String.valueOf(System.currentTimeMillis() + ttl.toMillis()));
+        args.add(String.valueOf(totalSeat));
         for (Integer index : seatIndexes) {
             args.add(String.valueOf(index));
         }
@@ -104,6 +108,94 @@ public class SeatBitmapService {
 
         log.debug("seat conflict: schedule={}, order={}, seatIndex={}", sessionId, orderNo, value);
         return LockResult.conflict((int) value);
+    }
+
+    // ------------------------------------------------------------
+    // allocate
+    // ------------------------------------------------------------
+
+    /** Outcome of an allocation attempt. */
+    public record AllocateResult(boolean success, List<Integer> seatIndexes, int longestFreeRun) {
+
+        public static AllocateResult ok(List<Integer> seatIndexes) {
+            return new AllocateResult(true, seatIndexes, seatIndexes.size());
+        }
+
+        public static AllocateResult noRun(int longestFreeRun) {
+            return new AllocateResult(false, List.of(), longestFreeRun);
+        }
+    }
+
+    /**
+     * Takes seats from a ranked list of candidate runs.
+     *
+     * <p>The candidates come from {@link SeatRuns} and are a snapshot: between
+     * computing them and running this, somebody else may have taken one of the
+     * seats. The script re-checks every bit itself, so a stale candidate can
+     * only ever cost a retry, never a double sale. That is the whole reason the
+     * geometry is allowed to live outside the atomic section.
+     *
+     * @param runs     candidate runs, best first; each must be adjacent in both
+     *                 index and geometry, which is what {@link SeatRuns}
+     *                 produces
+     * @param adjacent whether the seats must come from within one run, or may
+     *                 be picked from anywhere in the candidate order
+     */
+    public AllocateResult allocate(Long sessionId, String orderNo, int count, int totalSeat,
+                                   List<SeatRuns.Segment> runs, boolean adjacent, Duration ttl) {
+
+        if (count < 1 || runs == null || runs.isEmpty()) {
+            return AllocateResult.noRun(0);
+        }
+
+        List<String> keys = List.of(
+                CommonConstants.SEAT_MAP_KEY + sessionId,
+                CommonConstants.SEAT_OWNER_KEY + sessionId,
+                CommonConstants.SEAT_DELAY_KEY + sessionId,
+                CommonConstants.SEAT_ORDER_KEY + orderNo,
+                CommonConstants.SOLD_OUT_KEY + sessionId);
+
+        List<String> args = new ArrayList<>(5 + runs.size() * 2);
+        args.add(orderNo);
+        args.add(String.valueOf(System.currentTimeMillis() + ttl.toMillis()));
+        args.add(String.valueOf(count));
+        args.add(String.valueOf(totalSeat));
+        args.add(adjacent ? "1" : "0");
+        for (SeatRuns.Segment run : runs) {
+            args.add(String.valueOf(run.startIndex()));
+            args.add(String.valueOf(run.length()));
+        }
+
+        List<?> result = execute(ALLOCATE_SCRIPT, keys, args);
+        if (result == null || result.isEmpty()) {
+            log.error("unexpected allocate script result: {}", result);
+            throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE);
+        }
+
+        if (toLong(result.get(0)) != 1L) {
+            int longest = result.size() < 2 ? 0 : (int) toLong(result.get(1));
+            log.info("could not assign {} seats (adjacent={}): schedule={}, longest run={}",
+                    count, adjacent, sessionId, longest);
+            return AllocateResult.noRun(longest);
+        }
+
+        // The script reports the seats it took rather than a starting point,
+        // precisely because in split mode there is no starting point that
+        // implies the rest.
+        List<Integer> seatIndexes = new ArrayList<>(result.size() - 1);
+        for (int i = 1; i < result.size(); i++) {
+            seatIndexes.add((int) toLong(result.get(i)));
+        }
+
+        if (seatIndexes.size() != count) {
+            log.error("allocate returned {} seats for a request of {}: {}",
+                    seatIndexes.size(), count, seatIndexes);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "分配结果与请求数量不一致");
+        }
+
+        log.debug("seats assigned: schedule={}, order={}, count={}, seats={}",
+                sessionId, orderNo, count, seatIndexes);
+        return AllocateResult.ok(seatIndexes);
     }
 
     // ------------------------------------------------------------
@@ -164,7 +256,8 @@ public class SeatBitmapService {
                 CommonConstants.SEAT_MAP_KEY + sessionId,
                 CommonConstants.SEAT_OWNER_KEY + sessionId,
                 CommonConstants.SEAT_DELAY_KEY + sessionId,
-                CommonConstants.SEAT_ORDER_KEY + orderNo);
+                CommonConstants.SEAT_ORDER_KEY + orderNo,
+                CommonConstants.SOLD_OUT_KEY + sessionId);
 
         Long released = execute(RELEASE_SCRIPT, keys, List.of(orderNo, force ? "1" : "0"));
         int count = released == null ? 0 : released.intValue();

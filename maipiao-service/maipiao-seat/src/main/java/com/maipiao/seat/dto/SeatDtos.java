@@ -1,5 +1,7 @@
 package com.maipiao.seat.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -48,6 +50,51 @@ public final class SeatDtos {
     public record LockConflictResponse(
             int conflictSeatIndex,
             String conflictSeatLabel,
+            String message
+    ) {
+    }
+
+    /**
+     * Ask the system for seats rather than naming them.
+     *
+     * <p>No seat indexes: the buyer picks a band and a quantity, which is the
+     * whole point of the mode - there is no map on screen to pick from.
+     *
+     * <p>{@code adjacent} defaults to true and is what separates "two seats" from
+     * "two seats together". A caller that would rather have split seats than
+     * none sets it false; the client offers that as an explicit choice after a
+     * failure, never silently.
+     */
+    public record AssignSeatRequest(
+            @NotNull(message = "场次不能为空")
+            Long scheduleId,
+
+            @NotNull(message = "请选择票档")
+            Long tierId,
+
+            @NotNull(message = "请选择数量")
+            @Min(value = 1, message = "至少购买 1 张")
+            @Max(value = 6, message = "一次最多购买 6 张")
+            Integer quantity,
+
+            Boolean adjacent
+    ) {
+        public boolean wantsAdjacent() {
+            return adjacent == null || adjacent;
+        }
+    }
+
+    /**
+     * An allocation that found no run of that length.
+     *
+     * <p>Separate from a plain conflict because it is a different situation
+     * with a different remedy: nothing was taken and nothing is broken, the
+     * band simply cannot seat that many together. {@code longestRun} is what
+     * the caller offers as the alternative.
+     */
+    public record NotAdjacentResponse(
+            int requested,
+            int longestRun,
             String message
     ) {
     }

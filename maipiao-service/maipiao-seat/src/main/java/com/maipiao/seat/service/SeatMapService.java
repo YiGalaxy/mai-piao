@@ -45,6 +45,12 @@ public class SeatMapService {
     private final SeatBitmapService seatBitmapService;
     private final ObjectMapper objectMapper;
 
+    /** Sessions whose seats the buyer picks. */
+    private static final int SEAT_MODE_SELF = 0;
+
+    /** Sessions where the system hands out seats from a price band. */
+    private static final int SEAT_MODE_ASSIGNED = 1;
+
     @Value("${maipiao.seat.lock-minutes:15}")
     private int lockMinutes;
 
@@ -216,13 +222,14 @@ public class SeatMapService {
 
         // Ensure the bitmap exists before locking against it, otherwise the
         // lock script would happily claim seats that the ledger says are sold.
-        loadOccupiedIndexes(sessionId, toInt(schedule.get("totalSeat")));
+        int totalSeat = toInt(schedule.get("totalSeat"));
+        loadOccupiedIndexes(sessionId, totalSeat);
 
         String lockToken = SnowflakeIdGenerator.nextString();
         Duration ttl = Duration.ofMinutes(lockMinutes);
 
         SeatBitmapService.LockResult result =
-                seatBitmapService.lock(sessionId, lockToken, seatIndexes, ttl);
+                seatBitmapService.lock(sessionId, lockToken, totalSeat, seatIndexes, ttl);
 
         if (!result.success()) {
             String label = labelOfSeat(sessionId, result.conflictSeatIndex());
@@ -242,6 +249,109 @@ public class SeatMapService {
                 labelsOfSeats(sessionId, seatIndexes),
                 amount,
                 (int) ttl.getSeconds());
+    }
+
+    /**
+     * Hands out seats for a session that does not let the buyer choose.
+     *
+     * <p>The buyer names a band and a quantity; the seats are picked here. Same
+     * result as {@link #lockSeats} - a hold, a token, a price - so everything
+     * downstream of it, from the order transaction to the refund, is unchanged.
+     * Locking and allocating are two ways to arrive at a held seat, not two
+     * kinds of seat.
+     *
+     * <p>Refuses when no run of the requested length exists rather than
+     * splitting the party up. "Two seats" and "two seats together" are
+     * different promises and quietly substituting one for the other is the kind
+     * of thing a customer discovers at the venue. The caller is told how many
+     * could sit together so it can offer a real choice.
+     */
+    public SeatDtos.LockSeatResponse assignSeats(SeatDtos.AssignSeatRequest request, Long userId) {
+        Long sessionId = request.scheduleId();
+        int quantity = request.quantity();
+
+        Map<String, Object> schedule = seatQueryMapper.selectScheduleDetail(sessionId);
+        if (schedule == null) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
+        }
+        if (toInt(schedule.get("status")) != 1) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_ON_SALE);
+        }
+        if (toInt(schedule.get("seatMode")) != SEAT_MODE_ASSIGNED) {
+            // A pick-your-own session has no band to allocate from; asking for
+            // one is a client mistake, and guessing which seats it meant would
+            // be worse than saying so.
+            throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "该场次需要自行选座");
+        }
+
+        int totalSeat = toInt(schedule.get("totalSeat"));
+
+        // Build the bitmap from the ledger first if it is cold. Skipping this
+        // would hand out seats the ledger already knows are sold - the script
+        // only sees bits, and on an unbuilt bitmap every bit reads as free.
+        loadOccupiedIndexes(sessionId, totalSeat);
+
+        Integer limit = toInt(schedule.get("purchaseLimit"));
+        if (limit > 0 && quantity > limit) {
+            throw new BizException(ErrorCode.SEAT_INDEX_INVALID,
+                    "该场次每单最多购买 " + limit + " 张");
+        }
+
+        List<SeatRuns.SeatRef> band = seatsOfTier(sessionId, request.tierId());
+        if (band.isEmpty()) {
+            throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "票档下没有可用座位");
+        }
+
+        // Adjacent runs are what the buyer is promised, so they are what gets
+        // ranked and offered first. The split pass reuses the identical run
+        // list but tells the script to ignore the boundaries and simply take
+        // the first free seats - same candidates, same atomic take, and no
+        // second code path that could disagree about which seats are free.
+        List<SeatRuns.Segment> runs = SeatRuns.plan(band);
+        boolean adjacent = request.wantsAdjacent();
+
+        Duration ttl = Duration.ofMinutes(lockMinutes);
+        String lockToken = SnowflakeIdGenerator.nextString();
+
+        SeatBitmapService.AllocateResult result = seatBitmapService.allocate(
+                sessionId, lockToken, quantity, totalSeat, runs, adjacent, ttl);
+
+        if (!result.success()) {
+            if (adjacent) {
+                throw new BizException(ErrorCode.SEAT_NOT_ADJACENT,
+                        "该票档已无 " + quantity + " 个连座，最多可提供 "
+                                + result.longestFreeRun() + " 个连座");
+            }
+            // Split seats also ran out, so this is stock rather than geometry.
+            throw new BizException(ErrorCode.SEAT_OCCUPIED, "该票档余票不足");
+        }
+
+        List<Integer> seatIndexes = result.seatIndexes();
+        BigDecimal amount = priceOf(sessionId, seatIndexes).total();
+
+        log.info("seats assigned: schedule={}, user={}, token={}, tier={}, count={}, amount={}",
+                sessionId, userId, lockToken, request.tierId(), quantity, amount);
+
+        return new SeatDtos.LockSeatResponse(
+                lockToken,
+                sessionId,
+                seatIndexes,
+                labelsOfSeats(sessionId, seatIndexes),
+                amount,
+                (int) ttl.getSeconds());
+    }
+
+    /** The seats of one price band, as positions the run planner can sort. */
+    private List<SeatRuns.SeatRef> seatsOfTier(Long sessionId, Long tierId) {
+        List<SeatRuns.SeatRef> band = new ArrayList<>();
+        for (Map<String, Object> row : seatQueryMapper.selectSeatLayout(sessionId)) {
+            Long seatTier = toLong(row.get("tierId"));
+            if (seatTier != null && seatTier.equals(tierId)) {
+                band.add(new SeatRuns.SeatRef(toInt(row.get("seatIndex")),
+                        toInt(row.get("rowNum")), toInt(row.get("colNum"))));
+            }
+        }
+        return band;
     }
 
     /**

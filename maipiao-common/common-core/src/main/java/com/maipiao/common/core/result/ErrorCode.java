@@ -39,6 +39,15 @@ public enum ErrorCode {
     SCHEDULE_SOLD_OUT(10007, "sold out"),
     SCHEDULE_STOCK_NOT_ENOUGH(10008, "not enough seats left"),
     SEAT_MAP_UNAVAILABLE(10009, "seat service unavailable, please retry later"),
+    /**
+     * No run of the requested length in the band.
+     *
+     * <p>Distinct from {@link #SEAT_OCCUPIED} because nothing was taken and
+     * nothing failed: the band simply cannot seat that many together. The
+     * client answers it by offering to split the party, which is a choice the
+     * buyer makes, not one the server makes for them.
+     */
+    SEAT_NOT_ADJACENT(10010, "no adjacent seats available in this price tier"),
 
     // ---------------- order (20xxx) ----------------
     ORDER_NOT_FOUND(20001, "order not found"),

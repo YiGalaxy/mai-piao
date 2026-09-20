@@ -11,10 +11,12 @@
 -- KEYS[2] = seat:owner:{scheduleId}    hash, field = seat_index, value = orderNo
 -- KEYS[3] = seat:delay:{scheduleId}    zset, member = orderNo, score = expiry millis
 -- KEYS[4] = seat:order:{orderNo}       set of seat indexes held by this order
+-- KEYS[5] = sold_out:{scheduleId}      set when the last seat goes
 --
 -- ARGV[1] = orderNo
 -- ARGV[2] = lock expiry, epoch millis
--- ARGV[3..] = seat indexes to lock
+-- ARGV[3] = total seats in the session, for the sold-out decision
+-- ARGV[4..] = seat indexes to lock
 --
 -- Returns {1, lockedCount} on success, or {0, conflictingSeatIndex} when any
 -- requested seat is already taken. The conflicting index lets the client
@@ -25,11 +27,13 @@ local mapKey   = KEYS[1]
 local ownerKey = KEYS[2]
 local delayKey = KEYS[3]
 local orderKey = KEYS[4]
+local soldKey  = KEYS[5]
 
-local orderNo  = ARGV[1]
-local expireTs = tonumber(ARGV[2])
+local orderNo   = ARGV[1]
+local expireTs  = tonumber(ARGV[2])
+local totalSeat = tonumber(ARGV[3])
 
-local firstSeat = 3
+local firstSeat = 4
 local lastSeat  = #ARGV
 local wanted    = lastSeat - firstSeat + 1
 
@@ -64,5 +68,13 @@ end
 -- timeout path is the delay zset below; this only bounds the damage.
 redis.call('EXPIRE', orderKey, 7200)
 redis.call('ZADD', delayKey, expireTs, orderNo)
+
+-- Sold out is derived from the same bits this script just wrote, so it cannot
+-- drift out of step with them the way a separate counter would, and it
+-- self-heals when the bitmap is rebuilt from the ledger. seat_release.lua
+-- clears it again when a seat comes back.
+if totalSeat > 0 and redis.call('BITCOUNT', mapKey) >= totalSeat then
+    redis.call('SET', soldKey, '1')
+end
 
 return {1, wanted}
