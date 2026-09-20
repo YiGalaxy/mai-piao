@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -147,30 +148,48 @@ public class SeatMapService {
      * Rebuilds the bitmap and the owner markers from
      * {@code t_event_session_seat}.
      *
-     * <p>The owner markers matter as much as the bits: the release script
-     * refuses to clear a seat whose owner does not match, so a bitmap rebuilt
-     * without them would be permanently unable to free a sold seat.
+     * <p>The owner markers matter as much as the bits, and for both kinds of
+     * occupancy. The release script refuses to clear a seat whose owner does
+     * not match the order asking, so a rebuilt seat rebuilt without its owner
+     * can never be freed by anyone - the bit stays set and the seat is dead.
+     * That applies to held seats as much as sold ones, and a held seat is the
+     * more common case: on a screening that has been open a while there are
+     * usually more unpaid holds than sales.
+     *
+     * <p>Sold seats are marked {@code SOLD:} so the release path can refuse to
+     * put a paid-for seat back on sale; held seats carry their order number
+     * plainly, which is what makes them releasable again.
      */
     private List<Integer> rebuildFromLedger(Long sessionId, int totalSeat) {
         List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(sessionId);
 
         List<Integer> indexes = new ArrayList<>(rows.size());
-        List<String> soldIndexes = new ArrayList<>();
+        Map<String, String> owners = new HashMap<>();
 
         for (Map<String, Object> row : rows) {
             int index = toInt(row.get("seatIndex"));
             indexes.add(index);
-            // status 2 = sold; status 1 = locked by an unpaid order
-            if (toInt(row.get("status")) == 2) {
-                soldIndexes.add(String.valueOf(index));
+
+            String orderNo = str(row.get("orderNo"));
+            if (orderNo.isEmpty()) {
+                // Occupied with nobody named. Should not happen - the ledger
+                // always records one or the other - but leaving the seat
+                // unowned is no worse than guessing, and it stays visible.
+                log.warn("occupied seat has no order in the ledger: schedule={}, index={}",
+                        sessionId, index);
+                continue;
             }
+
+            // status 2 = sold; status 1 = locked by an unpaid order
+            owners.put(String.valueOf(index),
+                    toInt(row.get("status")) == 2 ? "SOLD:" + orderNo : orderNo);
         }
 
         seatBitmapService.rebuild(sessionId, indexes);
-        seatBitmapService.markSoldOwners(sessionId, soldIndexes, "REBUILT");
+        seatBitmapService.markOwners(sessionId, owners);
 
-        log.info("seat bitmap rebuilt from ledger: schedule={}, total={}, occupied={}, sold={}",
-                sessionId, totalSeat, indexes.size(), soldIndexes.size());
+        log.info("seat bitmap rebuilt from ledger: schedule={}, total={}, occupied={}, owned={}",
+                sessionId, totalSeat, indexes.size(), owners.size());
 
         return indexes;
     }
@@ -245,6 +264,20 @@ public class SeatMapService {
     /** Called by order-service after payment succeeds (G2). */
     public void confirmSeats(Long sessionId, String orderNo) {
         seatBitmapService.confirm(sessionId, orderNo);
+    }
+
+    /**
+     * Called by order-service before it opens G1.
+     *
+     * <p>A lock token is a plain identifier with no expiry attached, so on its
+     * own it stays usable after the hold behind it has lapsed. Asking here is
+     * what turns it back into evidence of a hold.
+     */
+    public boolean verifyOwnership(Long sessionId, String orderNo, List<Integer> seatIndexes) {
+        if (orderNo == null || orderNo.isBlank()) {
+            return false;
+        }
+        return seatBitmapService.verifyOwnership(sessionId, orderNo, seatIndexes);
     }
 
     // ------------------------------------------------------------

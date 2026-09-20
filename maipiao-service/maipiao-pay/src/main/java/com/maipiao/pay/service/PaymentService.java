@@ -10,7 +10,6 @@ import com.maipiao.pay.entity.Refund;
 import com.maipiao.pay.feign.OrderClient;
 import com.maipiao.pay.mapper.PaymentMapper;
 import com.maipiao.pay.mapper.RefundMapper;
-import io.seata.spring.annotation.GlobalTransactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +44,7 @@ public class PaymentService {
     private final PaymentChannelFactory channelFactory;
     private final NotifyLogService notifyLogService;
     private final OrderClient orderClient;
+    private final PaymentTxService paymentTxService;
 
     @Value("${maipiao.pay.payment-minutes:15}")
     private int paymentMinutes;
@@ -144,11 +144,24 @@ public class PaymentService {
         }
 
         try {
+            // The transactional half lives in PaymentTxService, reached through
+            // its proxy. Calling it here directly would bypass the proxy and
+            // quietly drop the global transaction - see that class.
             boolean success = notify.isSuccess()
-                    ? markPaid(notify)
-                    : markFailed(notify);
+                    ? paymentTxService.markPaid(notify)
+                    : paymentTxService.markFailed(notify);
             notifyLogService.markProcessed(record.logId(),
                     success ? 1 : 0, success ? "handled" : "ignored");
+
+            if (success && notify.isSuccess()) {
+                // After the transaction, never inside it: Redis cannot be
+                // rolled back, so a marker written within would outlive a
+                // rollback and pin the seat as sold with nothing behind it.
+                // Best-effort - a failure here is logged, not fatal, because
+                // the payment and the order are already correct.
+                confirmSeatHold(notify.orderNo());
+            }
+
             return channel.successResponse();
         } catch (Exception e) {
             log.error("callback handling failed: paymentNo={}", notify.paymentNo(), e);
@@ -158,108 +171,19 @@ public class PaymentService {
     }
 
     /**
-     * Applies a successful callback.
+     * Marks the Redis seat hold as sold once the money has landed.
      *
-     * <p>Returns {@code false} when there was nothing to do - which is a
-     * success from the provider's point of view, and must be answered as one,
-     * or it will keep retrying a callback that has already been applied.
+     * <p>Kept out of the global transaction on purpose. The seat bit is already
+     * set, so a missed marker does not oversell anything; what it would lose is
+     * the distinction between a hold and a sale, which is what stops a later
+     * release from putting a paid-for seat back on sale.
      */
-    @GlobalTransactional(name = "pay-success-ticket", rollbackFor = Exception.class, timeoutMills = 30000)
-    protected boolean markPaid(PaymentChannel.NotifyResult notify) {
-
-        // ---- L2: the state CAS ----
-        int rows = paymentMapper.casPaySuccess(
-                notify.paymentNo(), notify.channelTradeNo(), notify.amount(),
-                LocalDateTime.now());
-
-        if (rows == 0) {
-            return handleCasMiss(notify);
+    private void confirmSeatHold(String orderNo) {
+        try {
+            orderClient.confirmSeats(orderNo);
+        } catch (Exception e) {
+            log.error("could not confirm seat hold after payment: orderNo={}", orderNo, e);
         }
-
-        // ---- G2: order paid, then tickets issued ----
-        orderClient.markPaid(notify.orderNo(), LocalDateTime.now());
-        orderClient.issueTickets(notify.orderNo(), notify.paymentNo());
-
-        log.info("payment succeeded: paymentNo={}, orderNo={}, amount={}",
-                notify.paymentNo(), notify.orderNo(), notify.amount());
-        return true;
-    }
-
-    /**
-     * Works out why the CAS matched nothing.
-     *
-     * <p>Five distinct situations hide behind "0 rows changed", and they need
-     * four different responses. The one that matters most is {@code LATE_PAY}:
-     * the money arrived after the order was cancelled, and it must be given
-     * back rather than kept.
-     */
-    private boolean handleCasMiss(PaymentChannel.NotifyResult notify) {
-        Payment payment = paymentMapper.selectByPaymentNo(notify.paymentNo());
-
-        if (payment == null) {
-            // A callback for a payment we have no record of. Worth shouting
-            // about: it means either a bug or someone forging callbacks.
-            log.error("callback for unknown payment: paymentNo={}", notify.paymentNo());
-            return false;
-        }
-
-        if (payment.getStatus() == Payment.STATUS_SUCCESS) {
-            boolean sameTrade = notify.channelTradeNo() != null
-                    && notify.channelTradeNo().equals(payment.getChannelTradeNo());
-            boolean sameAmount = notify.amount() != null
-                    && notify.amount().compareTo(payment.getAmount()) == 0;
-
-            if (sameTrade && sameAmount) {
-                // A plain repeat. Nothing to do, and the provider should stop
-                // retrying, so this is reported as handled.
-                log.debug("duplicate callback: paymentNo={}", notify.paymentNo());
-                return true;
-            }
-            // Already paid, but for a different trade or amount than the one
-            // being reported. Something is wrong upstream.
-            log.error("payment already succeeded with different details: paymentNo={}, "
-                            + "recordedTrade={}, notifiedTrade={}, recordedAmount={}, notifiedAmount={}",
-                    notify.paymentNo(), payment.getChannelTradeNo(), notify.channelTradeNo(),
-                    payment.getAmount(), notify.amount());
-            return false;
-        }
-
-        if (payment.getStatus() == Payment.STATUS_CLOSED) {
-            // The dangerous case: the payment window expired, the order was
-            // cancelled and the seats went back on sale, and the user paid
-            // anyway. The money must be returned - keeping it would leave
-            // someone charged for tickets that do not exist.
-            log.warn("payment arrived after close, refunding: paymentNo={}, orderNo={}",
-                    notify.paymentNo(), payment.getOrderNo());
-            refundMapper.insertIfAbsent(
-                    SnowflakeIdGenerator.next(),
-                    SnowflakeIdGenerator.nextString(),
-                    payment.getPaymentNo(),
-                    payment.getOrderNo(),
-                    payment.getUserId(),
-                    payment.getChannel(),
-                    payment.getAmount(),
-                    Refund.REASON_TIME_OUT_PAID,
-                    // Never release the seats: they were released when the
-                    // order timed out, and doing it again would decrement a
-                    // counter that no longer refers to them.
-                    0);
-            return true;
-        }
-
-        // Amount mismatch or an unexpected state. Not something to accept.
-        log.warn("callback could not be applied: paymentNo={}, status={}",
-                notify.paymentNo(), payment.getStatus());
-        return false;
-    }
-
-    /** Applies a failed callback. Never overwrites a success. */
-    private boolean markFailed(PaymentChannel.NotifyResult notify) {
-        int rows = paymentMapper.casPayFailed(notify.paymentNo());
-        if (rows == 0) {
-            log.debug("failure callback ignored, payment not open: paymentNo={}", notify.paymentNo());
-        }
-        return true;
     }
 
     // ============================================================

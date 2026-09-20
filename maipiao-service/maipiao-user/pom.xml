@@ -61,6 +61,36 @@
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
     </dependency>
+
+    <!--
+      Distributed transaction, as a branch participant.
+
+      Coupon locking is a G1 branch: the coupon is held for the order, and if
+      the order fails it has to come back. Without the client here the hold is a
+      local transaction that commits on its own, so a failed order leaves the
+      coupon locked against an order that does not exist - the customer keeps a
+      coupon they cannot use and the failure looks like nothing went wrong.
+
+      Same exclusion dance as maipiao-order; see the comment there.
+    -->
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>io.seata</groupId>
+          <artifactId>seata-spring-boot-starter</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.seata</groupId>
+          <artifactId>seata-spring-boot-starter</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.seata</groupId>
+      <artifactId>seata-spring-boot-starter</artifactId>
+    </dependency>
   </dependencies>
 
   <build>
