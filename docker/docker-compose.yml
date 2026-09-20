@@ -1,5 +1,5 @@
 # ============================================================
-# Maoyan Ticket - Infrastructure
+# Maipiao Ticket - Infrastructure
 # Middleware for local development ONLY.
 # Passwords here are dev-only, never use in production.
 #
@@ -7,6 +7,22 @@
 #   nacos 512m | mysql 512m | redis 128m
 #   rocketmq namesrv 256m + broker 1g | seata 512m
 # ============================================================
+
+# Explicit project name.
+#
+# Without this, Compose derives the name from the directory ("docker") and it
+# collides with every other project that also keeps its compose file in a
+# folder called `docker`. Volumes, networks and containers all get prefixed
+# with the project name, so two projects sharing one silently share resources -
+# and `docker compose down --remove-orphans` in one project will delete
+# containers belonging to the other.
+#
+# That is not hypothetical: it is exactly what happened here. The volume
+# `docker_rabbitmq-data`, created 2026-08-13 by a different project, has
+# com.docker.compose.project=docker on it.
+#
+# Always give a compose project a unique name. Override with -p if needed.
+name: maipiao
 
 services:
 
@@ -18,7 +34,7 @@ services:
   # ---------------------------------------------------------
   mysql:
     image: mysql:8.0
-    container_name: maoyan-mysql
+    container_name: maipiao-mysql
     restart: unless-stopped
     ports:
       # Host port 3309, NOT 3306: this machine already runs a native MySQL
@@ -26,7 +42,7 @@ services:
       # Override with MYSQL_PORT in .env if that ever collides too.
       - "${MYSQL_PORT:-3309}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: maoyan123
+      MYSQL_ROOT_PASSWORD: maipiao123
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -38,13 +54,13 @@ services:
       - mysql-data:/var/lib/mysql
       - ../docs/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pmaoyan123"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pmaipiao123"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
     networks:
-      - maoyan-net
+      - maipiao-net
 
   # ---------------------------------------------------------
   # Redis 7 - seat bitmap, queue (ZSet), inventory, cache
@@ -52,7 +68,7 @@ services:
   # ---------------------------------------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: maoyan-redis
+    container_name: maipiao-redis
     restart: unless-stopped
     ports:
       # Host port 6381: 6379 is taken by another project's xtdp-redis container,
@@ -65,7 +81,7 @@ services:
       - --appendfsync
       - everysec
       - --requirepass
-      - maoyan123
+      - maipiao123
       - --maxmemory
       - 512mb
       - --maxmemory-policy
@@ -73,12 +89,12 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "maoyan123", "ping"]
+      test: ["CMD", "redis-cli", "-a", "maipiao123", "ping"]
       interval: 10s
       timeout: 5s
       retries: 12
     networks:
-      - maoyan-net
+      - maipiao-net
 
   # ---------------------------------------------------------
   # Nacos 2.4.3 - service discovery + config center
@@ -88,7 +104,7 @@ services:
   # ---------------------------------------------------------
   nacos:
     image: nacos/nacos-server:v2.4.3
-    container_name: maoyan-nacos
+    container_name: maipiao-nacos
     restart: unless-stopped
     ports:
       # Host ports 8858/9858: 8848 and 9848 are taken by another project's
@@ -116,7 +132,7 @@ services:
       retries: 12
       start_period: 60s
     networks:
-      - maoyan-net
+      - maipiao-net
 
   # ---------------------------------------------------------
   # RocketMQ 5.3.1 - nameserver + broker
@@ -125,22 +141,28 @@ services:
   # ---------------------------------------------------------
   rocketmq-namesrv:
     image: apache/rocketmq:5.3.1
-    container_name: maoyan-rocketmq-namesrv
+    container_name: maipiao-rocketmq-namesrv
     restart: unless-stopped
     ports:
       - "9876:9876"
     environment:
       JAVA_OPT_EXT: "-Xms256m -Xmx256m -Xmn128m"
       TZ: Asia/Shanghai
-    command: sh mqnamesrv
+    # The image's entrypoint (docker-entrypoint.sh) dispatches on the FIRST
+    # argument: `nameserver` -> exec ./mqnamesrv, `broker` -> exec ./mqbroker.
+    # Writing `sh mqnamesrv` here falls through to its else-branch, which runs
+    # the script with $0 set to the relative name `mqnamesrv`. The script then
+    # fails to resolve ROCKETMQ_HOME from $0 and the broker dies on startup
+    # with an opaque NPE. Use the bare role name.
+    command: nameserver
     volumes:
-      - rocketmq-namesrv-logs:/home/rocketmq/logs
+      - ./data/rocketmq/namesrv-logs:/home/rocketmq/logs
     networks:
-      - maoyan-net
+      - maipiao-net
 
   rocketmq-broker:
     image: apache/rocketmq:5.3.1
-    container_name: maoyan-rocketmq-broker
+    container_name: maipiao-rocketmq-broker
     restart: unless-stopped
     depends_on:
       - rocketmq-namesrv
@@ -153,11 +175,21 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.1/conf/broker.conf:ro
-      - rocketmq-broker-store:/home/rocketmq/store
-      - rocketmq-broker-logs:/home/rocketmq/logs
-    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.1/conf/broker.conf
+      # Bind mounts, not named volumes.
+      #
+      # A named volume is created as root:root, but this image runs as the
+      # `rocketmq` user - it cannot write to /home/rocketmq/store or /logs, so
+      # the broker dies during startup without ever managing to log why
+      # (the log directory itself is unwritable). Bind mounts inherit the
+      # host's permission model on Docker Desktop and avoid the whole problem.
+      - ./data/rocketmq/store:/home/rocketmq/store
+      - ./data/rocketmq/logs:/home/rocketmq/logs
+    # See the note on namesrv's command: `broker` is the entrypoint's dispatch
+    # keyword, not a shell invocation. -n is passed explicitly rather than
+    # relying on NAMESRV_ADDR being picked up by the startup script.
+    command: broker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-5.3.1/conf/broker.conf
     networks:
-      - maoyan-net
+      - maipiao-net
 
   # ---------------------------------------------------------
   # Seata 2.2.0 - distributed transaction coordinator
@@ -169,7 +201,7 @@ services:
   # ---------------------------------------------------------
   seata:
     image: apache/seata-server:2.2.0
-    container_name: maoyan-seata
+    container_name: maipiao-seata
     restart: unless-stopped
     depends_on:
       - nacos
@@ -181,7 +213,9 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./config/seata/application.yml:/seata-server/resources/application.yml:ro
-      - seata-data:/seata-server/sessionStore
+      # Bind mount for the same reason as RocketMQ: a root-owned named volume
+      # is not writable by the image's non-root user.
+      - ./data/seata/sessionStore:/seata-server/sessionStore
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:7091/health"]
       interval: 15s
@@ -189,17 +223,17 @@ services:
       retries: 12
       start_period: 45s
     networks:
-      - maoyan-net
+      - maipiao-net
 
 networks:
-  maoyan-net:
+  maipiao-net:
     driver: bridge
 
 volumes:
   mysql-data:
   redis-data:
   nacos-data:
-  seata-data:
-  rocketmq-broker-store:
-  rocketmq-broker-logs:
-  rocketmq-namesrv-logs:
+  # RocketMQ and Seata use bind mounts under ./data instead of named volumes -
+  # see the notes on those services. Their images run as a non-root user that
+  # cannot write to a root-owned volume, and the resulting failure is silent
+  # (the process dies before it can log why).
