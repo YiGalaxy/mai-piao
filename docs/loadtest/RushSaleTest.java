@@ -66,10 +66,17 @@ public final class RushSaleTest {
         int buyers = Integer.parseInt(args[4]);
         int threads = Integer.parseInt(args[5]);
         long firstUserId = Long.parseLong(args[6]);
-        boolean useQueue = "queue".equalsIgnoreCase(args[7]);
+        String mode = args[7].toLowerCase();
+        boolean useQueue = "queue".equals(mode);
+        // flood: no queue, no waiting - just as many requests as the machine
+        // can produce against a sold-out screening. This is the number that
+        // answers "how much traffic can it absorb", which is a different
+        // question from "how does the queue behave", and the two have
+        // different answers.
+        boolean flood = "flood".equals(mode);
 
         System.out.printf("schedule=%s tiers=%s seats=%d buyers=%d threads=%d mode=%s%n",
-                scheduleId, args[2], seats, buyers, threads, useQueue ? "queue" : "direct");
+                scheduleId, args[2], seats, buyers, threads, mode);
         System.out.println("---");
 
         HttpClient client = HttpClient.newBuilder()
@@ -108,6 +115,16 @@ public final class RushSaleTest {
             pool.submit(() -> {
                 try {
                     start.await();
+                    if (flood) {
+                        // Every one of these is expected to be refused. What is
+                        // measured is how cheaply.
+                        // Any band will do: the sale is sold out, so the band
+                        // never gets looked at.
+                        floodOne(client, baseUrl, scheduleId, tierIds[0], token,
+                                refused, bought, soldOut, errored, buyNanos);
+                        return;
+                    }
+
                     String admission = null;
                     if (useQueue) {
                         admission = joinAndWait(client, baseUrl, scheduleId, token, joined,
@@ -234,6 +251,35 @@ public final class RushSaleTest {
         int from = at + name.length() + 4;
         int to = body.indexOf('"', from);
         return to < 0 ? null : body.substring(from, to);
+    }
+
+    /**
+     * One request against a sold-out sale, with no expectation of success.
+     *
+     * <p>Counts whatever comes back rather than trying to classify it: the
+     * point is the rate, and a refusal is the successful outcome here.
+     */
+    private static void floodOne(HttpClient client, String baseUrl, String scheduleId,
+                                 String tierId, String token, AtomicInteger refused,
+                                 AtomicInteger bought, AtomicInteger soldOut,
+                                 AtomicInteger errored, AtomicLong buyNanos) {
+        String body = "{\"scheduleId\":\"" + scheduleId + "\",\"tierId\":\"" + tierId
+                + "\",\"quantity\":1,\"adjacent\":true}";
+
+        long t0 = System.nanoTime();
+        String response = post(client, baseUrl + "/api/seat/assign?scheduleId=" + scheduleId,
+                body, token);
+        buyNanos.addAndGet(System.nanoTime() - t0);
+
+        if (response == null) {
+            errored.incrementAndGet();
+        } else if (response.contains("\"success\":true")) {
+            bought.incrementAndGet();
+        } else if (response.contains("售罄") || response.contains("10007")) {
+            soldOut.incrementAndGet();
+        } else {
+            refused.incrementAndGet();
+        }
     }
 
     /** Spends the admission on seats. */
