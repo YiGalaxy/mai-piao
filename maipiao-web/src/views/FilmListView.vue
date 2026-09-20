@@ -2,10 +2,20 @@
   <div class="mp-container film-list-page">
     <div class="filter-bar mp-card">
       <div class="filter-row">
+        <span class="filter-label">类型</span>
+        <el-radio-group v-model="category" @change="reload">
+          <el-radio-button :value="null">全部</el-radio-button>
+          <el-radio-button v-for="tab in CATEGORY_TABS" :key="tab.value" :value="tab.value">
+            {{ tab.label }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div class="filter-row">
         <span class="filter-label">状态</span>
         <el-radio-group v-model="status" @change="reload">
-          <el-radio-button :value="1">正在热映</el-radio-button>
-          <el-radio-button :value="0">即将上映</el-radio-button>
+          <el-radio-button :value="1">在售</el-radio-button>
+          <el-radio-button :value="0">待开售</el-radio-button>
           <el-radio-button :value="null">全部</el-radio-button>
         </el-radio-group>
       </div>
@@ -76,10 +86,23 @@ const route = useRoute()
 const films = ref([])
 const loading = ref(true)
 const status = ref(1)
+const category = ref(null)
 const keyword = ref('')
 
+/** Same tabs as the home page, so the two never disagree about what exists. */
+const CATEGORY_TABS = [
+  { value: 'MOVIE', label: '电影' },
+  { value: 'CONCERT', label: '演唱会' },
+  { value: 'TALK_SHOW', label: '脱口秀' },
+  { value: 'THEATER', label: '话剧' },
+  { value: 'MUSICAL', label: '音乐剧' }
+]
+
 onMounted(() => {
-  // Support deep links like /films?status=0 from the home page's "全部" link.
+  // Deep links, e.g. /films?category=CONCERT from the home page's "全部" link.
+  if (typeof route.query.category === 'string') {
+    category.value = route.query.category
+  }
   if (route.query.status !== undefined) {
     const parsed = Number(route.query.status)
     status.value = Number.isNaN(parsed) ? null : parsed
@@ -100,7 +123,10 @@ watch(
 async function reload() {
   loading.value = true
   try {
-    const list = await fetchFilms(status.value === null ? {} : { status: status.value })
+    const params = {}
+    if (status.value !== null) params.status = status.value
+    if (category.value !== null) params.category = category.value
+    const list = await fetchFilms(params)
     films.value = filterByKeyword(list || [])
   } catch {
     films.value = []

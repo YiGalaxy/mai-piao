@@ -19,13 +19,20 @@ public class FilmService {
     private final FilmMapper filmMapper;
 
     /**
-     * @param status 0 upcoming, 1 now showing, 2 offline; null for all
+     * The catalogue, filtered.
+     *
+     * @param status   0 upcoming, 1 on sale, 2 closed; null for all
+     * @param category MOVIE / CONCERT / TALK_SHOW / ...; null for all.
+     *                 Filtering here rather than in the client means a category
+     *                 page does not download the whole catalogue to discard
+     *                 most of it - and it is one indexed column.
      */
-    public List<Film> list(Integer status) {
+    public List<Film> list(Integer status, String category) {
         return filmMapper.selectList(Wrappers.<Film>lambdaQuery()
                 .eq(status != null, Film::getStatus, status)
-                // Newest releases first. Unrated (score 0) films are not
-                // sorted out here - an upcoming film legitimately has no score.
+                .eq(category != null && !category.isBlank(), Film::getCategory, category)
+                // Newest first. Unrated (score 0) entries are not filtered out -
+                // an upcoming one legitimately has no score yet.
                 .orderByDesc(Film::getShowDate)
                 .orderByDesc(Film::getId));
     }
