@@ -67,6 +67,12 @@ public class DemoDataService {
             LocalTime.of(19, 30), LocalTime.of(20, 30),
     };
 
+    /** Marks what this generator created, so its reset can leave the rest alone. */
+    private static final String SOURCE_GENERATED = "DEMO";
+
+    /** Marks what an administrator created, which the generator must not touch. */
+    private static final String SOURCE_ADMIN = "ADMIN";
+
     private static final int BATCH_SIZE = 1000;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -107,34 +113,48 @@ public class DemoDataService {
         return tier;
     }
 
-    /**
-     * One seat's place in the hall.
-     *
-     * <p>Row and column are kept rather than a bare index because they are not
-     * interchangeable: an aisle puts a gap in the column numbers, so two seats
-     * whose indexes differ by one may be nowhere near each other. Anything
-     * asking "are these adjacent" has to ask in rows and columns.
-     */
-    private record SeatPosition(int row, int col, int type) {
-    }
 
     private final FilmMapper filmMapper;
     private final HallMapper hallMapper;
     private final SessionMapper sessionMapper;
     private final SessionSeatMapper sessionSeatMapper;
     private final PriceTierMapper priceTierMapper;
+    private final SessionSeatFactory seatFactory;
 
     private final Random random = new Random(20260920L);
 
     public record GenerateResult(int sessionCount, int seatCount, int tierCount, long elapsedMs) {
     }
 
+    /**
+     * Clears what this generator made, and nothing else.
+     *
+     * <p>It used to clear every session there was, which was correct while it
+     * was the only thing creating them. An administrator can now put a show on
+     * sale through the admin screen, and a reset would delete it without a
+     * word - the person who entered it would have no way to tell whether they
+     * had done something wrong.
+     *
+     * <p>Seats and bands go with their session. They are found through the
+     * session ids rather than by clearing the tables, for the same reason.
+     */
     @Transactional(rollbackFor = Exception.class)
     public void clearSchedules() {
-        sessionMapper.delete(Wrappers.<Session>lambdaQuery());
-        sessionSeatMapper.delete(Wrappers.<SessionSeat>lambdaQuery());
-        priceTierMapper.delete(Wrappers.<PriceTier>lambdaQuery());
-        log.info("demo sessions cleared");
+        List<Session> generated = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
+                .eq(Session::getSource, SOURCE_GENERATED));
+        if (generated.isEmpty()) {
+            log.info("no generated sessions to clear");
+            return;
+        }
+
+        List<Long> ids = generated.stream().map(Session::getId).toList();
+        sessionSeatMapper.delete(Wrappers.<SessionSeat>lambdaQuery()
+                .in(SessionSeat::getSessionId, ids));
+        priceTierMapper.delete(Wrappers.<PriceTier>lambdaQuery()
+                .in(PriceTier::getSessionId, ids));
+        sessionMapper.deleteByIds(ids);
+
+        log.info("generated sessions cleared: count={}", ids.size());
     }
 
     /**
@@ -174,7 +194,7 @@ public class DemoDataService {
             sessionMapper.deleteById(stale.getId());
         }
 
-        List<SeatPosition> layout = layoutOf(place);
+        List<SessionSeatFactory.SeatPosition> layout = seatFactory.layoutOf(place);
         int sessionCount = 0;
         int seatCount = 0;
         int tierCount = 0;
@@ -205,9 +225,11 @@ public class DemoDataService {
             // soldRatio 0: the whole point of the showcase is that all 2000 are
             // on sale. Pre-selling a quarter of them, as the general generator
             // does to make seat maps look lived-in, would undercut it.
-            List<SessionSeat> seats = buildSeats(session.getId(), place, sessionTiers(session),
-                    layout, 0);
-            batchInsert(seats);
+            // soldRatio 0: the whole point of the showcase is that all 2000 are
+            // on sale, so nothing is pre-sold.
+            List<SessionSeat> seats = seatFactory.buildSeats(session.getId(),
+                    sessionTiers(session), layout);
+            seatFactory.insert(seats);
 
             sessionCount++;
             seatCount += seats.size();
@@ -254,6 +276,7 @@ public class DemoDataService {
         // 1 = the system assigns, which is the whole point of the showcase: a
         // stadium concert does not let 2000 people pick seats out of a map.
         session.setSeatMode(1);
+        session.setSource(SOURCE_GENERATED);
         session.setSaleStartTime(now.minusMinutes(1));
         session.setPurchaseLimit(rush ? 2 : 4);
         session.setRequireRealName(1);
@@ -285,6 +308,22 @@ public class DemoDataService {
         return tiers;
     }
 
+    /**
+     * Builds the demo dataset.
+     *
+     * <p>Films and performances are generated separately, and that separation
+     * is the point rather than an implementation detail. One loop used to walk
+     * days, then places, then slots, and fill each slot with the next project
+     * that fitted the venue - which is exactly right for a cinema and wrong
+     * for everything else. A cinema runs the same film many times a day for
+     * weeks; that is what a screening is. A concert plays one night at one
+     * venue, announced in advance.
+     *
+     * <p>Run together, the loop gave a tour stop twelve screenings on a single
+     * day and fifty-four across a week, at six different venues. Nothing
+     * errored - the sessions were valid, the seats were sold, and the result
+     * described a band playing six venues a night for a week.
+     */
     public GenerateResult generate(int days, double soldRatio, boolean rushSchedule) {
         long started = System.currentTimeMillis();
 
@@ -303,72 +342,236 @@ public class DemoDataService {
         LocalDate today = LocalDate.now();
         LocalDateTime now = LocalDateTime.now();
 
+        GenerateResult screenings = generateScreenings(places, projects, days, soldRatio, today, now);
+        GenerateResult runs = generatePerformanceRuns(places, projects, days, soldRatio,
+                today, now, rushSchedule);
+
+        GenerateResult total = new GenerateResult(
+                screenings.sessionCount() + runs.sessionCount(),
+                screenings.seatCount() + runs.seatCount(),
+                screenings.tierCount() + runs.tierCount(),
+                System.currentTimeMillis() - started);
+
+        log.info("demo sessions generated: screenings={}, performance runs={}, seats={}, "
+                        + "tiers={}, elapsed={}ms",
+                screenings.sessionCount(), runs.sessionCount(), total.seatCount(),
+                total.tierCount(), total.elapsedMs());
+        return total;
+    }
+
+    /**
+     * The cinema grid: every hall, most slots of the day, every day.
+     *
+     * <p>This is what scheduling a film actually is, and it is unchanged.
+     */
+    private GenerateResult generateScreenings(List<Hall> places, List<Film> projects, int days,
+                                              double soldRatio, LocalDate today,
+                                              LocalDateTime now) {
         int sessionCount = 0;
         int seatCount = 0;
         int tierCount = 0;
         int cursor = 0;
-        Session rushTarget = null;
 
         for (int dayOffset = 0; dayOffset < days; dayOffset++) {
             LocalDate showDate = today.plusDays(dayOffset);
 
             for (Hall place : places) {
-                for (LocalTime slot : slotsFor(place)) {
+                if (!isCinemaPlace(place)) {
+                    continue;
+                }
+                for (LocalTime slot : FILM_SLOTS) {
                     LocalDateTime startTime = LocalDateTime.of(showDate, slot);
                     if (!startTime.isAfter(now)) {
                         continue;
                     }
 
-                    // Pair the project to the place by kind: a film plays in a
-                    // cinema, a performance does not. Without this the
-                    // generator books a stand-up set into a cinema screen.
                     Film project = nextMatching(projects, place, cursor++);
                     if (project == null) {
                         continue;
                     }
 
-                    List<PriceTier> tiers = buildTiers(project, place);
-
-                    // The layout comes first because it decides how many seats
-                    // the session has. Taking the count from the hall's
-                    // seat_count instead would disagree with the rows actually
-                    // written the moment a template declares aisles or broken
-                    // seats - and total_seat is what the anti-oversell guard
-                    // compares against, so it has to match.
-                    List<SeatPosition> layout = layoutOf(place);
-
-                    Session session = buildSession(project, place, showDate, startTime,
-                            tiers, layout.size());
-                    sessionMapper.insert(session);
-                    for (PriceTier tier : tiers) {
-                        tier.setSessionId(session.getId());
-                        priceTierMapper.insert(tier);
-                    }
-                    tierCount += tiers.size();
-
-                    List<SessionSeat> seats = buildSeats(session.getId(), place, tiers,
-                            layout, soldRatio);
-                    batchInsert(seats);
-
+                    WrittenSession written = writeSession(project, place, showDate, startTime,
+                            soldRatio);
                     sessionCount++;
-                    seatCount += seats.size();
-                    rushTarget = session;
+                    seatCount += written.seatCount();
+                    tierCount += written.tierCount();
                 }
             }
         }
 
-        if (rushSchedule && rushTarget != null) {
+        return new GenerateResult(sessionCount, seatCount, tierCount, 0);
+    }
+
+    /**
+     * Announced dates, not a grid.
+     *
+     * <p>A performance gets a home venue and a handful of dates. How many
+     * depends on the room: a stadium or arena is a tour stop and plays one or
+     * two nights, while a small theatre or club can hold a residency and play
+     * several, spread across the run rather than back to back - which is how
+     * both are actually sold.
+     *
+     * <p>One show a night in every case. Two would be a matinee, which is a
+     * cinema and theatre thing; a concert that plays twice in an evening is
+     * not a thing.
+     */
+    private GenerateResult generatePerformanceRuns(List<Hall> places, List<Film> projects,
+                                                   int days, double soldRatio, LocalDate today,
+                                                   LocalDateTime now, boolean rushSchedule) {
+        List<Hall> performanceVenues = places.stream()
+                .filter(place -> !isCinemaPlace(place))
+                .toList();
+        // Projects somebody has already scheduled by hand are left alone. The
+        // admin screen exists to say when a show is on, and a generator that
+        // then adds its own dates to the same show contradicts whoever used it
+        // - the 陈奕迅 show booked for December grew an extra pair of
+        // September dates the moment the demo data was regenerated.
+        Set<Long> handScheduled = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
+                        .eq(Session::getSource, SOURCE_ADMIN))
+                .stream().map(Session::getProjectId).collect(java.util.stream.Collectors.toSet());
+
+        List<Film> performances = projects.stream()
+                .filter(Film::isPerformance)
+                .filter(project -> !handScheduled.contains(project.getId()))
+                .toList();
+
+        if (performanceVenues.isEmpty() || performances.isEmpty()) {
+            return new GenerateResult(0, 0, 0, 0);
+        }
+
+        int sessionCount = 0;
+        int seatCount = 0;
+        int tierCount = 0;
+        Session rushTarget = null;
+
+        // A room holds one thing at a time, which the database enforces with a
+        // unique key on (place, start_time). Performances outnumber venues, so
+        // two of them land on the same room - and without this they landed on
+        // the same evening, at the same hour, and the insert failed halfway
+        // through the run. Tracking what is taken and moving to the next free
+        // evening is the whole of the fix.
+        Set<String> taken = new HashSet<>();
+        for (Session existing : sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
+                .in(Session::getPlaceId, performanceVenues.stream().map(Hall::getId).toList()))) {
+            taken.add(existing.getPlaceId() + "@" + existing.getStartTime());
+        }
+
+        for (int i = 0; i < performances.size(); i++) {
+            Film project = performances.get(i);
+            Hall venue = performanceVenues.get(i % performanceVenues.size());
+
+            // A room that only seats a few hundred gets a residency; a hall
+            // that seats thousands gets a night, because that is what the
+            // economics of each actually look like.
+            boolean bigRoom = "ARENA".equals(venue.getPlaceType());
+            int nights = bigRoom ? (i % 2 == 0 ? 2 : 1) : 2 + (i % 3);
+
+            // Spread the dates out. A tour passes through; it does not play
+            // the same room on consecutive evenings for a week.
+            int gap = Math.max(1, (days - 1) / Math.max(1, nights));
+            LocalTime slot = slotsFor(venue)[0];
+
+            int placed = 0;
+            int offset = 2 + (i % 3);
+            // Walk forward a day at a time until this run has its nights. The
+            // bound is the window itself: there is no point looking past it.
+            for (int day = offset; day < days && placed < nights; day++) {
+                if (placed > 0 && (day - offset) % gap != 0) {
+                    continue;
+                }
+
+                LocalDate showDate = today.plusDays(day);
+                LocalDateTime startTime = LocalDateTime.of(showDate, slot);
+                if (!startTime.isAfter(now)) {
+                    continue;
+                }
+                if (!taken.add(venue.getId() + "@" + startTime)) {
+                    continue;
+                }
+
+                WrittenSession written = writeSession(project, venue, showDate, startTime,
+                        soldRatio);
+                sessionCount++;
+                seatCount += written.seatCount();
+                tierCount += written.tierCount();
+                rushTarget = written.session();
+                placed++;
+            }
+        }
+
+        if (rushSchedule && rushTarget != null && sessionCount > 0) {
             rushTarget.setRushMode(1);
             rushTarget.setRushStartTime(LocalDateTime.now().plusMinutes(2));
             sessionMapper.updateById(rushTarget);
             log.info("rush session marked: sessionId={}", rushTarget.getId());
         }
 
-        long elapsed = System.currentTimeMillis() - started;
-        log.info("demo sessions generated: sessions={}, seats={}, tiers={}, elapsed={}ms",
-                sessionCount, seatCount, tierCount, elapsed);
+        return new GenerateResult(sessionCount, seatCount, tierCount, 0);
+    }
 
-        return new GenerateResult(sessionCount, seatCount, tierCount, elapsed);
+    /**
+     * Marks a share of the seats sold, so seat maps look lived-in.
+     *
+     * <p>Belongs to the demo generator rather than the seat factory: a real
+     * session starts empty, and pre-selling is a property of made-up data. The
+     * counter moves with it, because the number on the session has to describe
+     * the rows on the seats.
+     */
+    private void presell(List<SessionSeat> seats, double soldRatio, Long sessionId) {
+        if (soldRatio > 0) {
+            for (SessionSeat seat : seats) {
+                if (random.nextDouble() < soldRatio) {
+                    seat.setStatus(SessionSeat.STATUS_SOLD);
+                }
+            }
+        }
+
+        long sold = seats.stream().filter(s -> s.getStatus() == SessionSeat.STATUS_SOLD).count();
+        seatFactory.insert(seats);
+
+        if (sold > 0) {
+            Session counter = new Session();
+            counter.setId(sessionId);
+            counter.setSoldSeat((int) sold);
+            sessionMapper.updateById(counter);
+        }
+    }
+
+    /** What writing one session produced. Ids stay longs; snowflakes do not fit in an int. */
+    private record WrittenSession(Session session, int seatCount, int tierCount) {
+    }
+
+    /**
+     * Writes one session with its bands and its seats.
+     *
+     * <p>Shared by both generators because a screening and a performance are
+     * the same kind of thing once you get past how they got scheduled: a time,
+     * a place, a set of seats. The difference the caller cares about is the
+     * dates it chooses, not the rows it writes.
+     */
+    private WrittenSession writeSession(Film project, Hall place, LocalDate showDate,
+                                        LocalDateTime startTime, double soldRatio) {
+        List<PriceTier> tiers = buildTiers(project, place);
+
+        // The layout comes first because it decides how many seats the session
+        // has. Taking the count from the hall's seat_count instead would
+        // disagree with the rows actually written the moment a template
+        // declares aisles or broken seats - and total_seat is what the
+        // anti-oversell guard compares against, so it has to match.
+        List<SessionSeatFactory.SeatPosition> layout = seatFactory.layoutOf(place);
+
+        Session session = buildSession(project, place, showDate, startTime, tiers, layout.size());
+        sessionMapper.insert(session);
+
+        for (PriceTier tier : tiers) {
+            tier.setSessionId(session.getId());
+            priceTierMapper.insert(tier);
+        }
+
+        List<SessionSeat> seats = seatFactory.buildSeats(session.getId(), tiers, layout);
+        presell(seats, soldRatio, session.getId());
+
+        return new WrittenSession(session, seats.size(), tiers.size());
     }
 
     // ------------------------------------------------------------
@@ -479,6 +682,7 @@ public class DemoDataService {
                                   LocalDateTime startTime, List<PriceTier> tiers,
                                   int totalSeat) {
         Session session = new Session();
+        session.setSource(SOURCE_GENERATED);
         session.setProjectId(project.getId());
         session.setVenueId(place.getVenueId());
         session.setPlaceId(place.getId());
@@ -508,162 +712,5 @@ public class DemoDataService {
             session.setRequireRealName(0);
         }
         return session;
-    }
-
-    /**
-     * The seats a hall actually has, in the order they are numbered.
-     *
-     * <p>Read from {@code seat_template}, which is the venue's own description
-     * of itself. The previous version ignored it: it assumed every hall has
-     * exactly two aisles, deducted them from the column count, and packed the
-     * remaining seats into columns 1..n-2. The hall's declared aisle positions
-     * never reached the data, so no row had a gap, and a seat's column number
-     * did not correspond to anything in the room.
-     *
-     * <p>Indexes stay contiguous 0,1,2,... because they are bitmap offsets and
-     * a gap would waste bits and break the "index N is the Nth seat" reading.
-     * Contiguity is a property of the numbering, not of the geometry - which
-     * is exactly why adjacency cannot be derived from it.
-     */
-    private List<SeatPosition> layoutOf(Hall place) {
-        if (place.isStanding()) {
-            // No grid to honour: one row, one unit of capacity each. The bitmap
-            // is used as an admission counter here, not as a floor plan.
-            int capacity = Math.max(1, place.getSeatCount() == null ? 0 : place.getSeatCount());
-            List<SeatPosition> standing = new ArrayList<>(capacity);
-            for (int i = 1; i <= capacity; i++) {
-                standing.add(new SeatPosition(1, i, 0));
-            }
-            return standing;
-        }
-
-        JsonNode template = parseTemplate(place.getSeatTemplate());
-        int rows = intOr(template, "rows", place.getRowCount());
-        int cols = intOr(template, "cols", place.getColCount());
-
-        Set<Integer> aisleCols = new HashSet<>();
-        for (JsonNode node : arrayOrEmpty(template, "aisleCols")) {
-            aisleCols.add(node.asInt());
-        }
-
-        Set<String> broken = new HashSet<>();
-        for (JsonNode node : arrayOrEmpty(template, "brokenSeats")) {
-            broken.add(node.asText());
-        }
-
-        Set<String> couple = new HashSet<>();
-        for (JsonNode pair : arrayOrEmpty(template, "coupleSeats")) {
-            for (JsonNode seat : pair) {
-                couple.add(seat.asText());
-            }
-        }
-
-        List<SeatPosition> layout = new ArrayList<>(Math.max(1, rows * cols));
-        for (int row = 1; row <= rows; row++) {
-            for (int col = 1; col <= cols; col++) {
-                if (aisleCols.contains(col)) {
-                    continue;
-                }
-                String key = row + "-" + col;
-                if (broken.contains(key)) {
-                    continue;
-                }
-                layout.add(new SeatPosition(row, col, couple.contains(key) ? 1 : 0));
-            }
-        }
-
-        if (layout.isEmpty()) {
-            // A template that describes nothing - malformed, or a hall with a
-            // seat_count but no usable grid. Fall back to the declared count so
-            // the session still has inventory rather than coming out empty.
-            int capacity = Math.max(1, place.getSeatCount() == null ? 0 : place.getSeatCount());
-            log.warn("hall {} has an unusable seat template, falling back to {} packed seats",
-                    place.getId(), capacity);
-            for (int i = 1; i <= capacity; i++) {
-                layout.add(new SeatPosition((i - 1) / Math.max(1, cols) + 1,
-                        (i - 1) % Math.max(1, cols) + 1, 0));
-            }
-        }
-
-        return layout;
-    }
-
-    private JsonNode parseTemplate(String json) {
-        if (json == null || json.isBlank()) {
-            return MAPPER.createObjectNode();
-        }
-        try {
-            return MAPPER.readTree(json);
-        } catch (Exception e) {
-            log.warn("could not parse seat template, using hall dimensions instead: {}", json, e);
-            return MAPPER.createObjectNode();
-        }
-    }
-
-    private int intOr(JsonNode node, String field, Integer fallback) {
-        JsonNode value = node.get(field);
-        if (value != null && value.isInt() && value.asInt() > 0) {
-            return value.asInt();
-        }
-        return fallback == null || fallback <= 0 ? 1 : fallback;
-    }
-
-    private JsonNode arrayOrEmpty(JsonNode node, String field) {
-        JsonNode value = node.get(field);
-        return value != null && value.isArray() ? value : MAPPER.createArrayNode();
-    }
-
-    /**
-     * Seat rows for one session, one per seat of the hall's layout.
-     *
-     * <p>Each seat is assigned to exactly one tier, once, here. That assignment
-     * is what the seat map colours by and what the order prices by, so it is
-     * resolved at generation time rather than derived per request.
-     */
-    private List<SessionSeat> buildSeats(Long sessionId, Hall place, List<PriceTier> tiers,
-                                          List<SeatPosition> layout, double soldRatio) {
-        List<SessionSeat> seats = new ArrayList<>(layout.size());
-
-        for (int index = 0; index < layout.size(); index++) {
-            SeatPosition position = layout.get(index);
-
-            SessionSeat seat = new SessionSeat();
-            seat.setId(SnowflakeIdGenerator.next());
-            seat.setSessionId(sessionId);
-            seat.setSeatIndex(index);
-            seat.setRowNum(position.row());
-            seat.setColNum(position.col());
-            seat.setSeatId(position.row() + "_" + position.col());
-            seat.setSeatType(position.type());
-            seat.setTierId(tierForRow(tiers, position.row()));
-            seat.setStatus(soldRatio > 0 && random.nextDouble() < soldRatio
-                    ? SessionSeat.STATUS_SOLD : SessionSeat.STATUS_AVAILABLE);
-            seat.setVersion(0);
-            seats.add(seat);
-        }
-
-        long sold = seats.stream().filter(s -> s.getStatus() == SessionSeat.STATUS_SOLD).count();
-        Session counter = new Session();
-        counter.setId(sessionId);
-        counter.setSoldSeat((int) sold);
-        sessionMapper.updateById(counter);
-
-        return seats;
-    }
-
-    private Long tierForRow(List<PriceTier> tiers, int row) {
-        for (PriceTier tier : tiers) {
-            if (tier.covers(row)) {
-                return tier.getId();
-            }
-        }
-        return tiers.isEmpty() ? null : tiers.get(tiers.size() - 1).getId();
-    }
-
-    private void batchInsert(List<SessionSeat> seats) {
-        for (int from = 0; from < seats.size(); from += BATCH_SIZE) {
-            int to = Math.min(from + BATCH_SIZE, seats.size());
-            sessionSeatMapper.batchInsert(seats.subList(from, to));
-        }
     }
 }

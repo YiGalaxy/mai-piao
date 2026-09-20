@@ -82,8 +82,13 @@ public class UserService {
             throw new BizException(ErrorCode.USER_DISABLED);
         }
 
-        String token = jwtUtil.generateUserToken(user.getId(), user.getPhone());
-        log.info("user logged in: id={}", user.getId());
+        // Issued with the account's own role. Anything else would be the
+        // service deciding what the token may reach, which is not its call.
+        boolean admin = JwtUtil.ROLE_ADMIN.equals(user.getRole());
+        String token = admin
+                ? jwtUtil.generateAdminToken(user.getId(), user.getPhone())
+                : jwtUtil.generateUserToken(user.getId(), user.getPhone());
+        log.info("user logged in: id={}, admin={}", user.getId(), admin);
 
         return new UserDtos.LoginResponse(
                 token, user.getId(), user.getPhone(), user.getNickname(), user.getAvatar());

@@ -21,6 +21,16 @@ public class Cinema {
 
     private String name;
 
+    /**
+     * CINEMA / GYMNASIUM / LIVEHOUSE / STADIUM / THEATER.
+     *
+     * <p>Unmapped until now, which meant the admin screen could not tell a
+     * stadium from a cinema screen when offering somewhere to put a show on.
+     * The class is called Cinema because films came first; the table has
+     * always held every kind of venue, and this column is how it says which.
+     */
+    private String venueType;
+
     private String address;
 
     /** Used for filtering ("which cinemas are near me"). */

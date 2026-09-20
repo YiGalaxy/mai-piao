@@ -310,11 +310,48 @@ public class SeatBitmapService {
     }
 
     /**
-     * Builds the bitmap from the ledger.
+     * Seeds a cold bitmap from the ledger, without ever clearing a bit.
      *
-     * <p>Written to a temporary key and then renamed, so a request arriving
-     * mid-rebuild sees either the old bitmap or the new one - never a partial
-     * one, which would show sold seats as available.
+     * <p>This is the lazy path, taken whenever a screening's bitmap is missing
+     * - a fresh deploy, a flushed Redis, a screening nobody has opened yet.
+     * Several requests hit a cold bitmap at the same moment by definition,
+     * since they are what made it cold, so this has to be safe to run
+     * concurrently with itself and with allocations.
+     *
+     * <p>Which is why it only sets bits. The earlier version built a temporary
+     * key and renamed it over the live one, which is atomic against a reader
+     * but not against a writer: every concurrent arrival rebuilt from a ledger
+     * that did not yet know about the seats the others had just handed out,
+     * and the rename discarded them. Measured under a rush sale - 300 buyers,
+     * 100 concurrent - it sold 271 seats into 240, with 21 seats handed to two
+     * people. With a warm bitmap the same test sells 160 into 160 and doubles
+     * nothing.
+     *
+     * <p>The cost of merging is that a stale bit cannot be cleared this way.
+     * That is the right way round: the ledger is authoritative for what is
+     * sold, and a seat that stays occupied is a seat nobody can be sold twice.
+     * Clearing a bit is a repair, and repair is {@link #rebuild}.
+     */
+    public void seed(Long sessionId, List<Integer> occupiedIndexes) {
+        if (occupiedIndexes == null || occupiedIndexes.isEmpty()) {
+            return;
+        }
+        String mapKey = CommonConstants.SEAT_MAP_KEY + sessionId;
+        for (Integer index : occupiedIndexes) {
+            redis.opsForValue().setBit(mapKey, index, true);
+        }
+        log.info("seat bitmap seeded from ledger: schedule={}, occupied={}",
+                sessionId, occupiedIndexes.size());
+    }
+
+    /**
+     * Rebuilds the bitmap from the ledger, discarding whatever was there.
+     *
+     * <p>For repair, not for cold starts. Written to a temporary key and then
+     * renamed, so a reader sees either the old bitmap or the new one and never
+     * a partial one - but a writer that runs concurrently loses its bits, so
+     * this must not run while a screening is selling. {@link #seed} is the
+     * path that is safe to reach for lazily.
      *
      * <p>The empty case is handled explicitly. A screening where nothing has
      * been sold yet produces no SETBIT calls at all, so the temporary key is

@@ -1,0 +1,39 @@
+============================================================
+压测 2026-09-20 23:04:55  并发=200  买家序列=2000 5000 10000 20000
+============================================================
+重置场次 2101677547794665474（2000 座，可用 2000）
+开始：买家=2000 并发=200 模式=queue
+D:\Project\èƱվ\docs\loadtest\RushSaleTest.java:72: : Ҳ
+                scheduleId, tierId, seats, buyers, threads, useQueue ? "queue" : "direct");
+                            ^
+  :    tierId
+  λ:  RushSaleTest
+1 
+: ʧ
+重置场次 2101677547794665474（2000 座，可用 2000）
+开始：买家=5000 并发=200 模式=queue
+D:\Project\èƱվ\docs\loadtest\RushSaleTest.java:72: : Ҳ
+                scheduleId, tierId, seats, buyers, threads, useQueue ? "queue" : "direct");
+                            ^
+  :    tierId
+  λ:  RushSaleTest
+1 
+: ʧ
+重置场次 2101677547794665474（2000 座，可用 2000）
+开始：买家=10000 并发=200 模式=queue
+D:\Project\èƱվ\docs\loadtest\RushSaleTest.java:72: : Ҳ
+                scheduleId, tierId, seats, buyers, threads, useQueue ? "queue" : "direct");
+                            ^
+  :    tierId
+  λ:  RushSaleTest
+1 
+: ʧ
+重置场次 2101677547794665474（2000 座，可用 2000）
+开始：买家=20000 并发=200 模式=queue
+D:\Project\èƱվ\docs\loadtest\RushSaleTest.java:72: : Ҳ
+                scheduleId, tierId, seats, buyers, threads, useQueue ? "queue" : "direct");
+                            ^
+  :    tierId
+  λ:  RushSaleTest
+1 
+: ʧ

@@ -17,12 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
  * it the only way to stop a rush sale is to take the screening off sale, which
  * cancels it rather than holding it.
  *
- * <p><b>Authorization is not implemented.</b> These endpoints require a logged
- * in user, because the gateway authenticates the path, but nothing checks that
- * the user is an administrator - the role travels in a header the gateway
- * injects and no service reads. There is no admin-service in this project yet;
- * when there is, this check belongs there. Until then the honest statement is
- * that the pause switch is reachable by any logged-in user.
+ * <p>Administrators only. The gateway refuses {@code /api/*&#47;admin/**} to a
+ * token without the admin role, before it consults its public whitelist - so
+ * this is enforced at the edge rather than here. An earlier version of this
+ * comment said the check did not exist anywhere; it does now, and it is in the
+ * one place every admin route shares rather than repeated per controller.
  */
 @Slf4j
 @RestController

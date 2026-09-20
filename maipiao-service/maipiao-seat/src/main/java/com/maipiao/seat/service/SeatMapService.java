@@ -151,26 +151,32 @@ public class SeatMapService {
             throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE, "座位数据尚未就绪");
         }
 
-        return rebuildFromLedger(sessionId, totalSeat);
+        return seedFromLedger(sessionId, totalSeat);
     }
 
     /**
-     * Rebuilds the bitmap and the owner markers from
+     * Seeds the bitmap and the owner markers from
      * {@code t_event_session_seat}.
+     *
+     * <p>Seeds rather than rebuilds: this runs whenever the bitmap is missing,
+     * which means several requests reach it at once by construction. A
+     * destructive rebuild here discards the seats they are concurrently
+     * handing out - measured at 300 buyers and 100 concurrency, it turned 271
+     * sales into 240 occupied seats and gave 21 of them to two people each.
      *
      * <p>The owner markers matter as much as the bits, and for both kinds of
      * occupancy. The release script refuses to clear a seat whose owner does
-     * not match the order asking, so a rebuilt seat rebuilt without its owner
-     * can never be freed by anyone - the bit stays set and the seat is dead.
-     * That applies to held seats as much as sold ones, and a held seat is the
-     * more common case: on a screening that has been open a while there are
-     * usually more unpaid holds than sales.
+     * not match the order asking, so a seat seeded without its owner can never
+     * be freed by anyone - the bit stays set and the seat is dead. That
+     * applies to held seats as much as sold ones, and a held seat is the more
+     * common case: on a screening that has been open a while there are usually
+     * more unpaid holds than sales.
      *
      * <p>Sold seats are marked {@code SOLD:} so the release path can refuse to
      * put a paid-for seat back on sale; held seats carry their order number
      * plainly, which is what makes them releasable again.
      */
-    private List<Integer> rebuildFromLedger(Long sessionId, int totalSeat) {
+    private List<Integer> seedFromLedger(Long sessionId, int totalSeat) {
         List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(sessionId);
 
         List<Integer> indexes = new ArrayList<>(rows.size());
@@ -195,7 +201,7 @@ public class SeatMapService {
                     toInt(row.get("status")) == 2 ? "SOLD:" + orderNo : orderNo);
         }
 
-        seatBitmapService.rebuild(sessionId, indexes);
+        seatBitmapService.seed(sessionId, indexes);
         seatBitmapService.markOwners(sessionId, owners);
 
         log.info("seat bitmap rebuilt from ledger: schedule={}, total={}, occupied={}, owned={}",

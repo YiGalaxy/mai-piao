@@ -33,6 +33,17 @@ public class Order {
     private Long projectId;
     private String projectTitle;
 
+    /**
+     * What kind of thing was bought: MOVIE, CONCERT, TALK_SHOW, THEATER, MUSICAL.
+     *
+     * <p>Snapshotted like the title and the venue rather than looked up through
+     * project_id, because this is a historical record. A project recategorised
+     * or deleted later must not rewrite what somebody already bought - and the
+     * order page needs the answer to say "collect from the venue" rather than
+     * "collect from the cinema".
+     */
+    private String category;
+
     private Long venueId;
     private String venueName;
     private String placeName;

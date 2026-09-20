@@ -76,7 +76,7 @@ public final class SeatRushTest {
         HttpClient client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(5))
-                .executor(Executors.newFixedThreadPool(Math.min(threads, 256)))
+                .executor(daemonPool(threads))
                 .build();
 
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -174,6 +174,16 @@ public final class SeatRushTest {
 
     private static String trim(String s) {
         return s.length() > 160 ? s.substring(0, 160) + "..." : s;
+    }
+
+
+    /** Daemon threads, so the JVM exits when main returns instead of hanging. */
+    private static java.util.concurrent.ExecutorService daemonPool(int threads) {
+        return Executors.newFixedThreadPool(Math.min(threads, 512), r -> {
+            Thread t = new Thread(r);
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     private SeatRushTest() {
