@@ -197,12 +197,22 @@ public class SeatMapService {
                 (int) ttl.getSeconds());
     }
 
-    /** Releases a hold. Used when the user backs out of the payment page. */
-    public void releaseSeats(Long scheduleId, String lockToken) {
+    /**
+     * Releases a hold.
+     *
+     * <p>Called from two places: the user backing out of the payment page, and
+     * order-service compensating a failed G1. Both pass the same identifier -
+     * the lock token, which is also the order number - so there is one code
+     * path and one notion of who owns a seat.
+     *
+     * @return how many seats were actually freed; 0 means they had already
+     *         been released or sold, which is not an error
+     */
+    public int releaseSeats(Long scheduleId, String lockToken, boolean force) {
         if (lockToken == null || lockToken.isBlank()) {
-            return;
+            return 0;
         }
-        seatBitmapService.release(scheduleId, lockToken, false);
+        return seatBitmapService.release(scheduleId, lockToken, force);
     }
 
     /** Called by order-service after payment succeeds (G2). */

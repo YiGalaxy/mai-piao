@@ -51,11 +51,10 @@ public class SeatController {
      * full hold period.
      */
     @PostMapping("/release")
-    public R<Void> release(@RequestBody SeatDtos.ReleaseSeatRequest request,
-                           @RequestParam String lockToken) {
+    public R<Integer> release(@RequestBody SeatDtos.ReleaseSeatRequest request,
+                              @RequestParam String lockToken) {
         UserContext.require();
-        seatMapService.releaseSeats(request.getScheduleId(), lockToken);
-        return R.ok();
+        return R.ok(seatMapService.releaseSeats(request.getScheduleId(), lockToken, false));
     }
 
     /**

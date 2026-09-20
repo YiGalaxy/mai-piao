@@ -143,4 +143,23 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
                AND locked_seat >= #{count}
             """)
     int releaseLocked(@Param("scheduleId") Long scheduleId, @Param("count") int count);
+
+    /**
+     * Gives <em>sold</em> seats back, for a refund that returns them to the
+     * pool.
+     *
+     * <p>Distinct from {@link #releaseLocked}: those seats were never paid for,
+     * so only the locked counter moves. These were, so only the sold counter
+     * moves. Using the wrong one silently corrupts the remaining-seat
+     * arithmetic - the seat map would show the seat as free while the sold
+     * counter still claims it.
+     */
+    @Update("""
+            UPDATE t_movie_schedule
+               SET sold_seat = sold_seat - #{count},
+                   update_time = NOW(3)
+             WHERE id = #{scheduleId}
+               AND sold_seat >= #{count}
+            """)
+    int releaseSold(@Param("scheduleId") Long scheduleId, @Param("count") int count);
 }
