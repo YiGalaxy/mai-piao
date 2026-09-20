@@ -16,26 +16,35 @@ SET NAMES utf8mb4;
 
 USE maipiao_event;
 
--- ADD COLUMN IF NOT EXISTS is not portable across MySQL versions, so this
--- file tolerates being run twice: the ALTER fails loudly the second time and
--- the backfill below still runs, which is the part that matters.
-ALTER TABLE t_event_session
-  ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'ADMIN'
-    COMMENT 'DEMO = generated, safe to reset; ADMIN = entered by hand';
+-- Same idempotent-column idiom as 13_seed_admin.sql; see the note there. A
+-- failed ALTER aborts the script, which would silently skip the backfill
+-- below - the part that actually matters on a database that already has rows.
+SET @col_exists := (
+  SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = 'maipiao_event'
+     AND table_name = 't_event_session'
+     AND column_name = 'source');
+
+SET @ddl := IF(@col_exists = 0,
+  'ALTER TABLE t_event_session ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT ''ADMIN'' COMMENT ''DEMO = generated, ADMIN = entered by hand''',
+  'DO 0');
+
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ------------------------------------------------------------
 -- Backfill.
 --
 -- Every session that existed when this column was added was produced by the
--- generator - the admin screen did not exist yet. Without this they default to
--- ADMIN, which is the safe default for new rows and the wrong answer for these
--- ones: the generator would keep finding the table occupied and fail to write
--- its own sessions, because the venue-time unique key was still taken by the
--- previous run's rows.
+-- generator - the admin screen did not exist yet. Without this they default
+-- to ADMIN, which is the right default for new rows and the wrong answer for
+-- these ones: the generator would keep finding the venue-time unique key
+-- still taken by its own previous run, and fail to write anything.
 --
--- Safe to run once, at the moment the column is added. Re-running it later
--- would mark genuine admin entries as generated and expose them to the reset,
--- so it is not something to keep in a reset script.
+-- Deliberately NOT idempotent, and deliberately not part of a reset script.
+-- Running it a second time would mark genuine administrator entries as
+-- generated and expose them to the next reset.
 -- ------------------------------------------------------------
 
 UPDATE t_event_session SET source = 'DEMO' WHERE source = 'ADMIN';
