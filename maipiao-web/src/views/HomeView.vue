@@ -97,8 +97,11 @@
       <!-- Coming soon -->
       <template v-if="upcoming.length">
         <div class="mp-section-head">
-          <h2>即将上映</h2>
-          <span class="mp-more" @click="router.push({ path: '/films', query: { status: 0 } })">
+          <h2>{{ upcomingTitle }}</h2>
+          <span
+            class="mp-more"
+            @click="router.push({ path: '/films', query: { status: 0, category: category } })"
+          >
             全部 {{ upcoming.length }} 部 &gt;
           </span>
         </div>
@@ -159,10 +162,19 @@ const CATEGORY_TABS = [
 
 const category = ref('MOVIE')
 
-/** Heading follows the tab: "正在热映" only makes sense for films. */
-const sectionTitle = computed(() =>
-  category.value === 'MOVIE' ? '正在热映' : '热门演出'
-)
+/**
+ * Headings follow the tab.
+ *
+ * "正在热映" and "即将上映" are cinema words; above a stand-up listing they read
+ * as a mistake. The same distinction applies to the second section, which is
+ * why both headings are derived rather than written into the template.
+ */
+const isFilm = computed(() => category.value === 'MOVIE')
+const sectionTitle = computed(() => (isFilm.value ? '正在热映' : '热门演出'))
+const upcomingTitle = computed(() => (isFilm.value ? '即将上映' : '即将开演'))
+
+/** Reserve action is a film concept; performances get "想看" instead. */
+const upcomingAction = computed(() => (isFilm.value ? '预约' : '想看'))
 
 // The banner shows the best-rated few of what is actually on sale.
 const bannerFilms = computed(() =>
