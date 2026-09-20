@@ -1,20 +1,16 @@
 -- ============================================================
--- Seed data part two : performance venues and projects
+-- 种子数据第二部分：演出类场馆与项目
 --
--- Films get their data from 05_seed_base.sql. This file adds the other
--- categories, which is what makes the unified model worth having - the same
--- listing page, the same seat map, the same order flow, with the differences
--- expressed as data rather than as branches.
+-- 影片的数据来自 05_seed_base.sql。本文件补上其余分类，这正是统一模型
+-- 值得存在的原因 —— 同一个列表页、同一张座位图、同一套下单流程，
+-- 差异用数据表达，而不是用分支表达。
 --
--- The interesting contrasts against films:
---   - a stadium is not a cinema: different venue_type, and a place that
---     seats thousands rather than a few hundred
---   - a concert has tiered pricing, so its sessions carry several tiers
---     where a film session carries exactly one
---   - a talk show may be standing-only, in which case the "seat map" is an
---     admission counter
+-- 与影片相比值得注意的几点：
+--   - 体育馆不是影院：venue_type 不同，一个 place 能坐几千人而不是几百人
+--   - 演唱会是分级定价，所以它的场次带多个票档，而影片场次只有一个
+--   - 脱口秀可能只有站席，这时「座位图」就是一个入场计数器
 --
--- Fixed id ranges: projects 1101-1112, venues 2101-2106, places 3101-3112
+-- 固定 id 区间：项目 1101-1112，场馆 2101-2106，场地 3101-3112
 -- ============================================================
 
 SET NAMES utf8mb4;
@@ -22,7 +18,7 @@ SET NAMES utf8mb4;
 USE maipiao_event;
 
 -- ------------------------------------------------------------
--- venues
+-- 场馆
 -- ------------------------------------------------------------
 INSERT INTO t_event_venue (id, name, venue_type, address, district, phone, longitude, latitude, status) VALUES
 (2101, '市体育中心体育馆', 'GYMNASIUM', '体育中心路1号', '福田区', '0755-66660001', 114.057000, 22.541000, 1),
@@ -33,12 +29,12 @@ INSERT INTO t_event_venue (id, name, venue_type, address, district, phone, longi
 (2106, '滨江露天音乐广场', 'STADIUM', '滨江大道999号', '南山区', '0755-66660006', 113.940000, 22.520000, 1);
 
 -- ------------------------------------------------------------
--- places
+-- 场地
 --
--- Stand names, because that is what the actual business calls them.
--- seating_mode is the column that makes standing-only events expressible:
---   STANDING -> the trip is sold without a seat map
--- Two layouts are used across these venues:
+-- 用「站」这种叫法来命名，因为实际业务就是这么叫的。
+-- seating_mode 是让「只有站席」的活动变得可表达的那一列：
+--   STANDING -> 这种演出不带座位图出售
+-- 这些场馆一共用到两种布局：
 --   arena   24 x 32, aisles [9,24] -> 24*32 - 2*24 - 4 = 716
 --   studio   12 x 16, aisles [6,11] -> 12*16 - 2*12 - 4 = 164
 -- ------------------------------------------------------------
@@ -57,11 +53,10 @@ INSERT INTO t_event_place (id, venue_id, name, place_type, seating_mode, row_cou
  '{"rows":1,"cols":500,"aisleCols":[],"brokenSeats":[],"coupleSeats":[]}', 500, 1);
 
 -- ------------------------------------------------------------
--- projects : concerts, talk shows, theatre
+-- 项目：演唱会、脱口秀、话剧
 --
--- Note what is null. A concert has an artist and an organizer and no
--- director; a film has the reverse. The columns exist for both, and which
--- ones carry data is what category determines.
+-- 注意哪些字段是 null。演唱会有 artist 和 organizer，没有 director；
+-- 影片正好相反。这些列对两类都存在，具体哪些带数据由 category 决定。
 -- ------------------------------------------------------------
 INSERT INTO t_event_project
 (id, category, title, en_title, poster_url, duration, tags, show_date, score, status,

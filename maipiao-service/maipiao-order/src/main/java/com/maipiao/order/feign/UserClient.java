@@ -11,11 +11,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls user-service for the coupon branch of G1.
+ * 调用 user-service，做 G1 里的优惠券分支。
  *
- * <p>{@link #lockCoupon} participates in the global transaction and throws on
- * failure, so a coupon that cannot be held rolls the whole order back rather
- * than letting it through with the discount already applied.
+ * <p>{@link #lockCoupon} 参与全局事务并在失败时抛异常，
+ * 所以一张占不住的优惠券会把整笔订单回滚掉，
+ * 而不是让订单带着已经减掉的折扣就这么过去。
  */
 @FeignClient(name = "maipiao-user", path = "/inner")
 public interface UserClient {
@@ -26,32 +26,30 @@ public interface UserClient {
                        @RequestParam String orderNo,
                        @RequestParam BigDecimal orderAmount);
 
-    /** Converts the hold into a permanent use, after payment succeeds. */
+    /** 支付成功之后，把这次占用变成永久使用。 */
     @PostMapping("/coupon/consume")
     R<Void> consumeCoupon(@RequestParam Long couponId,
                           @RequestParam String orderNo);
 
-    /** Gives the coupon back on cancellation or refund. */
+    /** 取消或退款时把优惠券还回去。 */
     @PostMapping("/coupon/release")
     R<Void> releaseCoupon(@RequestParam Long couponId,
                           @RequestParam String orderNo);
 
     /**
-     * Looks a user up by phone, for the admin order search.
+     * 按手机号查用户，给后台的订单搜索用。
      *
-     * <p>Orders do not store a phone number - it is a value that changes, and
-     * an order is a historical record. So a phone search resolves to an id
-     * here and the order table is queried by that.
+     * <p>订单不存手机号 —— 它是一个会变的值，而订单是一份历史记录。
+     * 所以按手机号搜索时在这里换成一个 id，再拿这个 id 去查订单表。
      */
     @GetMapping("/user/find-by-phone")
     R<Map<String, Object>> findByPhone(@RequestParam("phone") String phone);
 
     /**
-     * Phone numbers for a set of user ids, in one call.
+     * 一批用户 id 对应的手机号，一次调用取回。
      *
-     * <p>Batched because the alternative is one lookup per row: a page of
-     * twenty orders would be twenty round trips to render a list nobody reads
-     * closely.
+     * <p>做成批量的，因为另一条路是每行查一次：一页二十笔订单就是二十次往返，
+     * 只为渲染一个没人细看的列表。
      */
     @GetMapping("/user/phones")
     R<Map<Long, String>> phones(@RequestParam("userIds") List<Long> userIds);

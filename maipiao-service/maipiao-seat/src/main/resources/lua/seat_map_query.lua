@@ -1,16 +1,14 @@
 -- ============================================================
--- Return every occupied seat index for a screening.
+-- 返回某场次全部已被占用的座位索引。
 --
--- Doing this with one GETBIT per seat from the client would be one round trip
--- per seat; at a few hundred seats that dominates the request. Inside Redis
--- the same loop is a few hundred in-memory bit reads, which is far cheaper
--- than the network hop it replaces.
+-- 放在客户端做、每个座位一次 GETBIT，就是每个座位一个来回；几百个座位时这部分开销
+-- 会盖过请求本身的其余部分。搬进 Redis 里，同一个循环就只是几百次内存中的 bit 读取，
+-- 比它替换掉的那次网络往返便宜得多。
 --
 -- KEYS[1] = seat:map:{scheduleId}
--- ARGV[1] = total number of seats on this screening
+-- ARGV[1] = 该场次的总座位数
 --
--- Returns an array of occupied indexes. Indexes are 0-based and contiguous,
--- because that is how they were assigned when the schedule was generated.
+-- 返回已占用索引的数组。索引从 0 开始且连续，因为场次生成时它们就是这么分配的。
 -- ============================================================
 
 local mapKey = KEYS[1]

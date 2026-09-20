@@ -1,7 +1,7 @@
 <template>
   <div class="home">
     <div class="mp-container">
-      <!-- Banner: the top-rated few, sized as a hero rather than a grid tile. -->
+      <!-- Banner：评分最高的那几部，按主视觉的尺寸做，而不是做成网格里的一格。 -->
       <el-carousel
         v-if="bannerFilms.length"
         height="340px"
@@ -32,12 +32,11 @@
       </el-carousel>
 
       <!--
-        Category tabs.
+        分类标签页。
 
-        Films and performances share one catalogue and one card layout, so the
-        switch is a filter rather than a different page. The counts come from
-        the same query the list uses, so a tab never promises more than it
-        shows.
+        电影和演出共用一份剧目库、一套卡片布局，所以切换分类只是加个过滤条件，
+        而不是换一个页面。数量来自列表用的同一个查询，所以标签页承诺的
+        不会比它实际展示的多。
       -->
       <el-tabs v-model="category" class="category-tabs" @tab-change="onCategoryChange">
         <el-tab-pane
@@ -48,7 +47,7 @@
         />
       </el-tabs>
 
-      <!-- Now showing -->
+      <!-- 正在热映 / 热门演出 -->
       <div class="mp-section-head">
         <h2>{{ sectionTitle }}</h2>
         <span class="mp-more" @click="goAll">
@@ -94,7 +93,7 @@
         </div>
       </div>
 
-      <!-- Coming soon -->
+      <!-- 即将上映 / 即将开演 -->
       <template v-if="upcoming.length">
         <div class="mp-section-head">
           <h2>{{ upcomingTitle }}</h2>
@@ -146,11 +145,10 @@ const loading = ref(true)
 const brokenPosters = ref({})
 
 /**
- * Which kind of event the page is showing.
+ * 这一页在展示哪一类活动。
  *
- * One catalogue, one card layout, so switching category is a filter rather
- * than a different page. Anything the catalogue gains a row for shows up here
- * without a code change.
+ * 一份剧目库、一套卡片布局，所以切分类是加过滤条件，不是换页面。
+ * 剧目库里多出哪一类，这里不用改代码就会显示出来。
  */
 const CATEGORY_TABS = [
   { value: 'MOVIE', label: '电影' },
@@ -163,25 +161,24 @@ const CATEGORY_TABS = [
 const category = ref('MOVIE')
 
 /**
- * Headings follow the tab.
+ * 标题跟着标签页走。
  *
- * "正在热映" and "即将上映" are cinema words; above a stand-up listing they read
- * as a mistake. The same distinction applies to the second section, which is
- * why both headings are derived rather than written into the template.
+ * 「正在热映」「即将上映」是影院的说法，摆在脱口秀列表上方就成了错误。
+ * 第二个板块同理，所以两个标题都是算出来的，而不是写死在模板里的。
  */
 const isFilm = computed(() => category.value === 'MOVIE')
 const sectionTitle = computed(() => (isFilm.value ? '正在热映' : '热门演出'))
 
-/** What an empty list means depends on what the list was of. */
+/** 空列表的含义取决于这是什么的列表。 */
 const emptyHint = computed(() =>
   isFilm.value ? '暂无正在热映的影片' : '暂无正在售票的演出'
 )
 const upcomingTitle = computed(() => (isFilm.value ? '即将上映' : '即将开演'))
 
-/** Reserve action is a film concept; performances get "想看" instead. */
+/** 「预约」是电影的概念；演出那边换成「想看」。 */
 const upcomingAction = computed(() => (isFilm.value ? '预约' : '想看'))
 
-// The banner shows the best-rated few of what is actually on sale.
+// Banner 展示真正在售的内容里评分最高的几部。
 const bannerFilms = computed(() =>
   [...nowShowing.value]
     .filter((f) => f.score > 0)
@@ -197,8 +194,8 @@ onMounted(load)
 async function load() {
   loading.value = true
   try {
-    // Two statuses, two calls. There is no combined endpoint because the two
-    // lists render independently and a partial failure should not blank both.
+    // 两个状态，两次调用。没有合并成一个接口，是因为这两个列表各自独立
+    // 渲染，其中一个失败不该把两块都清空。
     const [showing, soon] = await Promise.all([
       fetchFilms({ status: STATUS_NOW_SHOWING, category: category.value }),
       fetchFilms({ status: STATUS_UPCOMING, category: category.value })
@@ -213,7 +210,7 @@ async function load() {
   }
 }
 
-/** Fired by el-tabs when the active pane changes. */
+/** 由 el-tabs 在激活面板切换时触发。 */
 function onCategoryChange() {
   load()
 }
@@ -227,10 +224,10 @@ function goFilm(film) {
 }
 
 /**
- * Posters are assumed usable until the browser reports otherwise.
+ * 海报默认当作能用的，直到浏览器报错为止。
  *
- * Failures are recorded only. An earlier version seeded this set from inside
- * the :style binding, which wrote reactive state during render and looped.
+ * 只记录失败。早先的版本是在 :style 绑定里往这个集合里写数据，等于在渲染
+ * 过程中改响应式状态，结果死循环了。
  */
 function isPosterUsable(filmId) {
   return brokenPosters.value[filmId] !== false
@@ -240,7 +237,7 @@ function markPosterBroken(filmId) {
   brokenPosters.value = { ...brokenPosters.value, [filmId]: false }
 }
 
-/** Deterministic colour per film, so the fallback never changes between renders. */
+/** 每部片子一个固定颜色，这样兜底底色不会在两次渲染之间变来变去。 */
 function posterStyle(film) {
   const hue = (film.id * 47) % 360
   return {
@@ -255,9 +252,8 @@ function posterStyle(film) {
 }
 
 /**
- * Category tabs sit on their own white strip rather than floating over the
- * banner. The banner is per-category content, so the control that selects the
- * category has to be visibly outside it.
+ * 分类标签页有自己的白色横条，而不是浮在 banner 上。
+ * Banner 是按分类变化的内容，所以选分类的控件必须在视觉上位于它之外。
  */
 .category-tabs {
   margin-top: 20px;
@@ -328,8 +324,7 @@ function posterStyle(film) {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* Five per row keeps the poster aspect ratio close to a real ticket site
-   at the 1200px container width. */
+/* 一行五个，在 1200px 的容器宽度下，海报的宽高比接近真实票务网站。 */
 .mp-film-grid {
   grid-template-columns: repeat(5, 1fr);
 }

@@ -1,15 +1,14 @@
 #!/bin/bash
 # ============================================================
-# A ladder of rush-sale runs at increasing scale, appended to results.txt.
+# 一组规模递增的抢购压测，结果追加到 results.txt。
 #
-# Each rung is a fresh screening, so the numbers are comparable: same 2000
-# seats, same four bands, more buyers each time.
+# 每一级都是一场全新的场次，所以数字之间可比：同样是 2000 个座位、
+# 同样是四个票档，只是买家一次比一次多。
 #
 #   ./rush-ladder.sh [threads] [buyer1 buyer2 ...]
 #
-# The point of a ladder rather than one big run is that it shows where the
-# system stops keeping up. One number tells you whether it worked; a series
-# tells you what it costs.
+# 做成一梯次而不是一次大压测，是为了看出系统从哪里开始跟不上。
+# 一个数字只能告诉你成没成；一串数字才能告诉你代价有多大。
 # ============================================================
 set -u
 

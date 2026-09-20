@@ -6,30 +6,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Which paths may be called without a token.
+ * 哪些路径可以不带 token 调用。
  *
- * <p>Configured rather than hard-coded so that opening up a new public endpoint
- * is a config change with a review trail, instead of a code change buried in a
- * filter.
+ * <p>做成配置而不是写死在代码里，这样放开一个新的公开接口就是一次有评审记录的配置
+ * 变更，而不是一次埋在 filter 里的代码改动。
  *
- * <p>Everything not listed here requires a valid token. That is the safer
- * default: forgetting to whitelist a public endpoint produces an obvious 401
- * during development, whereas forgetting to protect a private one produces a
- * silent hole.
+ * <p>没列在这里的一律需要有效 token。这是更安全的默认值：忘了把某个公开接口加进
+ * 白名单，开发阶段会撞上一个显眼的 401；而忘了保护一个私有接口，留下的是一道
+ * 无声的缺口。
  */
 @ConfigurationProperties(prefix = "maipiao.gateway.auth")
 public class GatewayAuthProperties {
 
     /**
-     * Ant-style path patterns, matched against the request path including the
-     * {@code /api} prefix (e.g. {@code /api/user/login}).
+     * Ant 风格的路径模式，拿包含 {@code /api} 前缀的请求路径去匹配
+     * （例如 {@code /api/user/login}）。
      */
     private List<String> whitelist = new ArrayList<>();
 
     /**
-     * Whether to check the Redis blacklist on every authenticated request.
-     * Costs one Redis round trip; turning it off means logout no longer takes
-     * effect until the token expires.
+     * 是否对每个已认证请求都查一次 Redis 黑名单。代价是一次 Redis 往返；关掉它
+     * 意味着登出要等到 token 自然过期才生效。
      */
     private boolean checkBlacklist = true;
 

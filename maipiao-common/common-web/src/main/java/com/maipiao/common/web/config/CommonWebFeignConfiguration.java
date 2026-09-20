@@ -8,21 +8,17 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 
 /**
- * Registers the Feign interceptor only when OpenFeign is actually on the
- * classpath.
+ * 只在 OpenFeign 确实位于 classpath 上时，才注册这个 Feign 拦截器。
  *
- * <p>This lives in its own class on purpose. Putting
- * {@code @ConditionalOnClass(RequestInterceptor.class)} on a {@code @Bean}
- * method inside the main auto-configuration looks like it would work, but it
- * does not: to evaluate the condition Spring must first load the enclosing
- * configuration class, and loading it resolves the method signatures -
- * including the return type that implements {@code feign.RequestInterceptor}.
- * The class is not there, and startup dies with
- * {@code ClassNotFoundException: feign.RequestInterceptor} before the
- * condition is ever consulted.
+ * <p>它单独占一个类是有意为之。把
+ * {@code @ConditionalOnClass(RequestInterceptor.class)} 标在主自动配置里的某个
+ * {@code @Bean} 方法上，看着像是能行，实际不行：Spring 要判断这个条件，就得先加载
+ * 外层的配置类，而加载它就要解析各个方法签名 —— 包括返回类型实现了
+ * {@code feign.RequestInterceptor} 的那个方法。这个类不在，于是启动直接死在
+ * {@code ClassNotFoundException: feign.RequestInterceptor}，条件压根轮不到被判断。
  *
- * <p>On a class, the condition is evaluated from ASM metadata without loading
- * anything, so the whole class is skipped cleanly.
+ * <p>标在类上时，条件是从 ASM 元数据判断出来的，不需要加载任何东西，所以整个类可以
+ * 被干净地跳过。
  */
 @AutoConfiguration
 @ConditionalOnClass(RequestInterceptor.class)

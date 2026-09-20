@@ -22,29 +22,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Rush-sale load generator: N buyers, one screening, a fixed number of seats.
+ * 抢购压测生成器：N 个买家、一场次、座位数固定。
  *
- * <p>Drives the whole path a real buyer takes - join the line, wait to be
- * admitted, spend the token on a seat - rather than hammering the seat
- * endpoint directly, because the interesting question is not how fast the
- * seat service is. It is whether the system sells exactly as many seats as it
- * has, under a crowd, with a queue in front of it.
+ * <p>它走的是真实买家完整的链路——排队、等叫号、拿令牌去换座位——
+ * 而不是直接猛打选座接口。因为真正有意思的问题不是选座服务有多快，
+ * 而是在有人群、前面还挡着一道排队的情况下，系统卖出去的座位数
+ * 是否刚好等于它拥有的座位数。
  *
- * <p>Identities are minted here rather than registered. Registering ten
- * thousand accounts would mean ten thousand bcrypt hashes at ~100ms each,
- * which measures the password hasher and buries the thing under test. The
- * tokens are real HS256 tokens signed with the same secret the gateway
- * verifies against, so the path being exercised is the real one - only the
- * account creation is skipped. The user ids must already exist in the
- * database, because the seat ledger has a foreign key opinion about them.
+ * <p>身份是这里现造的，不是注册出来的。注册一万个账号意味着要算一万次
+ * bcrypt 哈希、每次约 100ms，那测的是密码哈希器，反而把被测对象埋掉了。
+ * 这里的 token 是真的 HS256 token，用的密钥和网关校验时用的同一个，
+ * 所以跑的链路是真实链路——只是跳过了建账号这一步。用户 id 必须已经在
+ * 数据库里存在，因为座位账本对它们有外键约束。
  *
  * <pre>
  *   java RushSaleTest &lt;baseUrl&gt; &lt;scheduleId&gt; &lt;tierId&gt; &lt;seats&gt; \
  *        &lt;buyers&gt; &lt;threads&gt; &lt;firstUserId&gt; &lt;queue|direct&gt;
  * </pre>
  *
- * <p>{@code queue} drives join-and-wait; {@code direct} skips the line and
- * calls the seat endpoint, which exists to show what the line is protecting.
+ * <p>{@code queue} 走的是排队加等待；{@code direct} 跳过排队直接打选座接口，
+ * 用来展示排队到底在保护什么。
  */
 public final class RushSaleTest {
 
@@ -68,11 +65,9 @@ public final class RushSaleTest {
         long firstUserId = Long.parseLong(args[6]);
         String mode = args[7].toLowerCase();
         boolean useQueue = "queue".equals(mode);
-        // flood: no queue, no waiting - just as many requests as the machine
-        // can produce against a sold-out screening. This is the number that
-        // answers "how much traffic can it absorb", which is a different
-        // question from "how does the queue behave", and the two have
-        // different answers.
+        // flood：不排队、不等待，就是对着一场已售罄的场次，能压出多少请求
+        // 就压多少请求。这个数字回答的是"它能吸收多少流量"，和"排队表现如何"
+        // 是两回事，两者的答案也不一样。
         boolean flood = "flood".equals(mode);
 
         System.out.printf("schedule=%s tiers=%s seats=%d buyers=%d threads=%d mode=%s%n",
@@ -85,7 +80,7 @@ public final class RushSaleTest {
                 .executor(daemonPool(threads))
                 .build();
 
-        // ---- tokens ----
+        // ---- token 签发 ----
         String[] tokens = new String[buyers];
         for (int i = 0; i < buyers; i++) {
             tokens[i] = mint(firstUserId + i);
@@ -101,8 +96,8 @@ public final class RushSaleTest {
         AtomicLong joinNanos = new AtomicLong();
         AtomicLong buyNanos = new AtomicLong();
 
-        // Which seat each success took. A seat claimed twice is an oversell and
-        // there is no reading of the numbers under which that is acceptable.
+        // 记录每次成功抢到的是哪个座位。同一个座位被认领两次就是超卖，
+        // 这种事怎么解读数据都是不可接受的。
         Map<String, AtomicInteger> seatTally = new ConcurrentHashMap<>();
 
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -116,10 +111,8 @@ public final class RushSaleTest {
                 try {
                     start.await();
                     if (flood) {
-                        // Every one of these is expected to be refused. What is
-                        // measured is how cheaply.
-                        // Any band will do: the sale is sold out, so the band
-                        // never gets looked at.
+                        // 这些请求本来就预期全都会被拒。测的是拒得有多便宜。
+                        // 随便哪个票档都行：场次已售罄，票档根本不会被看到。
                         floodOne(client, baseUrl, scheduleId, tierIds[0], token,
                                 refused, bought, soldOut, errored, buyNanos);
                         return;
@@ -133,9 +126,8 @@ public final class RushSaleTest {
                             return;
                         }
                     }
-                    // A band at random, so the whole venue fills instead of one
-                    // band selling out and the rest of the test measuring how
-                    // fast the system says no.
+                    // 随机挑一个票档，这样整个场子会被填满，而不是某一个档
+                    // 先卖光、剩下的测试时间都在测系统说"不"有多快。
                     String band = tierIds[ThreadLocalRandom.current().nextInt(tierIds.length)];
                     buy(client, baseUrl, scheduleId, band, token, admission, bought, refused,
                             soldOut, errored, buyNanos, seatTally);
@@ -189,9 +181,9 @@ public final class RushSaleTest {
     // ------------------------------------------------------------
 
     /**
-     * Joins the line and polls until admitted, sold out, or out of patience.
+     * 排队，然后一直轮询，直到被放行、售罄，或者等得不耐烦了。
      *
-     * @return the admission token, or null when the buyer never got in
+     * @return 放行令牌；如果这个买家始终没进去，则返回 null
      */
     private static String joinAndWait(HttpClient client, String baseUrl, String scheduleId,
                                       String token, AtomicInteger joined, AtomicInteger admitted,
@@ -212,8 +204,8 @@ public final class RushSaleTest {
         }
         joined.incrementAndGet();
 
-        // Poll until the dispatcher reaches us. The deadline is generous
-        // because a long line is the expected shape of the test, not a fault.
+        // 轮询到调度器叫到我们为止。超时时间给得很宽，
+        // 因为长队是这个测试的正常形态，不是故障。
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             String body = get(client, baseUrl + "/api/queue/position?scheduleId=" + scheduleId, token);
@@ -227,9 +219,8 @@ public final class RushSaleTest {
             }
             if (body.contains("PASSED")) {
                 admitted.incrementAndGet();
-                // The admission has to be carried to the purchase, or the seat
-                // service refuses it - which is the whole point of the token,
-                // and a test that forgets it measures only the refusal path.
+                // 这个放行凭证必须一路带到下单那一步，否则选座服务会拒掉它——
+                // 这正是令牌存在的意义，忘记带上它的测试，测到的只是拒绝路径。
                 return field(body, "token");
             }
             try {
@@ -242,7 +233,7 @@ public final class RushSaleTest {
         return null;
     }
 
-    /** Pulls a string field out of a response without a JSON parser. */
+    /** 不用 JSON 解析器，直接从响应里抠出一个字符串字段。 */
     private static String field(String body, String name) {
         int at = body.indexOf("\"" + name + "\":\"");
         if (at < 0) {
@@ -254,10 +245,10 @@ public final class RushSaleTest {
     }
 
     /**
-     * One request against a sold-out sale, with no expectation of success.
+     * 对一场已售罄的场次发一个请求，不指望它能成。
      *
-     * <p>Counts whatever comes back rather than trying to classify it: the
-     * point is the rate, and a refusal is the successful outcome here.
+     * <p>回来的东西一律计数，不做归类：重点是速率，
+     * 在这里被拒绝才是成功的结果。
      */
     private static void floodOne(HttpClient client, String baseUrl, String scheduleId,
                                  String tierId, String token, AtomicInteger refused,
@@ -282,7 +273,7 @@ public final class RushSaleTest {
         }
     }
 
-    /** Spends the admission on seats. */
+    /** 把放行凭证花在选座上。 */
     private static void buy(HttpClient client, String baseUrl, String scheduleId, String tierId,
                             String token, String admission, AtomicInteger bought,
                             AtomicInteger refused, AtomicInteger soldOut, AtomicInteger errored,
@@ -315,7 +306,7 @@ public final class RushSaleTest {
         }
     }
 
-    /** Pulls the seat indexes out of the response without a JSON parser. */
+    /** 不用 JSON 解析器，直接从响应里抠出座位下标。 */
     private static List<String> seatIndexesOf(String body) {
         List<String> indexes = new ArrayList<>();
         int at = body.indexOf("\"seatIndexes\":[");
@@ -335,13 +326,12 @@ public final class RushSaleTest {
     // ------------------------------------------------------------
 
     /**
-     * Signs a token the gateway will accept.
+     * 签一个网关能接受的 token。
      *
-     * <p>Written by hand rather than by calling the project's JwtUtil, so this
-     * runs from a bare JDK with no classpath. The claims are the ones that
-     * class produces: subject is the user id the seat ledger will be written
-     * against, and jti is present because the gateway looks it up in the
-     * logout blacklist on every request.
+     * <p>手工实现而不是调项目里的 JwtUtil，这样它在一个裸 JDK 上、没有
+     * classpath 也能跑。这里的 claim 和那个类产出的一模一样：sub 是座位账本
+     * 要落库的那个用户 id，jti 之所以要有，是因为网关每个请求都会拿它去
+     * 登出黑名单里查一次。
      */
     private static String mint(long userId) {
         long now = System.currentTimeMillis() / 1000;
@@ -406,7 +396,7 @@ public final class RushSaleTest {
     }
 
 
-    /** Daemon threads, so the JVM exits when main returns instead of hanging. */
+    /** 守护线程，这样 main 返回后 JVM 就退出，不会挂在那里。 */
     private static java.util.concurrent.ExecutorService daemonPool(int threads) {
         return Executors.newFixedThreadPool(Math.min(threads, 512), r -> {
             Thread t = new Thread(r);
@@ -418,7 +408,7 @@ public final class RushSaleTest {
     private RushSaleTest() {
     }
 
-    /** Kept for callers that want a token without running a test. */
+    /** 留给那些只想拿一个 token、不想跑测试的调用方。 */
     static String tokenFor(long userId) {
         return mint(userId);
     }

@@ -1,7 +1,7 @@
 -- ============================================================
--- Convert a lock into a sale.
+-- 把一次加锁变成一次成交。
 --
--- Runs after G2 commits (the order is paid, the ledger says "sold").
+-- 在 G2 提交之后运行（订单已付款，账本上写着"已售"）。
 --
 -- KEYS[1] = seat:owner:{scheduleId}
 -- KEYS[2] = seat:delay:{scheduleId}
@@ -9,13 +9,12 @@
 --
 -- ARGV[1] = orderNo
 --
--- The bitmap is deliberately left at 1. Bit 1 means "not available", which is
--- equally true of a locked seat and a sold one; clearing it here would make
--- the seat selectable again the moment payment succeeded. What changes is the
--- owner marker, so a later release can tell the two apart, and the removal
--- from the delay zset, so the timeout sweep stops trying to free it.
+-- bitmap 上那个 1 是刻意留着的。1 的含义是"不可选"，这对已锁的座位和已售的座位
+-- 同样成立；在这里清掉它，支付一成功座位就会重新变成可选的。真正改变的是 owner
+-- 标记，好让后续的释放能区分这两者；同时把这个订单从 delay ZSet 里摘掉，让超时
+-- 扫描不再试图释放它。
 --
--- Returns the number of seats confirmed.
+-- 返回确认的座位数量。
 -- ============================================================
 
 local ownerKey = KEYS[1]
@@ -27,15 +26,14 @@ local seats   = redis.call('SMEMBERS', orderKey)
 
 for _, raw in ipairs(seats) do
     local seatIndex = tonumber(raw)
-    -- The SOLD: prefix is what makes a paid seat distinguishable from a
-    -- merely locked one when a release message arrives late.
+    -- 加 SOLD: 前缀，是为了在一条释放消息迟到时，能把付过钱的座位和只是锁着的
+    -- 座位区分开。
     redis.call('HSET', ownerKey, seatIndex, 'SOLD:' .. orderNo)
 end
 
 redis.call('ZREM', delayKey, orderNo)
 
--- Keep the seat index around for a week so the reconciliation job has
--- something to compare the ledger against; after that it expires on its own.
+-- 座位索引多留一周，好让对账任务有东西可以拿去和账本比对；之后它会自己过期。
 redis.call('EXPIRE', orderKey, 604800)
 
 return #seats

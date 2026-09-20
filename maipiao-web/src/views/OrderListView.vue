@@ -90,8 +90,8 @@ async function reload() {
 }
 
 /**
- * Mirrors OrderStatus on the server:
- * 0 pending, 1 paying, 2 paid, 3 completed, 4 cancelled, 5 refunding, 6 refunded.
+ * 与服务端的 OrderStatus 一一对应：
+ * 0 待支付，1 支付中，2 已支付，3 已完成，4 已取消，5 退款中，6 已退款。
  */
 const STATUS = {
   0: { text: '待支付', cls: 'pending' },

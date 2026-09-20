@@ -9,20 +9,18 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_user.t_user_coupon}.
+ * 映射 {@code maipiao_user.t_user_coupon}。
  *
- * <p>Status values and the transitions that matter here:
+ * <p>状态取值，以及这里要紧的那几个迁移：
  * <pre>
- *   0 unused --lock-->  1 locked --consume--> 2 used
- *                      1 locked --rollback--> 0 unused
- *   0 unused ---------- expire -------------> 3 expired
+ *   0 未使用 --lock-->  1 已锁定 --consume--> 2 已使用
+ *                       1 已锁定 --rollback--> 0 未使用
+ *   0 未使用 ---------- 过期 ----------------> 3 已过期
  * </pre>
  *
- * <p>Every one of those is a conditional UPDATE, never a read-then-write. The
- * lock in particular is
+ * <p>上面每一个都是一条带条件的 UPDATE，绝不是「先读再写」。锁定那次尤其是
  * {@code UPDATE ... SET status=1 WHERE id=? AND user_id=? AND status=0}
- * and the caller must assert that one row changed - otherwise two concurrent
- * orders could both "successfully" lock the same coupon.
+ * 而调用方必须断言有一行被改动 —— 否则两笔并发订单可以双双「成功」锁住同一张券。
  */
 @Data
 @TableName("t_user_coupon")
@@ -40,16 +38,15 @@ public class Coupon {
 
     private Long couponTemplateId;
 
-    /** Discount amount, copied from the template at claim time so that editing
-     *  the template later cannot retroactively change an issued coupon. */
+    /** 抵扣金额，领取时从模板复制过来，这样之后编辑模板也没法回头改动一张已发出的券。 */
     private BigDecimal amount;
 
-    /** Minimum order amount required to use it. */
+    /** 使用它所需的最低订单金额。 */
     private BigDecimal threshold;
 
     private Integer status;
 
-    /** Set when an order locks or consumes this coupon. */
+    /** 某笔订单锁定或核销这张券时写入。 */
     private String orderNo;
 
     private LocalDateTime lockTime;

@@ -10,11 +10,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_movie.t_event_session} - one screening.
+ * 映射 {@code maipiao_movie.t_event_session} —— 一场排片。
  *
- * <p>Inventory model: {@code total_seat = locked_seat + sold_seat + remaining}.
- * The three are updated together, never read-then-written, and the
- * anti-oversell guard is a single conditional UPDATE:
+ * <p>库存模型：{@code total_seat = locked_seat + sold_seat + remaining}。三者一起
+ * 更新，从不「先读再写」，防超卖关卡就是一条带条件的 UPDATE：
  *
  * <pre>
  * UPDATE t_event_session
@@ -23,8 +22,8 @@ import java.time.LocalDateTime;
  *    AND locked_seat + sold_seat + N &lt;= total_seat
  * </pre>
  *
- * The caller must assert that exactly one row changed. Reading the counters
- * into Java first and deciding there would reintroduce the race this avoids.
+ * 调用方必须断言恰好有一行被改动。先把计数器读进 Java 再在那里做判断，会把这条语句
+ * 刻意避开的竞态重新引回来。
  */
 @Data
 @TableName("t_event_session")
@@ -45,7 +44,7 @@ public class Session {
 
     private Long placeId;
 
-    /** Future sharding key for order data. */
+    /** 将来给订单数据用的分片键。 */
     private LocalDate showDate;
 
     private LocalDateTime startTime;
@@ -62,51 +61,48 @@ public class Session {
 
     private Integer status;
 
-    /** 1 = rush sale, which requires queue admission before seat selection. */
+    /** 1 = 抢购，选座之前必须先过排队准入。 */
     private Integer rushMode;
 
     private LocalDateTime rushStartTime;
 
     /**
-     * Who picks the seat: 0 = the buyer, 1 = the system.
+     * 谁选座：0 = 买家，1 = 系统。
      *
-     * <p>Distinct from the venue's {@code seating_mode}, which says whether the
-     * place has fixed seats at all. A seated stadium both has seats and
-     * assigns them - it is a sales policy, so it belongs to the screening.
+     * <p>和场馆的 {@code seating_mode} 不是一回事，那个说的是这个场地到底有没有固定
+     * 座位。一个对号入座的体育场既有座位、又由系统分配 —— 这是销售策略，所以它属于
+     * 场次。
      */
     private Integer seatMode;
 
     /**
-     * DEMO or ADMIN - who created this session.
+     * DEMO 或 ADMIN —— 这个场次是谁建的。
      *
-     * <p>The generator's reset deletes every session before writing new ones,
-     * which was fine while it was the only thing that created them. With an
-     * admin screen, that reset would silently delete somebody's work. The
-     * reset now clears only its own.
+     * <p>生成器的重置在写新数据之前会删掉所有场次，在它是唯一创建者时这没问题。有了
+     * 后台界面之后，那次重置会一声不吭地删掉别人的劳动成果。现在重置只清自己的。
      */
     private String source;
 
-    // ---- admission controls ----
+    // ---- 入场规则 ----
     //
-    // A performance opens at a fixed time and limits how many one person can
-    // buy; a film does neither. The defaults leave film behaviour unchanged,
-    // so nothing downstream has to check the category before acting.
+    // 一场演出在固定时间开票，并限制一个人能买几张；电影两样都不做。默认值让电影的
+    // 行为保持不变，这样下游不必在动作之前先查一遍类型。
 
-    /** When tickets open. NULL means already open. */
+    /** 开票时间。NULL 表示已经开票。 */
     private LocalDateTime saleStartTime;
 
-    /** Max tickets per order. 0 means unlimited. */
+    /** 每单最多几张票。0 表示不限。 */
     private Integer purchaseLimit;
 
-    /** 1 = every ticket must name an attendee. */
+    /** 1 = 每张票都必须填一个观演人。 */
     private Integer requireRealName;
 
-    /** True when tickets are not on sale yet. */
+    /** 还没开票时为 true。 */
     public boolean isSaleNotStarted() {
         return saleStartTime != null && saleStartTime.isAfter(LocalDateTime.now());
     }
 
-    /** True when real-name information is required at checkout. */
+    /** 结算时需要实名信息时为 true。 */
     public boolean needsRealName() {
         return requireRealName != null && requireRealName == 1;
     }
@@ -115,7 +111,7 @@ public class Session {
 
     private LocalDateTime updateTime;
 
-    /** Seats still available to pick right now. */
+    /** 此刻还能选的座位。 */
     public int remainingSeats() {
         int total = totalSeat == null ? 0 : totalSeat;
         int locked = lockedSeat == null ? 0 : lockedSeat;

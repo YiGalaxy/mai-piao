@@ -10,7 +10,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Request and response shapes for the seat endpoints. */
+/** 座位相关接口的请求与响应结构。 */
 public final class SeatDtos {
 
     private SeatDtos() {
@@ -25,24 +25,21 @@ public final class SeatDtos {
             List<Integer> seatIndexes,
 
             /**
-             * Admission token, required only for a rush sale and ignored
-             * otherwise. Carried on the request because the seat service is
-             * where it is enforced - the gateway's check reads the schedule id
-             * from the query string, which the caller controls.
+             * 准入令牌，只有抢购场次才需要，其他情况下忽略。之所以挂在请求上，是因为
+             * 真正的执行点在座位服务 —— 网关那次检查是从 query string 里读场次 id 的，
+             * 而那是由调用方控制的。
              */
             String queueToken
     ) {
     }
 
     /**
-     * A successful lock.
+     * 一次成功的加锁。
      *
-     * <p>{@code lockToken} is what the order call presents to prove the seats
-     * are held; without it, seat locking and order creation could be driven
-     * independently and someone could place an order for seats they never took.
+     * <p>{@code lockToken} 是下单调用拿来证明座位已被持有的凭据；没有它，锁座和创建
+     * 订单就能被各自独立地驱动，有人就能为一个自己从未占下的座位下单。
      *
-     * @param expireSeconds seconds until the hold lapses, for the countdown
-     *                      the client shows on the payment page
+     * @param expireSeconds 距离持有失效还有多少秒，供客户端在支付页上做倒计时
      */
     public record LockSeatResponse(
             String lockToken,
@@ -54,7 +51,7 @@ public final class SeatDtos {
     ) {
     }
 
-    /** Returned when one or more of the requested seats went to somebody else. */
+    /** 当请求的座位中有一个或多个已经归了别人时返回。 */
     public record LockConflictResponse(
             int conflictSeatIndex,
             String conflictSeatLabel,
@@ -63,15 +60,14 @@ public final class SeatDtos {
     }
 
     /**
-     * Ask the system for seats rather than naming them.
+     * 向系统要座位，而不是点名要哪些座位。
      *
-     * <p>No seat indexes: the buyer picks a band and a quantity, which is the
-     * whole point of the mode - there is no map on screen to pick from.
+     * <p>没有座位索引：买家选一个票档和一个数量，这正是这个模式的意义所在 —— 屏幕上
+     * 根本没有座位图可以点。
      *
-     * <p>{@code adjacent} defaults to true and is what separates "two seats" from
-     * "two seats together". A caller that would rather have split seats than
-     * none sets it false; the client offers that as an explicit choice after a
-     * failure, never silently.
+     * <p>{@code adjacent} 默认为 true，它就是"两个座位"和"两个挨着的座位"之间的
+     * 区别。宁愿要分开的座位也不要没座位的调用方把它设成 false；客户端是在失败之后
+     * 把这个当成一个明确选项给出来的，绝不会悄悄替用户选掉。
      */
     public record AssignSeatRequest(
             @NotNull(message = "场次不能为空")
@@ -87,7 +83,7 @@ public final class SeatDtos {
 
             Boolean adjacent,
 
-            /** Admission token; see {@link LockSeatRequest#queueToken}. */
+            /** 准入令牌；见 {@link LockSeatRequest#queueToken}。 */
             String queueToken
     ) {
         public boolean wantsAdjacent() {
@@ -96,12 +92,11 @@ public final class SeatDtos {
     }
 
     /**
-     * An allocation that found no run of that length.
+     * 一次没能找到足够长连座的分配。
      *
-     * <p>Separate from a plain conflict because it is a different situation
-     * with a different remedy: nothing was taken and nothing is broken, the
-     * band simply cannot seat that many together. {@code longestRun} is what
-     * the caller offers as the alternative.
+     * <p>与普通的冲突分开，因为这是另一种情形，也要用另一种办法解决：什么都没被拿走，
+     * 也没有任何东西坏掉，只是这个票档坐不下那么多人挨在一起。{@code longestRun} 就是
+     * 调用方拿出来的备选方案。
      */
     public record NotAdjacentResponse(
             int requested,

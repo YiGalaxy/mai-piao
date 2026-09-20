@@ -16,13 +16,13 @@ import java.util.List;
 public interface RefundMapper extends BaseMapper<Refund> {
 
     /**
-     * Creates a refund, or does nothing when one already exists.
+     * 创建一笔退款；已经存在时什么都不做。
      *
-     * <p>{@code INSERT IGNORE} against the unique key on payment_no is layer
-     * L4: a double-clicked refund button produces one row, and the caller then
-     * reads it back rather than issuing a second refund at the provider.
+     * <p>针对 payment_no 上那个唯一键的 {@code INSERT IGNORE} 就是 L4 层：
+     * 被双击的退款按钮只会产生一行，调用方随后把它读回来，
+     * 而不是去渠道方那里再发一笔退款。
      *
-     * @return 1 when a row was created, 0 when one already existed
+     * @return 建出了新行返回 1，已经存在返回 0
      */
     @Insert("""
             INSERT IGNORE INTO t_pay_refund
@@ -53,11 +53,10 @@ public interface RefundMapper extends BaseMapper<Refund> {
     Refund selectByRefundNo(@Param("refundNo") String refundNo);
 
     /**
-     * Marks a refund successful.
+     * 把退款单标记为成功。
      *
-     * <p>{@code status IN (0,1)}: both "not started" and "in flight" may
-     * succeed, and the amount check stops a notification for a different
-     * amount from closing it out.
+     * <p>{@code status IN (0,1)}：「尚未开始」和「在途」都有可能成功；
+     * 而金额检查拦住了另一笔金额的通知把它结掉。
      */
     @Update("""
             UPDATE t_pay_refund
@@ -75,10 +74,10 @@ public interface RefundMapper extends BaseMapper<Refund> {
                          @Param("amount") BigDecimal amount);
 
     /**
-     * Records a failed attempt and schedules the next one.
+     * 记下一次失败的尝试，并把下一次安排上。
      *
-     * <p>Backoff is exponential with a ceiling, computed in SQL so that every
-     * caller gets the same schedule without reimplementing it.
+     * <p>退避是指数式且有上限的，在 SQL 里算出来，好让每个调用方拿到同一套节奏，
+     * 不必各自再实现一遍。
      */
     @Update("""
             UPDATE t_pay_refund
@@ -94,7 +93,7 @@ public interface RefundMapper extends BaseMapper<Refund> {
                       @Param("nextStatus") int nextStatus,
                       @Param("error") String error);
 
-    /** Refunds due for another attempt. */
+    /** 到了该再试一次的时候的退款单。 */
     @Select("""
             SELECT * FROM t_pay_refund
              WHERE status IN (0, 1)

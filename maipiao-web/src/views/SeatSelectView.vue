@@ -3,7 +3,7 @@
     <el-skeleton v-if="loading" :rows="8" animated />
 
     <template v-else-if="seatMap">
-      <!-- Screening summary -->
+      <!-- 场次摘要 -->
       <div class="mp-card summary">
         <div>
           <h2>{{ seatMap.projectTitle }}</h2>
@@ -18,7 +18,7 @@
       </div>
 
       <div class="seat-layout">
-        <!-- Seat map -->
+        <!-- 座位图 -->
         <div class="mp-card map-panel">
           <div class="screen">
             <div class="screen-bar"></div>
@@ -30,9 +30,8 @@
           </div>
 
           <!--
-            With tiers, the legend shows the price bands and what they cost -
-            which is what a buyer actually needs to decide. Without them, it
-            falls back to the plain seat-state legend.
+            有票价档位时，图例展示各档位及其票价 —— 这才是买票的人真正需要
+            用来做决定的信息。没有档位时，退回普通的座位状态图例。
           -->
           <div v-if="tiers.length > 1" class="tier-legend">
             <div v-for="tier in tiers" :key="tier.id" class="tier-item">
@@ -54,7 +53,7 @@
           </div>
         </div>
 
-        <!-- Selection panel -->
+        <!-- 选座与结算面板 -->
         <aside class="mp-card panel">
           <h3>已选座位</h3>
 
@@ -115,15 +114,14 @@ const selected = ref([])
 const canvasRef = ref(null)
 
 /**
- * Price bands for this session.
+ * 本场次的票价档位。
  *
- * A film has one, covering every seat, and the map is not tinted. A
- * performance has several and the tint is what makes the sections readable -
- * which is why the colouring only kicks in when there is more than one band.
+ * 电影只有一个档位，覆盖全部座位，座位图也就不做颜色区分。演出则会有多个
+ * 档位，靠颜色才看得出分区 —— 所以只有档位数大于一时才上色。
  */
 const tiers = computed(() => seatMap.value?.tiers || [])
 
-// Geometry. Sized so a 14x16 IMAX hall fits without scrolling.
+// 几何尺寸。按 14x16 的 IMAX 厅调到不用滚动就能放下。
 const SEAT_W = 30
 const SEAT_H = 26
 const GAP = 6
@@ -131,7 +129,7 @@ const OFFSET_X = 44
 const OFFSET_Y = 20
 const MAX_SELECT = 6
 
-/** One per selected seat, in selection order. */
+/** 每个已选座位一个，按选择顺序取用。 */
 const SEAT_FACES = ['🐱', '🐶', '🦊', '🐼', '🐨', '🐯']
 
 const canvasWidth = computed(() => {
@@ -147,12 +145,11 @@ const canvasHeight = computed(() => {
 const selectedSeats = computed(() => selected.value)
 
 /**
- * Price of one seat.
+ * 单个座位的票价。
  *
- * Read from the seat's own band, not from the session's headline price. The
- * session carries the "from" price for the listing; a seat in the VIP block
- * costs more than one in the stands, and charging everybody the listing price
- * would undercharge the front rows and overcharge the back.
+ * 取座位自己所属档位的价格，而不是场次的标价。场次上带的是列表展示用的
+ * 「起」价；VIP 区的座位比看台区贵，如果一律按标价收费，前排会被少收、
+ * 后排会被多收。
  */
 function priceOf(seat) {
   if (seat?.tierId) {
@@ -170,8 +167,8 @@ onMounted(async () => {
   try {
     seatMap.value = await fetchSeatMap(scheduleId)
     normaliseSeatIndexes()
-    // The canvas is only in the DOM after seatMap resolves, hence nextTick-free
-    // direct draw here: the template has already re-rendered by this point.
+    // canvas 要等 seatMap 拿到之后才进 DOM，所以这里直接画、不用 nextTick：
+    // 执行到这一行时模板已经重新渲染过了。
     requestAnimationFrame(draw)
   } catch {
     seatMap.value = null
@@ -181,13 +178,12 @@ onMounted(async () => {
 })
 
 /**
- * Converts seatIndex back to a number.
+ * 把 seatIndex 转回数字。
  *
- * <p>The backend serialises every Long as a JSON string, because a 19-digit
- * snowflake id does not survive JavaScript's double-precision parse. seatIndex
- * is small enough to be safe either way, but it arrives as a string all the
- * same - and a string index compared against a number index silently matches
- * nothing, which shows up as selections that will not toggle.
+ * <p>后端把所有 Long 都序列化成 JSON 字符串，因为 19 位的 snowflake id
+ * 经不起 JavaScript 双精度解析。seatIndex 数值很小，两种形式其实都安全，
+ * 但它照样是以字符串形式传过来的 —— 而字符串下标和数字下标比较会静默地
+ * 什么都匹配不上，表现就是点了座位取消不掉。
  */
 function normaliseSeatIndexes() {
   if (!seatMap.value?.seats) return
@@ -198,11 +194,10 @@ function normaliseSeatIndexes() {
 }
 
 /**
- * Draws the hall.
+ * 绘制整个影厅。
  *
- * Position comes from the seat's physical row and column, not from its
- * seat_index - so aisle columns, which have no seats, simply leave a gap
- * without any special-casing.
+ * 位置取自座位物理上的排号和列号，而不是 seat_index —— 这样过道列
+ * （本来就没有座位）自然就空出一块，不需要任何特殊处理。
  */
 function draw() {
   const canvas = canvasRef.value
@@ -211,7 +206,7 @@ function draw() {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
 
-  // Render at device resolution so the seat edges are crisp on a HiDPI screen.
+  // 按设备分辨率渲染，座位边框在高分屏上才不糊。
   canvas.width = canvasWidth.value * dpr
   canvas.height = canvasHeight.value * dpr
   canvas.style.width = `${canvasWidth.value}px`
@@ -225,14 +220,14 @@ function draw() {
     const x = (seat.col - 1) * (SEAT_W + GAP) + OFFSET_X
     const y = (seat.row - 1) * (SEAT_H + GAP) + OFFSET_Y
 
-    // Couple seats are drawn slightly wider so the pairing is visible.
+    // 情侣座画得略宽一点，看得出是两个一组。
     const w = seat.type === 1 ? SEAT_W + GAP - 2 : SEAT_W
 
     const tierColor = tierColorOf(seat.tierId)
 
     if (seat.status === 1) {
-      // Taken seats are filled with the page background colour, so they read
-      // as "not part of the map" rather than as a different kind of choice.
+      // 已售座位用页面背景色填充，读起来像「不在这张图上」，而不是
+      // 另一种可选项。
       ctx.fillStyle = '#f0f0f0'
       ctx.strokeStyle = '#e8e8e8'
     } else if (selectedIndexes.has(seat.seatIndex)) {
@@ -242,9 +237,8 @@ function draw() {
       ctx.fillStyle = '#fff3ea'
       ctx.strokeStyle = '#ffc9a3'
     } else if (tierColor) {
-      // Tinted by price band. A film has one band so every seat looks the
-      // same; a concert shows its sections at a glance, which is the whole
-      // reason the tier is carried onto the seat.
+      // 按票价档位着色。电影只有一个档位，所有座位看起来都一样；演唱会
+      // 则一眼就能看出分区 —— 这正是要把档位带到座位上的全部理由。
       ctx.fillStyle = tint(tierColor, 0.14)
       ctx.strokeStyle = tint(tierColor, 0.5)
     } else {
@@ -257,14 +251,12 @@ function draw() {
     ctx.lineWidth = 1
     ctx.stroke()
 
-    // A character on each chosen seat.
+    // 每个已选座位上画一个表情。
     //
-    // This is the one piece of pure decoration in the app, and it earns its
-    // place: a wall of identical orange rectangles makes it hard to see at a
-    // glance which seats are yours, and the seats that were already taken look
-    // almost the same as the ones you picked. A distinct face per seat makes
-    // "these are mine" instant, and it gives the screen some warmth at the
-    // moment the user has just committed to spending money.
+    // 这是全应用里唯一一处纯装饰，但它配得上：满屏一模一样的橙色方块，
+    // 一眼看不出哪几个是你选的，而已售座位和你选中的座位几乎长得一样。
+    // 每个座位给一个不同的表情，「这些是我的」就变得一目了然，也让用户
+    // 刚刚决定掏钱的那一刻，屏幕不至于太冷冰冰。
     if (selectedIndexes.has(seat.seatIndex)) {
       const picked = selected.value.findIndex((s) => s.seatIndex === seat.seatIndex)
       ctx.font = '15px "Apple Color Emoji", "Segoe UI Emoji", sans-serif'
@@ -274,7 +266,7 @@ function draw() {
     }
   }
 
-  // Row numbers down the left edge, so people can find their row.
+  // 左边缘标出排号，方便对号入座。
   ctx.fillStyle = '#999'
   ctx.font = '11px sans-serif'
   ctx.textAlign = 'right'
@@ -286,11 +278,10 @@ function draw() {
 }
 
 /**
- * Colour for a price band, or null when the session has none.
+ * 取某个票价档位的颜色，场次没有档位时返回 null。
  *
- * A session with a single tier is a film, and colouring every seat the same
- * would make the map noisier for no information - so the tint is only applied
- * when there is more than one band to tell apart.
+ * 只有一个档位的场次就是电影，把每个座位都涂上同一种颜色，只会让图变花
+ * 却不带来任何信息 —— 所以只有存在多个档位需要区分时才上色。
  */
 function tierColorOf(tierId) {
   if (!tierId || tiers.value.length < 2) return null
@@ -298,7 +289,7 @@ function tierColorOf(tierId) {
   return tier?.color || null
 }
 
-/** Hex colour at the given alpha, for the soft fill and its outline. */
+/** 把十六进制颜色加上指定透明度，用于淡填充和它的描边。 */
 function tint(hex, alpha) {
   const h = hex.replace('#', '')
   const r = parseInt(h.substring(0, 2), 16)
@@ -332,8 +323,8 @@ function onCanvasClick(event) {
   const col = Math.floor((clickX - OFFSET_X) / (SEAT_W + GAP)) + 1
   const row = Math.floor((clickY - OFFSET_Y) / (SEAT_H + GAP)) + 1
 
-  // Hit-testing by geometry rather than by tracking drawn rectangles: the
-  // grid is uniform, so the inverse of the layout formula is enough.
+  // 用几何反推命中，而不是把画过的矩形都记下来：网格是等距的，
+  // 把布局公式反过来算就够了。
   const seat = seatMap.value.seats.find((s) => s.row === row && s.col === col)
   if (!seat) return
 
@@ -364,32 +355,30 @@ async function onConfirm() {
   locking.value = true
   try {
     const result = await lockSeats({
-      // Left as the string it arrived as.
+      // 保持它传过来时的字符串形态。
       //
-      // Number() here would undo the whole reason ids are serialised as
-      // strings: 2101643262211633153 does not fit in a double and comes back
-      // as ...200, so the server would be asked to lock seats on a screening
-      // that does not exist. Jackson parses the string back to a Long on the
-      // other side without any help from us.
+      // 这里用 Number() 会把「id 序列化成字符串」的全部意义抹掉：
+      // 2101643262211633153 放不进 double，会变成 ...200，服务端就会收到
+      // 一个去锁根本不存在的场次的请求。到了对面，Jackson 会自己把字符串
+      // 解析回 Long，不需要我们做任何事。
       scheduleId,
       seatIndexes: selected.value.map((s) => s.seatIndex)
     })
 
-    // Hand the hold to the checkout page.
+    // 把这次占座交给结算页。
     //
-    // sessionStorage rather than the URL: the lock token is a credential for
-    // a held resource, and a query string ends up in browser history, in
-    // referrer headers, and in whatever the user pastes into a chat window.
+    // 用 sessionStorage 而不是 URL：lock token 是所持资源的凭证，
+    // 而查询串会进浏览器历史、进 referrer 请求头，还会跟着用户
+    // 复制粘贴到聊天窗口里。
     sessionStorage.setItem(
       'maipiao_pending_seats',
       JSON.stringify({
         lockToken: result.lockToken,
         scheduleId: String(result.scheduleId),
         expireSeconds: result.expireSeconds,
-        // The server's figure, carried through rather than recomputed. The map
-        // only knows the session's listing price, which is the cheapest band -
-        // recomputing from it in the checkout would undercharge every seat
-        // that is not in that band.
+        // 用服务端给的金额，原样带过去而不是自己重算。座位图只知道场次的
+        // 列表价，也就是最便宜的那一档 —— 结算页若拿它重算，凡是
+        // 不在这档里的座位都会被少收钱。
         amount: result.amount,
         seats: selected.value.map((s) => ({
           seatIndex: s.seatIndex,
@@ -400,9 +389,8 @@ async function onConfirm() {
 
     router.push({ name: 'checkout' })
   } catch {
-    // Covers the conflict case: someone took a seat between drawing the map
-    // and confirming. Reload so the user sees the current state rather than
-    // the stale one they were looking at.
+    // 覆盖冲突的情况：在画图到点确认之间，有人抢走了某个座位。
+    // 重载一次，让用户看到当前状态，而不是他刚才盯着的旧状态。
     await reload()
   } finally {
     locking.value = false
@@ -416,7 +404,7 @@ async function reload() {
     selected.value = []
     requestAnimationFrame(draw)
   } catch {
-    // leave the page as-is
+    // 保持页面原样
   }
 }
 
@@ -577,7 +565,7 @@ function formatDate(value) {
   border: 1px solid #ffc4b0;
 }
 
-/* ---- side panel ---- */
+/* ---- 侧边面板 ---- */
 
 .panel {
   padding: 20px;
@@ -613,8 +601,7 @@ function formatDate(value) {
   font-size: 14px;
 }
 
-/* Matches the marker drawn on the canvas, so the list and the map can be
-   read against each other. */
+/* 与画在 canvas 上的标记保持一致，列表和座位图可以对照着看。 */
 .picked .face {
   font-size: 17px;
   line-height: 1;

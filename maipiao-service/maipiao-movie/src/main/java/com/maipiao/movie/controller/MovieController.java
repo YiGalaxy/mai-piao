@@ -19,15 +19,13 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Public browsing endpoints.
+ * 面向公众的浏览接口。
  *
- * <p>Read-only and unauthenticated - the gateway whitelists {@code /api/movie/**}.
- * A token is still forwarded when the client has one, so personalisation can
- * be added later without introducing a parallel set of endpoints.
+ * <p>只读且不鉴权 —— 网关把 {@code /api/movie/**} 放进了白名单。客户端带 token 时
+ * 仍然会转发过去，这样以后要加个性化不必再开一套并行的接口。
  *
- * <p>Every method returns {@link R} and delegates; no branching, no try/catch.
- * Failures are raised as {@code BizException} from the service layer and
- * translated centrally.
+ * <p>每个方法都返回 {@link R} 并向下委派；没有分支，没有 try/catch。失败由 service
+ * 层以 {@code BizException} 抛出，再统一翻译。
  */
 @RestController
 @RequestMapping("/movie")
@@ -39,10 +37,10 @@ public class MovieController {
     private final SessionService sessionService;
 
     /**
-     * @param status   0 upcoming, 1 on sale, 2 closed; omit for all
-     * @param category MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL;
-     *                 omit for everything. Omit rather than pass a list, so
-     *                 the "all" case stays a single unindexed-free query.
+     * @param status   0 待映，1 在售，2 已下线；不传表示全部
+     * @param category MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL；
+     *                 不传表示全部。做成不传而不是传一个列表，是为了让「全部」这种
+     *                 情况仍然只是一条走得上索引的查询。
      */
     @GetMapping("/film/list")
     public R<List<Film>> filmList(@RequestParam(required = false) Integer status,
@@ -61,11 +59,10 @@ public class MovieController {
     }
 
     /**
-     * Screenings for a film and/or cinema on a date.
+     * 某一天、某部影片和/或某个影院的排片。
      *
-     * <p>{@code showDate} accepts ISO {@code yyyy-MM-dd} and defaults to today
-     * when omitted, so a client that has not built a date picker yet still gets
-     * something useful rather than an error.
+     * <p>{@code showDate} 接受 ISO {@code yyyy-MM-dd}，不传时默认今天，这样还没做
+     * 日期选择器的客户端拿到的是有用的东西，而不是一个错误。
      */
     @GetMapping("/schedule/list")
     public R<List<SessionVO>> scheduleList(

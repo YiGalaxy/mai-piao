@@ -1,36 +1,35 @@
 import request from './request'
 
 /**
- * Rush-sale queue endpoints.
+ * 抢票排队的接口。
  *
- * Only screenings with rushMode = 1 go through here. A normal screening sells
- * straight through and never touches the queue, which is why nothing else in
- * the app calls these.
+ * 只有 rushMode = 1 的场次才走这里。普通场次直接卖，从不碰队列，
+ * 所以应用里没有别的地方会调这些接口。
  */
 
 /**
- * Joins the line for a screening.
+ * 排入某场次的队列。
  *
- * Idempotent: the queue is a sorted set keyed by user id, so joining again
- * returns the same place rather than adding a second entry. That is what lets
- * the waiting page call this on every mount without checking first.
+ * 幂等：队列是一个以用户 id 为成员的 sorted set，所以重复排队拿到的是同一个
+ * 位置，而不会多出一条记录。正因如此，等待页每次 mount 都能直接调它，
+ * 不必先判断有没有排过。
  */
 export function joinQueue(scheduleId) {
   return request.post('/queue/join', null, { params: { scheduleId } })
 }
 
 /**
- * Where the caller stands.
+ * 调用者现在排到什么位置了。
  *
  * @returns {Promise<{status: string, rank: number, ahead: number, total: number,
  *                    token: string, expiresIn: number}>}
- *          status is WAITING | PASSED | SOLD_OUT | PAUSED | NOT_STARTED
+ *          status 取值为 WAITING | PASSED | SOLD_OUT | PAUSED | NOT_STARTED
  */
 export function fetchQueuePosition(scheduleId) {
   return request.get('/queue/position', { params: { scheduleId } })
 }
 
-/** Leaves the line. Best-effort - a token already issued keeps working. */
+/** 退出队列。尽力而为 —— 已经发出的 token 仍然有效。 */
 export function leaveQueue(scheduleId) {
   return request.post('/queue/leave', null, { params: { scheduleId } })
 }

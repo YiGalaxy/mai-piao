@@ -10,11 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Picks the channel for a payment.
+ * 为支付挑选渠道。
  *
- * <p>Spring injects every {@link PaymentChannel} bean, so adding a provider is
- * a matter of adding a class - nothing here changes, and nothing that calls
- * here changes either.
+ * <p>Spring 会把每一个 {@link PaymentChannel} bean 都注入进来，所以接入一家渠道方就是
+ * 加一个类的事 —— 这里不用改，调用这里的代码也不用改。
  */
 @Slf4j
 @Component

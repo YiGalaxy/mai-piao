@@ -1,9 +1,8 @@
 -- ============================================================
--- Release seats held by an order. Idempotent.
+-- 释放某个订单持有的座位。幂等。
 --
--- Called on user cancellation, on payment timeout, and from the G1 rollback
--- path - all of which may run more than once for the same order, and any of
--- which may run after the seats have already been sold to somebody else.
+-- 在用户取消、支付超时、以及 G1 回滚路径上都会被调用 —— 这些路径对同一个订单都可能
+-- 跑不止一次，而且其中任何一次都可能发生在座位已经卖给别人的时候。
 --
 -- KEYS[1] = seat:map:{scheduleId}
 -- KEYS[2] = seat:owner:{scheduleId}
@@ -12,12 +11,12 @@
 -- KEYS[5] = sold_out:{scheduleId}
 --
 -- ARGV[1] = orderNo
--- ARGV[2] = '1' to force-release seats with no owner (reconciliation repair
---           only - never pass it from a normal flow)
--- ARGV[3] = '1' to also release seats this order has already sold, i.e. those
---           marked SOLD:{orderNo}. For refunds only - see below.
+-- ARGV[2] = '1' 表示强行释放没有 owner 标记的座位（只给对账修复用 —— 正常流程
+--           绝不能传这个值）
+-- ARGV[3] = '1' 表示连本订单已经卖掉的座位一起释放，也就是标记为
+--           SOLD:{orderNo} 的那些。只给退款用 —— 见下文。
 --
--- Returns the number of seats actually released.
+-- 返回真正被释放的座位数量。
 -- ============================================================
 
 local mapKey   = KEYS[1]
@@ -37,19 +36,15 @@ for _, raw in ipairs(seats) do
     local seatIndex = tonumber(raw)
     local owner = redis.call('HGET', ownerKey, seatIndex)
 
-    -- Free a seat this order still holds, and - only when the caller says so -
-    -- one it has already sold.
+    -- 释放本订单还持有的座位，以及 —— 仅在调用方明确要求时 —— 它已经卖掉的座位。
     --
-    -- The two are distinguished by the marker: a held seat carries the order
-    -- number, a sold one carries SOLD: prefixed to it. Loosening this to
-    -- match either would mean a late timeout message could free a seat that
-    -- had been paid for, which is the failure the check exists to prevent.
-    -- So a refund asks for the second kind explicitly rather than the default
-    -- growing to cover it.
+    -- 两者靠 owner 标记区分：持有的座位存的就是订单号，已售的座位前面多了个
+    -- SOLD: 前缀。把判断放宽成两者都匹配，就意味着一条迟到的超时消息可以释放掉一个
+    -- 已经付过钱的座位，而这个检查存在的意义正是防止这件事。所以退款要显式点名要
+    -- 第二类，而不是让默认行为慢慢扩张到把两类都覆盖进去。
     --
-    -- A sold seat really does go back on the market on a refund - and it has
-    -- to, or the bit stays set and the seat is unsellable forever while the
-    -- ledger says it is free.
+    -- 已售座位在退款时确实要重新回到市场上 —— 而且必须回来，否则那个 bit 一直置着，
+    -- 座位永远卖不出去，而账本上却显示它是空着的。
     local mine  = owner == orderNo
     local wasMine = includeSold and owner == ('SOLD:' .. orderNo)
 
@@ -60,13 +55,11 @@ for _, raw in ipairs(seats) do
     end
 end
 
--- Freeing a seat un-sells-out the screening.
+-- 释放座位等于把这场次从"售罄"里撤回来。
 --
--- The flag is set the moment the last bit goes, and without this it would
--- never come back: one cancelled order is enough to leave a screening that
--- still has seats reading as sold out for as long as the key lives. Clearing
--- is unconditional rather than re-derived from BITCOUNT, because at this point
--- the seats have demonstrably been freed.
+-- 这个标记在最后一个 bit 被占走的瞬间就置上了，没有这一段它就再也回不来：只要有一
+-- 个订单被取消，一个明明还有空座的场次就会在 key 存活期内一直显示售罄。这里是无条件
+-- 清除，而不是再拿 BITCOUNT 推导一遍，因为走到这一步时座位已经确实被释放了。
 if released > 0 then
     redis.call('DEL', soldKey)
 end

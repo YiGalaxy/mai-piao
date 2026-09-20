@@ -27,16 +27,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Creating performances, as opposed to generating demo ones.
+ * 创建演出，与生成演示演出相对。
  *
- * <p>The difference worth stating: {@link DemoDataService} is handed a window
- * of days and fills it, which is right for a film and was wrong for everything
- * else. This is handed a date, a place and a set of prices, and creates
- * exactly one session. An announced concert has no grid to fill.
+ * <p>值得说清的差别：{@link DemoDataService} 拿到的是一段日期窗口并把它填满，
+ * 这对电影是对的，对其他一切都不对。这里拿到的是一个日期、一个场地和一组价格，
+ * 并且只创建一个场次。一场公布出来的演唱会没有网格要填。
  *
- * <p>Transactional per session. Creating one writes a session, its bands and
- * every seat row in the hall - a few thousand rows - and a half-written
- * session would be a screening that sells seats it has no rows for.
+ * <p>以场次为事务边界。创建一个场次要写入一个场次、它的票档和场馆里每一行座位 ——
+ * 几千行 —— 而写了一半的场次会变成一个卖着座位却没有座位行的排片。
  */
 @Slf4j
 @Service
@@ -51,7 +49,7 @@ public class AdminPerformanceService {
     private final SessionSeatFactory seatFactory;
     private final CinemaMapper cinemaMapper;
 
-    /** Categories the system knows how to sell. */
+    /** 系统知道怎么卖的类型。 */
     private static final List<String> CATEGORIES =
             List.of("MOVIE", "CONCERT", "TALK_SHOW", "THEATER", "MUSICAL");
 
@@ -78,8 +76,7 @@ public class AdminPerformanceService {
         project.setDuration(request.duration());
         project.setShowDate(request.showDate());
         project.setScore(java.math.BigDecimal.ZERO);
-        // On sale from the moment it exists: whether tickets can actually be
-        // bought is decided by the session's sale window, not by this.
+        // 一存在就是在售：票实际能不能买，由场次的售票窗口决定，不由这个字段决定。
         project.setStatus(Film.STATUS_ON_SALE);
 
         filmMapper.insert(project);
@@ -89,13 +86,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Puts a project on sale for one date at one place.
+     * 让一个项目在某一天、某个场地上架开卖。
      *
-     * <p>The seats come from the hall's own template through
-     * {@link SessionSeatFactory}, so an aisle in the venue is an aisle in the
-     * data. The number of seats is whatever that produces - not a number the
-     * caller supplies, because the two disagreeing is the difference between a
-     * full house and an oversold one.
+     * <p>座位经过 {@link SessionSeatFactory} 取自场馆自己的模板，所以场馆里有条过道，
+     * 数据里就有条过道。座位数就是它算出来的那个 —— 不是调用方给的数字，因为两者
+     * 一旦对不上，差的就是「满座」和「超卖」。
      */
     @Transactional(rollbackFor = Exception.class)
     public AdminDtos.SessionCreated createSession(AdminDtos.CreateSessionRequest request) {
@@ -123,8 +118,7 @@ public class AdminPerformanceService {
 
         List<PriceTier> tiers = insertTiers(session.getId(), request.tierSpecs());
 
-        // Bands first: every seat resolves its band from them, so writing the
-        // seats before the bands would leave every seat unpriced.
+        // 票档先写：每个座位都要从它们那里确定自己的档，先写座位会让每个座位都没有价。
         List<SessionSeat> seats = seatFactory.buildSeats(session.getId(), tiers, layout);
         seatFactory.insert(seats);
 
@@ -136,7 +130,7 @@ public class AdminPerformanceService {
                 request.startTime(), seats.size(), tiers.size());
     }
 
-    /** A project's dates, newest first, so an administrator sees what exists. */
+    /** 一个项目的日期，最早的在前，好让管理员看清已经有什么。 */
     public List<Session> sessionsOf(Long projectId) {
         return sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
                 .eq(Session::getProjectId, projectId)
@@ -144,12 +138,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Removes a session and everything hanging off it.
+     * 删掉一个场次和挂在它下面的一切。
      *
-     * <p>Refuses once a seat has been sold. A session with tickets behind it is
-     * not a scheduling mistake to be tidied away - it is something people have
-     * paid for, and cancelling it means refunding them, which is a different
-     * operation with different consequences.
+     * <p>一旦卖出过座位就拒绝。一个背后有票的场次不是排期时手滑、可以随手收拾掉的
+     * 东西 —— 那是有人掏过钱的，取消它意味着给这些人退款，而那是另一回事，后果也
+     * 不一样。
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteSession(Long sessionId) {
@@ -171,7 +164,7 @@ public class AdminPerformanceService {
     }
 
     // ------------------------------------------------------------
-    // venues and places
+    // 场馆和场地
     // ------------------------------------------------------------
 
     @Transactional(rollbackFor = Exception.class)
@@ -185,14 +178,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Edits a venue.
+     * 编辑一个场馆。
      *
-     * <p>Unrestricted, including the type. The type is what the picker groups
-     * by and what suggests a default price band; it is not consulted when a
-     * session's seats are generated, so changing it cannot invalidate seats
-     * that already exist. Name, address and coordinates are likewise
-     * presentational - an order snapshots them when it is placed and keeps its
-     * own copy.
+     * <p>不做限制，类型也能改。类型是选择器用来分组、也是用来推荐默认票价档的依据；
+     * 生成场次座位时并不查它，所以改它不会让已经存在的座位失效。名称、地址、坐标
+     * 同样是展示性的 —— 下单时订单会把它们快照一份，留着自己的副本。
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateVenue(Long venueId, AdminDtos.VenueRequest request) {
@@ -257,10 +247,8 @@ public class AdminPerformanceService {
         place.setStatus(request.status() == null ? Hall.STATUS_ACTIVE : request.status());
         hallMapper.insert(place);
 
-        // Say out loud what the template actually yields. A declared seat_count
-        // and a grid that disagrees is the kind of thing nobody notices until a
-        // session comes out a different size than expected, and the warning is
-        // free here.
+        // 把模板实际产出多少说出来。声明的 seat_count 和网格对不上这种事，没人会
+        // 注意到，直到某个场次出来的大小和预期不一样；而在这里喊一声是不要钱的。
         warnIfCapacityDiffers(place);
         log.info("place created: id={}, venue={}, name={}", place.getId(),
                 place.getVenueId(), place.getName());
@@ -268,13 +256,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Edits a place, including its seat template.
+     * 编辑一个场地，座位模板也能改。
      *
-     * <p>Existing sessions keep the seats they were created with. Their rows
-     * were written out at the time and are the truth for those sessions - a
-     * room really can be reconfigured between events, and refusing that would
-     * be refusing something ordinary. What this changes is every session
-     * created afterwards.
+     * <p>已有场次保留它们创建时的座位。那些座位行是当时写下来的，对那批场次就是事实
+     * —— 一个场子在两场活动之间确实可能重新布置，拒绝这件事等于拒绝一件再平常不过
+     * 的事。这里改动影响的是之后创建的每一个场次。
      */
     @Transactional(rollbackFor = Exception.class)
     public void updatePlace(Long placeId, AdminDtos.PlaceRequest request) {
@@ -315,12 +301,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Warns when the declared capacity and the template disagree.
+     * 声明的容量和模板对不上时给出警告。
      *
-     * <p>Not an error: {@code seat_count} is a label and the template is what
-     * decides. But they are two numbers describing the same room, and somebody
-     * looking at 716 beside a grid that yields 720 would rather know now than
-     * discover it in the size of a session.
+     * <p>这不是错误：{@code seat_count} 是个标签，说话算数的是模板。但它们是描述
+     * 同一个场子的两个数字，而一个人看着 716 旁边摆着一个得出 720 的网格，宁愿现在
+     * 就知道，也不想等到某个场次的大小上才发现。
      */
     private void warnIfCapacityDiffers(Hall place) {
         int actual = seatFactory.layoutOf(place).size();
@@ -333,7 +318,7 @@ public class AdminPerformanceService {
     }
 
     // ------------------------------------------------------------
-    // editing what has already been created
+    // 编辑已经创建出来的东西
     // ------------------------------------------------------------
 
     @Transactional(rollbackFor = Exception.class)
@@ -343,8 +328,8 @@ public class AdminPerformanceService {
             throw new BizException(ErrorCode.PARAM_ERROR, "项目不存在");
         }
 
-        // Null means "leave it alone", not "set it to null". A form that sends
-        // only the field somebody changed would otherwise blank the rest.
+        // null 的含义是「别动它」，不是「把它设成 null」。否则只提交了改动字段的
+        // 表单，会把其余字段全清空。
         if (request.title() != null) {
             project.setTitle(request.title());
         }
@@ -387,16 +372,14 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Edits how a session is sold, not what it is selling.
+     * 改的是一个场次怎么卖，不是它在卖什么。
      *
-     * <p>Date, time and price bands are absent on purpose. Moving a session
-     * moves every seat it sold; re-banding one remaps the seats people already
-     * hold. Both are cancellations with extra steps, and a cancellation owes
-     * money back - a different operation with different consequences, not
-     * something to smuggle into an edit form.
+     * <p>日期、时间和票价档是故意不放进来的。挪动一个场次等于挪动它卖出去的每一个
+     * 座位；重新划分票档会把人们已经握在手里的座位重新映射。两者都是换了个说法的
+     * 取消，而取消是要退钱的 —— 那是另一回事、另一种后果，不该偷偷塞进一个编辑
+     * 表单里。
      *
-     * <p>Taking a session off sale is allowed, because that is the honest way
-     * to stop selling without pretending the past did not happen.
+     * <p>把场次下架是允许的，因为那才是停止售卖的诚实做法：不必假装过去没发生过。
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateSession(Long sessionId, AdminDtos.UpdateSessionRequest request) {
@@ -430,9 +413,8 @@ public class AdminPerformanceService {
         }
 
         if (request.status() != null) {
-            // Off sale is not cancelled: the seats already sold stay sold and
-            // the session keeps its place in the ledger. Putting it back on
-            // sale is the same call with status 1.
+            // 下架不等于取消：已经卖出的座位仍然算卖出，场次在账本里的位置也保留。
+            // 重新上架就是同样的调用、status 传 1。
             session.setStatus(request.status());
         }
 
@@ -445,12 +427,11 @@ public class AdminPerformanceService {
     // ------------------------------------------------------------
 
     /**
-     * A place holds one thing at a time.
+     * 一个场地同一时间只装得下一件事。
      *
-     * <p>The database enforces this with a unique key, but only when the insert
-     * runs - by which point the caller has a constraint violation instead of an
-     * explanation. Checking first turns it into a sentence somebody can act on.
-     * The key is still the thing that makes it true under concurrency.
+     * <p>数据库用唯一键强制这一点，但唯一键只在插入真正执行时才生效 —— 到那时调用方
+     * 拿到的是一个约束冲突，而不是一句解释。先查一次，把它变成一句人能照着行动的话。
+     * 而在并发下真正让这件事成立的，仍然是那个唯一键。
      */
     private void requirePlaceFree(Hall place, LocalDateTime startTime) {
         Session clash = sessionMapper.selectOne(Wrappers.<Session>lambdaQuery()
@@ -464,12 +445,11 @@ public class AdminPerformanceService {
     }
 
     /**
-     * Bands have to make sense before they are written.
+     * 票档得先讲得通，才写进去。
      *
-     * <p>A gap between bands means seats no band covers, and those seats price
-     * at nothing. The factory falls back to the last band, so a gap is silent -
-     * which is exactly why it is checked here rather than discovered on an
-     * invoice.
+     * <p>票档之间留出空档，就意味着有座位不属于任何一档，而那些座位定不出价来。
+     * 工厂会兜底落到最后一档，所以空档是无声的 —— 这正是它要在这里被检查、而不是
+     * 等到开票时才发现的原因。
      */
     private void validateTiers(List<AdminDtos.TierSpec> specs) {
         for (AdminDtos.TierSpec spec : specs) {
@@ -508,8 +488,8 @@ public class AdminPerformanceService {
         session.setEndTime(startTime.plusMinutes(
                 project.getDuration() == null ? 120 : project.getDuration()));
 
-        // The headline figure on the listing: the cheapest way in. What a seat
-        // actually costs comes from its band.
+        // 列表页上那个大字的价格：最便宜的进场方式。一个座位实际花多少钱由它的档
+        // 决定。
         session.setPrice(request.tierSpecs().stream()
                 .map(AdminDtos.TierSpec::price)
                 .min(java.math.BigDecimal::compareTo)
@@ -529,8 +509,8 @@ public class AdminPerformanceService {
         session.setRushMode(rushMode);
         if (rushMode == 1) {
             if (request.rushStartTime() == null) {
-                // Without it the sale is simply open, and the queue has nothing
-                // to gate - which is a different thing from what was asked for.
+                // 没有它，这场售卖就是直接敞开的，队列也没有东西可拦 —— 那和对方
+                // 要的东西不是一回事。
                 throw new BizException(ErrorCode.PARAM_ERROR, "抢购场次必须指定开抢时间");
             }
             session.setRushStartTime(request.rushStartTime());

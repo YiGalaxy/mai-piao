@@ -4,7 +4,7 @@
 
     <template v-else-if="seatMap">
       <div class="layout">
-        <!-- Left: what is being bought -->
+        <!-- 左侧：买的是什么 -->
         <section class="main">
           <div class="mp-card panel">
             <h2>确认订单</h2>
@@ -52,15 +52,15 @@
           </div>
         </section>
 
-        <!-- Right: money and the action -->
+        <!-- 右侧：金额与操作 -->
         <aside class="side">
           <div class="mp-card panel summary">
             <h2>金额</h2>
 
             <div class="line">
               <span>票价</span>
-              <!-- Not "N x unit price": a booking can span price bands, so
-                   there is no single unit price to show. -->
+              <!-- 不写「N × 单价」：一笔订单可能横跨多个票价档位，
+                   没有单一单价可写。 -->
               <span>{{ seatCount }} 张</span>
             </div>
             <div class="line">
@@ -124,12 +124,11 @@ const remainingSeconds = ref(0)
 let timer = null
 
 /**
- * The lock handed over from the seat map.
+ * 座位图交过来的那把锁。
  *
- * <p>Read from sessionStorage rather than the query string: it is a
- * credential for a held resource, and a URL is the wrong place for one -
- * it lands in history, in referrer headers, and in anything the user pastes
- * into a chat window.
+ * <p>从 sessionStorage 读而不是从查询串读：它是所持资源的凭证，而 URL 是
+ * 放这种东西的错地方 —— 它会进历史记录、进 referrer 请求头，还会跟着
+ * 用户复制粘贴到聊天窗口里。
  */
 const pending = computed(() => {
   try {
@@ -143,13 +142,12 @@ const pending = computed(() => {
 const seatCount = computed(() => pending.value.seats?.length || 0)
 
 /**
- * The amount the seat service priced when it took the hold.
+ * 占座时 seat-service 算出来的金额。
  *
- * It used to be recomputed here as seatMap.price x seatCount, where
- * seatMap.price is the session's listing figure - the cheapest band, shown on
- * the detail page as "from ¥580". On a concert selling four bands that charged
- * every seat the cheapest price, and the checkout would have disagreed with
- * the order the server was about to create.
+ * 这里以前是拿 seatMap.price × seatCount 重算的，而 seatMap.price 是场次的
+ * 列表价 —— 也就是最便宜的那一档，详情页上显示为「¥580 起」。对于分四档
+ * 卖的演唱会，这等于所有座位都按最低价收费，结算页的金额会和服务端即将
+ * 创建的订单对不上。
  */
 const totalAmount = computed(() => Number(pending.value.amount || 0).toFixed(2))
 
@@ -187,8 +185,7 @@ onMounted(async () => {
 
   loading.value = false
 
-  // Coupons are advisory: failing to load them must not block checkout, the
-  // user just pays full price.
+  // 优惠券只是锦上添花：拉不到也不能挡住下单，用户按原价付就是了。
   try {
     coupons.value = (await fetchAvailableCoupons(Number(totalAmount.value))) || []
   } catch {
@@ -229,16 +226,15 @@ async function onSubmit() {
       discountAmount: discountAmount.value
     })
 
-    // The order exists; the seat hold has served its purpose.
+    // 订单已经生成，这次占座也就完成使命了。
     clearPending()
     if (timer) clearInterval(timer)
 
     ElMessage.success('下单成功')
     router.push({ name: 'order-detail', params: { orderNo: result.orderNo } })
   } catch {
-    // A failure here almost always means the hold lapsed or a seat was taken.
-    // Send the user back to pick again rather than leaving them on a page
-    // that cannot succeed.
+    // 这里的失败几乎都意味着占座过期了，或者座位被别人抢了。
+    // 把用户送回选座页重选，别把他留在一个注定成功不了的页面上。
     clearPending()
     if (timer) clearInterval(timer)
     router.push(`/schedules/${pending.value.scheduleId}/seats`)
@@ -248,8 +244,8 @@ async function onSubmit() {
 }
 
 function goBack() {
-  // The hold is deliberately not released - the user may simply be checking
-  // the price, and re-picking seats would start the clock over.
+  // 故意不释放占座 —— 用户可能只是想看一眼价格，而重新选座会让
+  // 倒计时从头开始。
   router.back()
 }
 
@@ -316,7 +312,7 @@ const posterStyle = computed(() => {
   background: var(--mp-primary);
 }
 
-/* ---- film ---- */
+/* ---- 影片信息 ---- */
 
 .film-row {
   display: flex;
@@ -379,7 +375,7 @@ const posterStyle = computed(() => {
   gap: 8px;
 }
 
-/* ---- coupons ---- */
+/* ---- 优惠券 ---- */
 
 .coupon-list {
   display: flex;
@@ -399,7 +395,7 @@ const posterStyle = computed(() => {
   margin-right: 8px;
 }
 
-/* ---- summary ---- */
+/* ---- 金额汇总 ---- */
 
 .summary :deep(.el-button) {
   width: 100%;

@@ -24,16 +24,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Service-to-service endpoints for inventory. Not part of the public API.
+ * 库存的服务间接口。不属于公开 API。
  *
- * <p>Each of the three write endpoints is a branch of a Seata global
- * transaction. They follow one rule without exception: <b>assert the affected
- * row count</b>. A branch that returns success without changing anything would
- * let the global transaction commit a half-built order, because Seata only
- * rolls back what fails loudly.
+ * <p>三个写接口各自是 Seata 全局事务的一个分支。它们无一例外地遵守一条规则：
+ * <b>断言受影响的行数</b>。一个什么都没改却返回成功的分支，会让全局事务提交一个
+ * 只建了一半的订单，因为 Seata 只回滚那些大声失败的东西。
  *
- * <p>These are not routed by the gateway - the paths live under {@code /inner}
- * and the gateway only forwards {@code /api/**}.
+ * <p>这些路径不由网关路由 —— 它们挂在 {@code /inner} 下，而网关只转发
+ * {@code /api/**}。
  */
 @Slf4j
 @RestController
@@ -46,12 +44,11 @@ public class MovieInternalController {
     private final SessionService sessionService;
 
     /**
-     * G1 branch: reserve seats and mark their ledger rows locked.
+     * G1 分支：预占座位并把对应的账本行标为锁定。
      *
-     * <p>Two writes, both conditional. The inventory update is the
-     * anti-oversell guard; the seat rows carry the per-seat guard. If either
-     * affects the wrong number of rows, the exception propagates and Seata
-     * rolls back everything already done in this transaction.
+     * <p>两次写入，都是有条件的。库存更新是防超卖的关卡；座位行则带着逐座位的关卡。
+     * 只要其中任何一个影响的行数不对，异常就会抛出去，Seata 回滚这个事务里已经做完
+     * 的一切。
      */
     @PostMapping("/occupy")
     public R<Void> occupy(@RequestParam Long sessionId,
@@ -64,16 +61,14 @@ public class MovieInternalController {
 
         int inventoryRows = sessionMapper.occupySeats(sessionId, count);
         if (inventoryRows != 1) {
-            // Either the screening is no longer on sale, or there are not
-            // enough seats left. Both mean "do not proceed".
+            // 要么这个场次已经不在售，要么剩下的座位不够。两种情况都意味着「别往下走」。
             throw new BizException(ErrorCode.SCHEDULE_STOCK_NOT_ENOUGH);
         }
 
-        // Resolved from the requested indexes, not from the lock marker.
+        // 按请求给出的座位下标解析，而不是按锁定标记解析。
         //
-        // At this point the seats are held in Redis but not yet in this table -
-        // the write below is what puts them there. Querying by lock_order_no
-        // here finds nothing, which is exactly the bug this replaced.
+        // 此刻座位还只在 Redis 里占着，这张表里还没有 —— 下面那次写入才会把它们
+        // 落进来。在这里按 lock_order_no 查会查不到，而这正是它替换掉的那个 bug。
         List<String> seatIds = seatIdsByIndex(sessionId, seatIndexes);
         if (seatIds.size() != seatIndexes.size()) {
             throw new BizException(ErrorCode.SEAT_INDEX_INVALID, "座位信息与场次不匹配");
@@ -81,9 +76,8 @@ public class MovieInternalController {
 
         int seatRows = sessionSeatMapper.lockSeats(sessionId, seatIds, orderNo, userId, expireTime);
         if (seatRows != seatIds.size()) {
-            // Somebody took one of these seats between the Redis lock and here.
-            // The Redis lock is the fast path; this is the ledger's own check,
-            // and disagreeing with it means the two are out of sync.
+            // 在 Redis 锁定到这里之间，有人抢走了其中某个座位。Redis 的锁是快路径，
+            // 这一句才是账本自己的校验；和它对不上，说明两边已经不同步了。
             throw new BizException(ErrorCode.SEAT_OCCUPIED);
         }
 
@@ -91,7 +85,7 @@ public class MovieInternalController {
         return R.ok();
     }
 
-    /** G2 branch: locked ledger rows become sold. */
+    /** G2 分支：锁定的账本行转为已售。 */
     @PostMapping("/sold")
     public R<Void> sold(@RequestParam Long sessionId,
                         @RequestParam String orderNo,
@@ -99,8 +93,8 @@ public class MovieInternalController {
 
         int inventoryRows = sessionMapper.confirmSold(sessionId, count);
         if (inventoryRows != 1) {
-            // The hold was released underneath us - the timeout job won the
-            // race. Issuing tickets now would sell seats nobody holds.
+            // 脚底下的占位已经被放掉了 —— 超时任务抢在了前面。这时候出票，等于把
+            // 没人占着的座位卖出去。
             throw new BizException(ErrorCode.ORDER_EXPIRED);
         }
 
@@ -115,11 +109,10 @@ public class MovieInternalController {
     }
 
     /**
-     * G3 branch: give seats back.
+     * G3 分支：把座位还回去。
      *
-     * @param releaseToPool true for a normal refund (sold -&gt; available);
-     *                      false when the seats were only held and never sold,
-     *                      or were already released by the timeout job
+     * @param releaseToPool true 表示正常退款（sold -&gt; available）；false 表示
+     *                      这些座位只是被占着、从未售出，或者已经被超时任务释放过
      */
     @PostMapping("/release")
     public R<Void> release(@RequestParam Long sessionId,
@@ -143,14 +136,13 @@ public class MovieInternalController {
                 : sessionSeatMapper.releaseLockedSeats(sessionId, seatIds, orderNo);
 
         if (released == 0) {
-            // The ledger rows moved on without us - already released, or sold
-            // to somebody else. Counter must not move either, or it would
-            // describe seats this order never held.
+            // 账本行没等我们就自己往前走了 —— 要么已被释放，要么卖给了别人。
+            // 计数器也不能动，否则它描述的会是这个订单从未持有过的座位。
             return R.ok();
         }
 
-        // Move the matching counter, and only the matching one: held seats
-        // live in locked_seat, paid-for seats live in sold_seat.
+        // 动对应的那个计数器，而且只动对应的那个：占位中的座位记在 locked_seat，
+        // 已付款的座位记在 sold_seat。
         if (releaseToPool) {
             sessionMapper.releaseSold(sessionId, released);
         } else {
@@ -163,14 +155,12 @@ public class MovieInternalController {
     }
 
     /**
-     * Snapshot used by order-service to build an order row, and by
-     * queue-service to size a rush sale's admission.
+     * 快照：order-service 用它拼订单行，queue-service 用它确定抢购放多少人进来。
      *
-     * <p>{@code totalSeat} is what the queue needs: its dispatcher decides how
-     * many people to let through from how many seats are left, and it reads
-     * that as {@code totalSeat - BITCOUNT(seat:map)}. Deriving the total
-     * instead - from the bitmap, or from a counter it kept itself - would be a
-     * second source of truth for the one number the whole sale turns on.
+     * <p>{@code totalSeat} 是队列需要的那个值：它的调度器根据还剩多少座位决定放
+     * 多少人通过，而这个「还剩」是按 {@code totalSeat - BITCOUNT(seat:map)} 读的。
+     * 改用别的方式推这个总量 —— 从 bitmap 推，或者自己维护一个计数器 —— 会为整个
+     * 售卖所系的那一个数字造出第二个事实来源。
      */
     @GetMapping("/{sessionId}/snapshot")
     public R<Map<String, Object>> snapshot(@PathVariable Long sessionId) {
@@ -200,14 +190,13 @@ public class MovieInternalController {
     // ------------------------------------------------------------
 
     /**
-     * The seat ids held by an order, read from the ledger's lock marker.
+     * 一个订单持有的座位 id，从账本的锁定标记读出。
      *
-     * <p>Used by the sold and release paths, which run after the seats have
-     * been claimed, so the marker is the right thing to look up.
+     * <p>出票和释放两条路径用它，它们都在座位已经被占下之后才跑，所以标记是这里该
+     * 查的东西。
      *
-     * <p>Read from the database rather than taken from the request: trusting a
-     * client-supplied mapping between indexes and seat ids would let an order
-     * be written against different seats than the ones actually held.
+     * <p>从数据库读而不是从请求里取：信任调用方给的下标到座位 id 的映射，会让订单
+     * 被写到与实际占用的座位不同的座位上去。
      */
     private List<String> seatIdsOf(Long sessionId, String orderNo) {
         return seatIdsOf(sessionId, orderNo, false);
@@ -240,11 +229,10 @@ public class MovieInternalController {
     }
 
     /**
-     * Resolves bitmap offsets to seat ids.
+     * 把 bitmap 偏移量解析成座位 id。
      *
-     * <p>Used by the occupy path, where the seats are held in Redis but not
-     * yet marked in this table - looking them up by lock order number there
-     * would find nothing.
+     * <p>occupy 路径用它，那条路径上座位只在 Redis 里占着、这张表里还没打标记 ——
+     * 在那里按锁定订单号查会一条都查不到。
      */
     private List<String> seatIdsByIndex(Long sessionId, List<Integer> seatIndexes) {
         return sessionSeatMapper.selectList(

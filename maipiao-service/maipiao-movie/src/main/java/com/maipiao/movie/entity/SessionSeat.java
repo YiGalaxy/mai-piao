@@ -8,22 +8,19 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_movie.t_event_session_seat} - one row per seat per
- * screening. This is the durable ledger; Redis holds live availability.
+ * 映射 {@code maipiao_movie.t_event_session_seat} —— 每场排片每个座位一行。这是持久
+ * 账本；Redis 里放的是实时可售状态。
  *
- * <p>Status transitions and their guards, all of which must assert the
- * affected row count:
+ * <p>状态流转及其守卫，每一个都必须断言受影响的行数：
  * <pre>
- *   0 available --occupy--> 1 locked    WHERE status = 0
- *   1 locked    --sold----> 2 sold      WHERE status = 1 AND lock_order_no = ?
- *   2 sold      --refund--> 0 available WHERE status = 2 AND sold_order_no = ?
+ *   0 可售 --occupy--> 1 锁定    WHERE status = 0
+ *   1 锁定 --sold----> 2 已售    WHERE status = 1 AND lock_order_no = ?
+ *   2 已售 --refund--> 0 可售    WHERE status = 2 AND sold_order_no = ?
  * </pre>
  *
- * <p>{@code seatIndex} is the Redis bitmap offset. It is assigned once, when
- * the schedule is generated, and is contiguous across the hall's sellable
- * seats. It is never recomputed from row and column, because aisle columns
- * make the arithmetic non-contiguous and any drift would silently corrupt
- * seat selection.
+ * <p>{@code seatIndex} 是 Redis bitmap 的偏移量。它在生成排期时被赋一次值，在场馆
+ * 所有可售座位上是连续的。它从不按排和列重算，因为过道列会让那个算式不再连续，而
+ * 任何偏移都会无声地搞坏选座。
  */
 @Data
 @TableName("t_event_session_seat")
@@ -42,10 +39,10 @@ public class SessionSeat {
 
     private Long sessionId;
 
-    /** Human readable, "{row}_{col}". */
+    /** 给人看的，"{row}_{col}"。 */
     private String seatId;
 
-    /** Contiguous bitmap offset. Assigned once, never recomputed. */
+    /** 连续的 bitmap 偏移量。只赋一次值，从不重算。 */
     private Integer seatIndex;
 
     private Integer rowNum;
@@ -55,12 +52,11 @@ public class SessionSeat {
     private Integer seatType;
 
     /**
-     * Price band this seat belongs to.
+     * 这个座位所属的票价档。
      *
-     * <p>Assigned once, when the session is generated, and never recomputed
-     * from the row afterwards. The seat map colours by it and the order prices
-     * by it, so deriving it per request would mean the same seat could be
-     * priced differently depending on which code path asked.
+     * <p>在场次生成时赋一次值，之后从不按排重算。座位图按它着色，下单按它定价，所以
+     * 改成每次请求再推导，意味着同一个座位会因为在哪条代码路径上被问到而卖出不同的
+     * 价格。
      */
     private Long tierId;
 
@@ -76,7 +72,7 @@ public class SessionSeat {
 
     private LocalDateTime soldTime;
 
-    /** Optimistic lock counter, bumped on every state change. */
+    /** 乐观锁计数器，每次状态变化都自增。 */
     private Integer version;
 
     private LocalDateTime createTime;

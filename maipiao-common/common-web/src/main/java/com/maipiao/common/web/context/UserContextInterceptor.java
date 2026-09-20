@@ -6,16 +6,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * Populates {@link UserContext} from the {@code X-User-Id} header the gateway
- * sets, and - just as importantly - clears it afterwards.
+ * 从网关设置的 {@code X-User-Id} 头里填充 {@link UserContext}，以及 —— 同样重要的
+ * —— 事后把它清掉。
  *
- * <p>The clear in {@code afterCompletion} is not optional. Servlet containers
- * reuse threads, so without it a request from user A could observe user B's id
- * left behind on the same thread.
+ * <p>{@code afterCompletion} 里那次清理不是可选项。Servlet 容器会复用线程，少了它，
+ * 用户 A 的请求就可能读到用户 B 遗留在同一个线程上的 id。
  *
- * <p>The header is only accepted when it is a valid number; a malformed value
- * is treated as "anonymous" rather than failing the request, so that public
- * endpoints keep working even if a proxy mangles the header.
+ * <p>只有取值是合法数字时才会接受这个头；格式不对时按"匿名"处理，而不是让请求失败，
+ * 这样即使某个代理把这个头弄乱了，公开接口也照常工作。
  */
 public class UserContextInterceptor implements HandlerInterceptor {
 
@@ -26,7 +24,7 @@ public class UserContextInterceptor implements HandlerInterceptor {
             try {
                 UserContext.set(Long.valueOf(raw.trim()));
             } catch (NumberFormatException e) {
-                // Treat as anonymous; do not blow up a public endpoint over it.
+                // 当作匿名处理；不要为了这个把公开接口搞崩。
                 UserContext.clear();
             }
         }

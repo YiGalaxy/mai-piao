@@ -89,12 +89,12 @@ const status = ref(1)
 const category = ref(null)
 const keyword = ref('')
 
-/** An empty list of films and an empty list of shows are not the same absence. */
+/** 空的影片列表和空的演出列表，不是同一种「没有」。 */
 const emptyHint = computed(() =>
   category.value === 'MOVIE' ? '没有符合条件的影片' : '没有符合条件的演出'
 )
 
-/** Same tabs as the home page, so the two never disagree about what exists. */
+/** 和首页用同一套标签，这样两处对「有什么」的说法不会打架。 */
 const CATEGORY_TABS = [
   { value: 'MOVIE', label: '电影' },
   { value: 'CONCERT', label: '演唱会' },
@@ -104,7 +104,7 @@ const CATEGORY_TABS = [
 ]
 
 onMounted(() => {
-  // Deep links, e.g. /films?category=CONCERT from the home page's "全部" link.
+  // 支持深链接，比如从首页「全部」链接点进来的 /films?category=CONCERT。
   if (typeof route.query.category === 'string') {
     category.value = route.query.category
   }
@@ -141,9 +141,8 @@ async function reload() {
 }
 
 /**
- * Filtering happens on the client because the catalogue is small and the
- * search box is a convenience, not a feature. If the catalogue grows, this
- * becomes a server-side query with an index behind it.
+ * 过滤放在客户端做，因为剧目库还小，搜索框只是个便利，算不上功能。
+ * 剧目库要是长大了，这里就改成服务端查询，后面配个索引。
  */
 function filterByKeyword(list) {
   const needle = keyword.value.trim().toLowerCase()

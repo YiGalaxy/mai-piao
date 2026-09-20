@@ -43,9 +43,8 @@ const avatarText = computed(() => {
 })
 
 onMounted(() => {
-  // The stored profile can be stale - the nickname may have changed elsewhere,
-  // or the account disabled. Refresh in the background; a failure is handled
-  // by the interceptor and must not stop the page from rendering.
+  // 存下来的资料可能已经过期 —— 昵称也许在别处改过，账号也许被禁用了。
+  // 在后台刷新一次；失败由拦截器处理，绝不能因此挡住页面渲染。
   if (userStore.isLoggedIn) {
     userStore.refreshProfile().catch(() => {})
   }
@@ -59,7 +58,7 @@ async function onLogout() {
       type: 'warning'
     })
   } catch {
-    return // cancelled
+    return // 用户取消了
   }
   await userStore.logout()
   ElMessage.success('已退出登录')

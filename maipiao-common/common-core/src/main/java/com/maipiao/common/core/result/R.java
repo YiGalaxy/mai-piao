@@ -6,14 +6,13 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * Unified response envelope. Every HTTP endpoint returns this shape, so the
- * frontend has exactly one place to look for success/failure.
+ * 统一的响应封装。每个 HTTP 接口都返回这个形状，前端判断成功/失败只需看这一个地方。
  *
- * <p>Controllers never build failure responses by hand - they throw
- * {@link com.maipiao.common.core.exception.BizException} and let the global
- * exception handler translate it. That keeps try/catch out of controllers.
+ * <p>controller 从不手工拼失败响应 —— 它们抛
+ * {@link com.maipiao.common.core.exception.BizException}，由全局异常处理器去转换。
+ * 这样 controller 里就不会出现 try/catch。
  *
- * @param <T> payload type
+ * @param <T> 载荷类型
  */
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class R<T> implements Serializable {
@@ -21,14 +20,14 @@ public class R<T> implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    /** 0 means success; see {@link ErrorCode} for the rest. */
+    /** 0 表示成功；其余取值见 {@link ErrorCode}。 */
     private int code;
 
     private String message;
 
     private T data;
 
-    /** Server epoch millis, handy for client-side clock-skew debugging. */
+    /** 服务端的 epoch 毫秒，排查客户端时钟偏差时好用。 */
     private long timestamp;
 
     public R() {
@@ -43,7 +42,7 @@ public class R<T> implements Serializable {
     }
 
     // ------------------------------------------------------------
-    // success
+    // 成功
     // ------------------------------------------------------------
 
     public static <T> R<T> ok() {
@@ -59,7 +58,7 @@ public class R<T> implements Serializable {
     }
 
     // ------------------------------------------------------------
-    // failure
+    // 失败
     // ------------------------------------------------------------
 
     public static <T> R<T> fail(ErrorCode errorCode) {
@@ -76,7 +75,7 @@ public class R<T> implements Serializable {
 
     // ------------------------------------------------------------
 
-    /** True when the business call succeeded. Callers should check this, not the HTTP status. */
+    /** 业务调用成功时为 true。调用方该看这个，而不是 HTTP 状态码。 */
     public boolean isSuccess() {
         return this.code == ErrorCode.SUCCESS.getCode();
     }

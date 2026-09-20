@@ -14,13 +14,12 @@ import java.util.List;
 public interface NotifyLogMapper extends BaseMapper<NotifyLog> {
 
     /**
-     * Records a callback, counting repeats instead of rejecting them.
+     * 记录一条回调，重复的算次数而不是直接拒掉。
      *
-     * <p>Counting rather than ignoring is deliberate: the retry count is the
-     * signal that a provider is hammering us, and it is lost if duplicates are
-     * silently dropped.
+     * <p>刻意选择计数而不是忽略：重试次数正是「渠道方在反复捶我们」的信号，
+     * 而重复如果被默默丢掉，这个信号也就没了。
      *
-     * @return 1 when the row was created, 0 when it already existed
+     * @return 建出了新行返回 1，已经存在返回 0
      */
     @Insert("""
             INSERT INTO t_pay_notify_log
@@ -59,10 +58,10 @@ public interface NotifyLogMapper extends BaseMapper<NotifyLog> {
                       @Param("result") String result);
 
     /**
-     * Callbacks that failed and are worth replaying.
+     * 失败过、值得重放的回调。
      *
-     * <p>Bounded by age: a callback from a week ago that never succeeded is a
-     * human problem, not something to keep retrying quietly.
+     * <p>按时间设了上界：一周前那条从未成功的回调是个人工问题，
+     * 不是可以一直悄悄重试下去的东西。
      */
     @Select("""
             SELECT * FROM t_pay_notify_log

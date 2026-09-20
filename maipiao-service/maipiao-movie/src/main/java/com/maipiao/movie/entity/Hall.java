@@ -8,10 +8,10 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_movie.t_event_place}.
+ * 映射 {@code maipiao_movie.t_event_place}。
  *
- * <p>{@code seatTemplate} is the raw JSON layout. It is parsed once, when a
- * schedule is generated, into concrete seat rows - never at request time.
+ * <p>{@code seatTemplate} 是原始的 JSON 布局。它在生成排期时被解析一次，变成具体的
+ * 座位行 —— 从不在请求时解析。
  */
 @Data
 @TableName("t_event_place")
@@ -24,7 +24,7 @@ public class Hall {
     public static final String SEATING_STANDING = "STANDING";
     public static final String SEATING_MIXED = "MIXED";
 
-    /** True when tickets for this place are sold without a seat map. */
+    /** 这个场地卖票时不提供座位图时为 true。 */
     public boolean isStanding() {
         return SEATING_STANDING.equals(seatingMode);
     }
@@ -36,16 +36,15 @@ public class Hall {
 
     private String name;
 
-    /** NORMAL / IMAX / 3D / VIP / ARENA / THEATER / STUDIO / STANDING - drives pricing and display. */
+    /** NORMAL / IMAX / 3D / VIP / ARENA / THEATER / STUDIO / STANDING —— 决定定价和展示。 */
     private String placeType;
 
     /**
-     * SEATED / STANDING / MIXED.
+     * SEATED / STANDING / MIXED。
      *
-     * <p>This is what makes a standing-only concert expressible. Its bitmap is
-     * still one bit per unit of capacity and its seat_index is still
-     * contiguous, so locking, ordering and refunds need no special case - only
-     * the seat map does, and it shows a counter instead of a grid.
+     * <p>正是它让「只有站席的演唱会」这件事能被表达出来。它的 bitmap 仍然是每个容量
+     * 单位一位，seat_index 也仍然连续，所以锁定、下单、退款都不需要特例 —— 只有座位图
+     * 需要，它显示的是一个计数器而不是网格。
      */
     private String seatingMode;
 
@@ -53,10 +52,10 @@ public class Hall {
 
     private Integer colCount;
 
-    /** JSON seat layout, see docs/sql/02_schema_movie.sql for the shape. */
+    /** JSON 座位布局，结构见 docs/sql/schema/04_event.sql。 */
     private String seatTemplate;
 
-    /** Sellable seats after aisles and broken seats are removed. */
+    /** 扣掉过道和坏座之后可卖的座位数。 */
     private Integer seatCount;
 
     private Integer status;

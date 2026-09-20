@@ -9,12 +9,10 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
- * Layer L1: the callback log.
+ * 第 L1 层：回调日志。
  *
- * <p>Its only job is to answer one question - has this callback been handled
- * successfully before - and the answer decides whether the business logic runs
- * again. It deliberately does <em>not</em> decide whether to answer the
- * provider with success.
+ * <p>它唯一的职责就是回答一个问题 —— 这条回调此前有没有被成功处理过 —— 而这个答案
+ * 决定业务逻辑要不要再跑一遍。它刻意<em>不</em>负责决定要不要回给渠道方一个成功。
  */
 @Slf4j
 @Service
@@ -24,8 +22,8 @@ public class NotifyLogService {
     private final NotifyLogMapper notifyLogMapper;
 
     /**
-     * @param alreadySucceeded true when a previous attempt completed, in which
-     *                         case the caller can answer the provider and stop
+     * @param alreadySucceeded 此前某次尝试已经完成时为 true，
+     *                         这时调用方可以答复渠道方，就此打住
      */
     public record RecordResult(Long logId, boolean alreadySucceeded, int retryTimes) {
     }
@@ -33,9 +31,8 @@ public class NotifyLogService {
     public RecordResult record(String channel, String channelTradeNo, String notifyType,
                                String rawBody, boolean signVerified) {
 
-        // The unique key needs a non-null trade number. A callback without one
-        // cannot be deduped, so it is recorded under a placeholder and the
-        // business logic downstream will reject it for other reasons.
+        // 唯一键需要一个非空的交易号。没有交易号的回调没法去重，所以就用一个占位值记下来，
+        // 而下游的业务逻辑会因为别的原因把它拒掉。
         String tradeNo = channelTradeNo == null || channelTradeNo.isBlank()
                 ? "UNKNOWN-" + System.currentTimeMillis()
                 : channelTradeNo;
@@ -45,15 +42,14 @@ public class NotifyLogService {
             notifyLogMapper.insertOrCount(logId, channel, tradeNo, notifyType, rawBody,
                     signVerified ? 1 : 0);
         } catch (DuplicateKeyException e) {
-            // Only possible if two callbacks land in the same instant; the
-            // second one simply reads the row the first created.
+            // 只有两条回调在同一瞬间落地时才会走到这里；第二条读到的就是第一条建的那一行。
             log.debug("concurrent callback insert: tradeNo={}", tradeNo);
         }
 
         NotifyLog entry = notifyLogMapper.selectOne(channel, tradeNo, notifyType);
         if (entry == null) {
-            // Should not happen - the insert above either created it or hit an
-            // existing row. Treated as "process it", which is the safe default.
+            // 不该发生 —— 上面的插入要么建出了这一行，要么撞上了已有的行。
+            // 按「照常处理」对待，这是安全的默认选择。
             return new RecordResult(logId, false, 0);
         }
 

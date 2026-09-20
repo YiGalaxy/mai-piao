@@ -7,15 +7,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * A screening joined with the labels a client needs to render it.
+ * 一场排片，连同客户端渲染它需要的那些名称。
  *
- * <p>The joins happen in one query rather than as follow-up calls, because a
- * schedule list is read constantly (every cinema page, every film page) and
- * the alternative is an N+1 across three tables for data that never changes
- * during the request.
+ * <p>join 放在一条查询里做，而不是拆成后续几次调用，因为排期列表被读得太频繁
+ * （每个影院页、每个影片页），否则就是跨三张表的 N+1 —— 而这些数据在一次请求期间
+ * 根本不会变。
  *
- * <p>Seats are exposed as counts only - the per-seat detail lives in Redis and
- * is fetched separately when the user actually opens the seat map.
+ * <p>座位只以数量的形式暴露 —— 逐座位的细节在 Redis 里，等用户真的打开座位图时
+ * 再单独取。
  */
 @Data
 public class SessionVO {
@@ -25,7 +24,7 @@ public class SessionVO {
     private Long projectId;
     private String projectTitle;
 
-    /** MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL. */
+    /** MOVIE / CONCERT / TALK_SHOW / THEATER / MUSICAL。 */
     private String category;
     private Integer duration;
     private String posterUrl;
@@ -51,12 +50,12 @@ public class SessionVO {
     private Integer rushMode;
     private LocalDateTime rushStartTime;
 
-    /** 0 = the buyer picks a seat, 1 = the system assigns from a price band. */
+    /** 0 = 买家选座，1 = 系统按票价档分配。 */
     private Integer seatMode;
 
-    /** When tickets open, for a screening that is not on sale yet. */
+    /** 开票时间，给还没开卖的场次用。 */
     private LocalDateTime saleStartTime;
 
-    /** Derived, not stored: total - locked - sold, floored at zero. */
+    /** 推导出来的，不存储：total - locked - sold，下限为 0。 */
     private Integer remainingSeat;
 }

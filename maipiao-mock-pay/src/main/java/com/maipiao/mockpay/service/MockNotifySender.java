@@ -16,21 +16,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Delivers callbacks to pay-service, on demand and in whatever shape the
- * operator asks for.
+ * 按需把回调投递给 pay-service，形态由操作者说了算。
  *
- * <p>What a real provider will not do on request, and what this one can:
+ * <p>真实服务商不会应要求去做、而本服务可以做的那些事：
  *
  * <ul>
- *   <li>send the same callback more than once</li>
- *   <li>send a failure and then a success, out of order</li>
- *   <li>send a callback for an order that has already been cancelled</li>
- *   <li>send one with a deliberately wrong signature</li>
+ *   <li>把同一个回调发不止一次</li>
+ *   <li>先发一条失败、再发一条成功，顺序颠倒</li>
+ *   <li>为一个已经被取消的订单发回调</li>
+ *   <li>发一条签名故意写错的回调</li>
  * </ul>
  *
- * <p>Each of those exercises a different guard in pay-service. A test suite
- * that only ever sees well-formed, in-order, exactly-once callbacks proves
- * nothing about any of them.
+ * <p>上面每一条，考验的都是 pay-service 里不同的一道防线。一个只见过格式正确、顺序
+ * 正常、恰好一次的回调的测试集，对其中任何一条都证明不了什么。
  */
 @Slf4j
 @Service
@@ -51,12 +49,11 @@ public class MockNotifySender {
     }
 
     /**
-     * Sends one callback.
+     * 发送一条回调。
      *
-     * @param status        SUCCESS or FAILED
-     * @param amount        the amount the provider claims was paid
-     * @param breakSignature send a deliberately invalid signature, to prove the
-     *                       verification path rejects it
+     * @param status         SUCCESS 或 FAILED
+     * @param amount         服务商声称收到的金额
+     * @param breakSignature 发一个故意无效的签名，用来证明校验路径会拒掉它
      */
     public NotifyOutcome send(String channelTradeNo, String paymentNo, String orderNo,
                               BigDecimal amount, String status,
@@ -72,8 +69,8 @@ public class MockNotifySender {
 
         String sign = signature.sign(params);
         if (breakSignature) {
-            // Flip the last character. Close enough to a real signature to get
-            // past any length check, wrong enough that verification must fail.
+            // 把最后一个字符翻掉。它像真签名到足以通过任何长度检查，又错到足以让校验
+            // 必须失败。
             sign = sign.substring(0, sign.length() - 1) + (sign.endsWith("0") ? "1" : "0");
         }
         params.put("sign", sign);
@@ -81,7 +78,7 @@ public class MockNotifySender {
         return post(params);
     }
 
-    /** Sends the same callback {@code times} times, as fast as it can. */
+    /** 把同一条回调尽可能快地发 {@code times} 次。 */
     public java.util.List<NotifyOutcome> sendRepeated(String channelTradeNo, String paymentNo,
                                                       String orderNo, BigDecimal amount,
                                                       String status, int times) {

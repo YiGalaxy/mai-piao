@@ -1,28 +1,27 @@
 # ============================================================
-# Seata Server 2.2.0 configuration (local development)
+# Seata Server 2.2.0 配置（本地开发）
 #
-# Mounted over /seata-server/resources/application.yml, which means this file
-# REPLACES the image's default rather than merging with it. Anything the
-# server needs and this file omits fails at startup with a placeholder error,
-# so the structure below deliberately mirrors the shipped default and only
-# changes what has to change.
+# 这个文件被挂载覆盖到 /seata-server/resources/application.yml，
+# 也就是说它是**替换**镜像里的默认文件，而不是与它合并。服务端需要、
+# 而这里又漏掉的任何一项，都会在启动时以占位符错误的形式失败，
+# 所以下面的结构是刻意照着镜像自带的默认文件抄的，只改必须改的地方。
 #
-# Omissions that have bitten us already:
-#   logging.config      -> without it, logback is never configured
+# 已经踩过的漏项：
+#   logging.config      -> 少了它，logback 根本不会被配置
 #   console.user.*      -> "Could not resolve placeholder 'console.user.username'"
-#   security.csrf-ignore-urls / ignore.urls -> console becomes unreachable
+#   security.csrf-ignore-urls / ignore.urls -> 控制台会变成打不开
 #
-# The image's own defaults live at /seata-server/resources/application.yml.
-# Diff against them before removing anything here.
+# 镜像自带的默认文件在 /seata-server/resources/application.yml。
+# 动手删这里任何东西之前，先跟它 diff 一下。
 #
-# CLIENT SIDE MUST MATCH:
-#   seata.registry.nacos.server-addr  = 127.0.0.1:8858 (host) / nacos:8848 (in docker)
+# 客户端必须对上：
+#   seata.registry.nacos.server-addr  = 127.0.0.1:8858 (宿主机) / nacos:8848 (docker 内)
 #   seata.registry.nacos.group        = SEATA_GROUP
 #   seata.registry.nacos.application  = seata-server
 #   seata.tx-service-group            = maipiao_tx_group
 #   seata.service.vgroupMapping.maipiao_tx_group = default
 #
-# A mismatch on tx-service-group / vgroupMapping surfaces as:
+# tx-service-group / vgroupMapping 对不上时，报出来的错是：
 #   "can not get cluster name in registry config"
 # ============================================================
 
@@ -38,20 +37,19 @@ logging:
   file:
     path: ${log.home:${user.home}/logs/seata}
 
-# Console login at http://localhost:7091 - change these outside local dev.
+# 控制台登录地址 http://localhost:7091 —— 出了本地开发环境就要改掉。
 console:
   user:
     username: seata
     password: seata
 
 seata:
-  # Config source: this file only. Switch to `nacos` once you want the TC
-  # settings hot-reloadable.
+  # 配置来源：只用这个文件。等你想让 TC 的配置能热更新了，再切到 `nacos`。
   config:
     type: file
 
-  # How clients discover the TC. `nacos` so that client-side
-  # seata.registry.nacos.* resolves it without hard-coded addresses.
+  # 客户端怎么发现 TC。用 `nacos` 是为了让客户端那边的
+  # seata.registry.nacos.* 自己解析到地址，而不必写死。
   registry:
     type: nacos
     nacos:
@@ -63,17 +61,17 @@ seata:
       username: ""
       password: ""
 
-  # Transaction storage. `file` keeps global transaction state on disk inside
-  # the container - fine for a single-node dev setup.
-  # For HA, switch to mode: db (create the `seata` schema first) so that state
-  # is shared and survives container recreation.
+  # 事务存储。`file` 把全局事务状态存在容器内的磁盘上——
+  # 单机开发环境够用。
+  # 要做 HA 就切到 mode: db（先建好 `seata` 库），这样状态是共享的，
+  # 容器重建也不会丢。
   store:
     mode: file
     file:
       dir: /seata-server/sessionStore
 
   server:
-    # TC service port clients connect to. Distinct from the console port (7091).
+    # 客户端连接的 TC 服务端口。和控制台端口（7091）不是一回事。
     service-port: 8091
     max-commit-retry-timeout: -1
     max-rollback-retry-timeout: -1

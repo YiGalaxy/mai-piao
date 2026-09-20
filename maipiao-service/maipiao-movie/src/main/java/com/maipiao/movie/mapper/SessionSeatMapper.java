@@ -11,18 +11,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Seat ledger persistence.
+ * 座位账本持久化。
  *
- * <p>The three UPDATEs are the seat-level concurrency boundaries. Each is a
- * single conditional UPDATE whose affected row count the caller asserts; the
- * {@code lock_order_no} / {@code sold_order_no} predicates are what stop a
- * stale compensation from touching a seat that has since been sold to
- * somebody else.
+ * <p>那三个 UPDATE 是座位层面的并发边界。每一条都是单条带条件的 UPDATE，由调用方
+ * 断言它影响的行数；{@code lock_order_no} / {@code sold_order_no} 这两个条件是拦住
+ * 过期补偿的关键 —— 免得它去碰一个后来已经卖给了别人的座位。
  */
 @Mapper
 public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
 
-    /** Bulk insert, called in batches during session generation. */
+    /** 批量插入，生成场次时按批调用。 */
     @org.apache.ibatis.annotations.Insert("""
             <script>
             INSERT INTO t_event_session_seat
@@ -48,7 +46,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             """)
     List<Integer> selectSoldIndexes(@Param("sessionId") Long sessionId);
 
-    /** G1: available -> locked. Guarded on status = 0. */
+    /** G1：可售 -> 锁定。用 status = 0 把关。 */
     @Update("""
             <script>
             UPDATE t_event_session_seat
@@ -71,11 +69,10 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                   @Param("expireTime") LocalDateTime expireTime);
 
     /**
-     * G2: locked -> sold.
+     * G2：锁定 -> 已售。
      *
-     * <p>{@code lock_order_no = #{orderNo}} is not decoration: without it, a
-     * payment arriving after the lock expired and was re-sold would mark
-     * somebody else's seat as this order's.
+     * <p>{@code lock_order_no = #{orderNo}} 不是摆设：没有它，一个在占位过期并被
+     * 重新卖出之后才到的支付，会把别人的座位标成这个订单的。
      */
     @Update("""
             <script>
@@ -99,7 +96,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                  @Param("seatIds") List<String> seatIds,
                  @Param("orderNo") String orderNo);
 
-    /** Cancel / timeout / G1 rollback: locked -> available. */
+    /** 取消 / 超时 / G1 回滚：锁定 -> 可售。 */
     @Update("""
             <script>
             UPDATE t_event_session_seat
@@ -120,7 +117,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                            @Param("seatIds") List<String> seatIds,
                            @Param("orderNo") String orderNo);
 
-    /** G3 refund: sold -> available, only for the order that bought them. */
+    /** G3 退款：已售 -> 可售，且只对买下它们的那个订单生效。 */
     @Update("""
             <script>
             UPDATE t_event_session_seat
@@ -141,9 +138,9 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                          @Param("orderNo") String orderNo);
 
     /**
-     * Timeout sweep: releases locks whose expiry has passed.
+     * 超时清扫：释放已经过了到期时间的占位。
      *
-     * @return number of seats released
+     * @return 释放掉的座位数
      */
     @Update("""
             UPDATE t_event_session_seat

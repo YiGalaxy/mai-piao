@@ -12,8 +12,8 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-// Chinese locale: the built-in pagination, date picker and empty-state strings
-// would otherwise render in English next to Chinese content.
+// 中文语言包：否则分页、日期选择器、空状态这些内置文案会以英文出现在
+// 中文内容旁边。
 app.use(ElementPlus, { locale: zhCn })
 
 app.mount('#app')

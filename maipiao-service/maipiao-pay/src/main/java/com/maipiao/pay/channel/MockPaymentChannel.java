@@ -20,12 +20,10 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Talks to the local stand-in provider.
+ * 与本地那个替身渠道方通信。
  *
- * <p>The signature is real HMAC-SHA256 over parameters sorted by key, which is
- * the shape actual providers use. Having a real one matters: a callback whose
- * signature does not check out must be rejected, and that cannot be
- * demonstrated with a field that is simply echoed back.
+ * <p>签名是按参数名排序后做的真 HMAC-SHA256，也就是真实渠道方采用的形式。用真签名是有
+ * 意义的：验签不通过的回调必须被拒绝，而这一点没法用一个原样回显的字段演示出来。
  */
 @Slf4j
 @Component
@@ -71,12 +69,11 @@ public class MockPaymentChannel implements PaymentChannel {
     }
 
     /**
-     * Verifies and parses a callback.
+     * 校验并解析一条回调。
      *
-     * <p>An unverifiable callback is returned with {@code signVerified = false}
-     * rather than thrown: the caller has to answer the provider either way, and
-     * an exception here would turn "bad signature" into "no response", which
-     * makes the provider retry a request that will never succeed.
+     * <p>验不过的回调用 {@code signVerified = false} 返回，而不是抛异常：无论哪种情况
+     * 调用方都得给渠道方一个答复，而在这里抛异常会把「签名不对」变成「没有响应」，
+     * 于是渠道方会去重试一个永远不会成功的请求。
      */
     @Override
     public NotifyResult parseNotify(String rawBody, Map<String, String> headers) {
@@ -108,18 +105,15 @@ public class MockPaymentChannel implements PaymentChannel {
 
     @Override
     public QueryResult query(String paymentNo) {
-        // The stand-in has no query endpoint; callbacks are reliable enough in
-        // a local setup. Returning "not found" makes the caller fall back to
-        // its own record, which is the correct behaviour against a provider
-        // that cannot answer either.
+        // 替身没有查询接口；在本地环境里回调已经足够可靠。返回「未找到」会让调用方
+        // 退回到自己的记录上 —— 面对一个同样答不上来的渠道方，这正是正确的行为。
         return new QueryResult(false, "UNKNOWN", null, null);
     }
 
     @Override
     public RefundResult refund(RefundCommand command) {
-        // Refunds settle immediately in the stand-in: there is nobody to
-        // dispute them. The caller still goes through the same state machine,
-        // so swapping in a real provider changes only this method.
+        // 替身里的退款立即结清：这里没有人会来争议。调用方照旧走同一套状态机，
+        // 所以换成真实渠道方时，只有这个方法会变。
         log.info("mock refund accepted: refundNo={}, amount={}", command.refundNo(), command.amount());
         return new RefundResult(true, "MOCKREFUND" + System.currentTimeMillis(), "accepted");
     }

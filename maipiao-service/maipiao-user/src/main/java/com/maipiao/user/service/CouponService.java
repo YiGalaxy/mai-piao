@@ -15,13 +15,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Coupon issuing, lookup and the lock/consume/release cycle.
+ * 优惠券的发放、查询，以及锁定 / 核销 / 释放的循环。
  *
- * <p>The lock/consume/release methods are called from other services through
- * Feign and participate in the G1 global transaction, so they are deliberately
- * thin: they validate nothing that the SQL already validates and they do not
- * swallow failures. A returned 0 must propagate as an exception so that Seata
- * rolls the whole order back.
+ * <p>lock/consume/release 这三个方法由其他服务经 Feign 调用，并且参与 G1 全局事务，
+ * 所以它们是故意做薄的：SQL 已经校验过的东西它们不再校验，而且它们不吞失败。
+ * 返回 0 必须以异常的形式往外传，这样 Seata 才能把整笔订单回滚掉。
  */
 @Slf4j
 @Service
@@ -31,14 +29,13 @@ public class CouponService {
     private final CouponMapper couponMapper;
 
     // ------------------------------------------------------------
-    // query
+    // 查询
     // ------------------------------------------------------------
 
     /**
-     * Coupons the user could actually apply to an order of this amount.
+     * 针对这个金额的订单，用户真正用得上的优惠券。
      *
-     * <p>Filtering by threshold in SQL rather than in Java keeps the response
-     * from growing with every coupon the user has ever collected.
+     * <p>在 SQL 里而不是在 Java 里按门槛过滤，能让响应不会随着用户领过的每一张券一起膨胀。
      */
     public List<Coupon> listUsable(Long userId, BigDecimal orderAmount) {
         return couponMapper.selectList(Wrappers.<Coupon>lambdaQuery()
@@ -57,16 +54,14 @@ public class CouponService {
     }
 
     // ------------------------------------------------------------
-    // G1 branch ② - lock during order creation
+    // G1 分支 ② - 下单时锁定
     // ------------------------------------------------------------
 
     /**
-     * Locks a coupon for an order.
+     * 为一笔订单锁住一张优惠券。
      *
-     * <p>Runs inside the order's global transaction. Must throw rather than
-     * return false when the lock fails - a silent failure here would let the
-     * order go through with the discount already subtracted but the coupon
-     * still spendable elsewhere.
+     * <p>跑在订单的全局事务里。锁定失败时必须抛异常而不是返回 false ——
+     * 这里的静默失败会让订单带着已经减掉的折扣过去，而那张券在别处还能接着花。
      */
     @Transactional(rollbackFor = Exception.class)
     public void lockForOrder(Long couponId, Long userId, String orderNo, BigDecimal orderAmount) {
@@ -76,14 +71,14 @@ public class CouponService {
 
         int rows = couponMapper.lockCoupon(couponId, userId, orderNo, orderAmount);
         if (rows != 1) {
-            // Either someone else took it, it expired between the page render and
-            // the submit, or the amount no longer meets the threshold.
+            // 要么被别人抢走了，要么它在页面渲染和提交之间过期了，
+            // 要么金额已经不满足门槛了。
             throw new BizException(ErrorCode.COUPON_NOT_AVAILABLE);
         }
         log.debug("coupon locked: couponId={}, orderNo={}", couponId, orderNo);
     }
 
-    /** Payment succeeded - turn the lock into a permanent consumption. */
+    /** 支付成功 —— 把这次锁定变成永久核销。 */
     @Transactional(rollbackFor = Exception.class)
     public void consumeForOrder(Long couponId, String orderNo) {
         if (couponId == null) {
@@ -91,19 +86,17 @@ public class CouponService {
         }
         int rows = couponMapper.consumeCoupon(couponId, orderNo);
         if (rows != 1) {
-            // Not fatal on its own, but it means the coupon state and the order
-            // state disagree, which is worth investigating.
+            // 单看这件事本身不致命，但它意味着优惠券状态和订单状态对不上，
+            // 这值得去查一查。
             log.warn("coupon consume did not take effect: couponId={}, orderNo={}", couponId, orderNo);
         }
     }
 
     /**
-     * Gives a locked coupon back. Called on order cancellation, on refund, and
-     * from the G1 rollback path.
+     * 把锁住的优惠券还回去。订单取消、退款，以及 G1 回滚路径上都会调用。
      *
-     * <p>Idempotent by construction: the {@code order_no} guard means a repeat
-     * call finds nothing to update and returns 0 without side effects. That is
-     * what makes it safe for a compensation handler to run more than once.
+     * <p>构造上就是幂等的：{@code order_no} 这道守护让重复调用找不到可更新的行，
+     * 于是返回 0 且没有任何副作用。正是这一点，让补偿处理器重复执行是安全的。
      */
     @Transactional(rollbackFor = Exception.class)
     public void releaseForOrder(Long couponId, String orderNo) {
@@ -115,7 +108,7 @@ public class CouponService {
     }
 
     // ------------------------------------------------------------
-    // issuing (demo data, and admin-triggered campaigns)
+    // 发券（演示数据，以及后台触发的活动）
     // ------------------------------------------------------------
 
     @Transactional(rollbackFor = Exception.class)

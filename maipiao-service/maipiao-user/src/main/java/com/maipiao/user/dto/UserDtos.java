@@ -5,19 +5,17 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request and response shapes for the user endpoints.
+ * 用户接口的请求与响应结构。
  *
- * <p>Grouped in one file on purpose: they are all tiny, they only ever change
- * together, and splitting four records across four files makes the contract
- * harder to read than it makes it organised.
+ * <p>故意集中在一个文件里：它们都很小，而且永远是一起变的；
+ * 把四个 record 拆到四个文件里，只会让这份契约更难读，而不是更整齐。
  */
 public final class UserDtos {
 
     private UserDtos() {
     }
 
-    /** Mainland China mobile number. Kept strict so registration cannot create
-     *  accounts that no SMS provider would ever accept. */
+    /** 中国大陆手机号。收得严一点，免得注册出任何短信服务商都不会接受的账号。 */
     private static final String PHONE_REGEX = "^1[3-9]\\d{9}$";
 
     public record RegisterRequest(
@@ -44,8 +42,8 @@ public final class UserDtos {
     }
 
     /**
-     * Returned by login. The password hash is of course absent, and so is
-     * anything else the client has no use for.
+     * 登录返回的东西。密码哈希自然不在其中，
+     * 其他任何客户端拿着也没用的东西同样不在。
      */
     public record LoginResponse(
             String token,
@@ -56,8 +54,8 @@ public final class UserDtos {
     ) {
     }
 
-    /** Public view of a user. Note there is no password field at all - not a
-     *  nulled one - so it cannot be leaked by an accidental serialization. */
+    /** 对外的用户视图。注意这里根本没有 password 字段 —— 不是置空的那种 ——
+     *  所以它不可能因为一次意外的序列化而泄露。 */
     public record UserVO(
             Long id,
             String phone,

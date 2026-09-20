@@ -18,17 +18,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Creates the demo accounts on startup.
+ * 启动时创建演示账号。
  *
- * <p>Why this is Java and not a row in {@code seed_user.sql}: the password
- * column stores a BCrypt hash, and a hash hard-coded in SQL has to be
- * byte-identical to what {@code BCryptPasswordEncoder.matches} expects -
- * including the cost factor and the salt encoding. Generating it here means
- * the stored value is produced by the same encoder that will later verify it,
- * so login can never fail because the seed data guessed wrong.
+ * <p>为什么用 Java 写而不是在 {@code seed_user.sql} 里放一行：password 列存的是
+ * BCrypt 哈希，而一个硬编码在 SQL 里的哈希，必须和 {@code BCryptPasswordEncoder.matches}
+ * 期望的字节完全一致 —— 包括 cost 因子和盐的编码方式。在这里生成，
+ * 意味着存进去的值是由之后负责校验它的同一个编码器产出的，
+ * 所以登录永远不会因为种子数据猜错了而失败。
  *
- * <p>Idempotent: existing users are left untouched, so restarting the service
- * (or restarting it after changing a nickname by hand) does not reset anything.
+ * <p>幂等：已存在的用户原样不动，所以重启服务
+ * （或者手动改过昵称之后再重启）不会重置任何东西。
  */
 @Slf4j
 @Component
@@ -36,7 +35,7 @@ import java.util.List;
 @ConditionalOnProperty(name = "maipiao.demo.init-users", havingValue = "true", matchIfMissing = true)
 public class DemoDataInitializer implements ApplicationRunner {
 
-    /** phone, password, nickname */
+    /** 手机号、密码、昵称 */
     private static final String[][] DEMO_USERS = {
             {"13800000001", "123456", "阿狸"},
             {"13800000002", "123456", "桃子"},
@@ -67,8 +66,8 @@ public class DemoDataInitializer implements ApplicationRunner {
     }
 
     /**
-     * @return the user id, or {@code null} when the account already existed
-     *         (in which case coupons are not re-issued)
+     * @return 用户 id；账号本来就存在时返回 {@code null}
+     *         （那种情况下不会重复发券）
      */
     private Long ensureUser(String phone, String rawPassword, String nickname) {
         User existing = userMapper.selectOne(
@@ -89,7 +88,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         return user.getId();
     }
 
-    /** Gives a fresh demo account one of each coupon template. */
+    /** 给一个新建的演示账号每种优惠券模板各发一张。 */
     private void issueWelcomeCoupons(Long userId, List<CouponTemplate> templates) {
         LocalDateTime now = LocalDateTime.now();
         for (CouponTemplate template : templates) {

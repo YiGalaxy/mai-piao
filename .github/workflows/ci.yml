@@ -1,0 +1,79 @@
+# ============================================================
+# 持续集成：编译、测试、打包。
+#
+# 存在的理由不是「最佳实践」，而是一个具体的问题：这个项目有九个服务、一张锁死的
+# 版本矩阵（Spring Boot 3.2 / Spring Cloud 2023.0.x / SCA 2023.0.3.2 / Seata 2.2.0），
+# 而这套组合里任何一个版本单独动一下，编译能过、启动会炸。一次改动是不是破坏了
+# 别的服务，只有整体构建能回答。
+#
+# 绿标同时是一句可验证的话：这些代码在别人的机器上、从干净状态、能构建出来。
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 21：项目用 21 编译（父 POM 里 java.version=21）。
+      # 缓存 Maven 本地仓库，否则每次都要重新拉一遍整套 Spring Cloud。
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # -B 批处理模式（CI 里不要交互），-q 只输出错误。
+      # 不加 -DskipTests：测试跑不跑正是 CI 要回答的问题之一。
+      - name: Build and test
+        run: mvn -B -q clean verify
+
+      # 报告要在失败时也留下，否则只能看到一个红色的叉。
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/*'
+          if-no-files-found: ignore
+
+  # 前端单独一个 job，因为它和 Java 构建互不依赖，串行跑纯属浪费时间。
+  frontend:
+    runs-on: ubuntu-latest
+    strategy:
+      # 两个前端互相独立，一个挂了不该把另一个也标红 —— 那样看不出是哪个坏了。
+      fail-fast: false
+      matrix:
+        app: [ maipiao-web, maipiao-admin-web ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      # npm ci 而不是 install：前者严格按 lockfile 装，后者会顺手升级。
+      # 对一个版本敏感的工程，装出来的依赖和本机不一致是最难查的一类问题。
+      - name: Install
+        working-directory: ${{ matrix.app }}
+        run: npm ci
+
+      # 只构建，不跑测试 —— 前端目前没有测试。留着 build 是因为它至少能抓住
+      # 语法错误、坏掉的 import 和模板里引用了不存在的变量。
+      - name: Build
+        working-directory: ${{ matrix.app }}
+        run: npm run build

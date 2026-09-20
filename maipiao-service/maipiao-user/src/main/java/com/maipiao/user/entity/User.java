@@ -8,12 +8,11 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_user.t_user_user}.
+ * 映射 {@code maipiao_user.t_user_user}。
  *
- * <p>{@code createTime} / {@code updateTime} are left null on insert so that the
- * column defaults in the DDL apply - MyBatis-Plus skips null fields by default.
- * Setting them from the application clock would let a clock-skewed instance
- * write timestamps that disagree with every other row.
+ * <p>插入时 {@code createTime} / {@code updateTime} 故意留成 null，好让 DDL 里的列默认值生效 ——
+ * MyBatis-Plus 默认会跳过 null 字段。用应用自己的时钟去写它们，
+ * 会让一台时钟偏移的实例写出和其他所有行都对不上的时间戳。
  */
 @Data
 @TableName("t_user_user")
@@ -22,27 +21,26 @@ public class User {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /** Login account. Unique. */
+    /** 登录账号。唯一。 */
     private String phone;
 
-    /** BCrypt hash. Never logged, never returned to a client. */
+    /** BCrypt 哈希。绝不进日志，绝不返回给客户端。 */
     private String password;
 
     private String nickname;
 
     private String avatar;
 
-    /** 0 = disabled, 1 = active. */
+    /** 0 = 停用，1 = 启用。 */
     private Integer status;
 
     /**
-     * USER or ADMIN.
+     * USER 或 ADMIN。
      *
-     * <p>Stored rather than inferred, so that what a token may reach is a
-     * property of the account. JwtUtil has had a generateAdminToken method all
-     * along and nothing ever called it, so the role was decided by which
-     * method a caller happened to invoke - and the only caller invoked the
-     * user one. Changing who is an administrator is now a database change.
+     * <p>存下来而不是靠推断，这样「一个 token 能碰到什么」就变成了账号自身的属性。
+     * JwtUtil 一直都有 generateAdminToken 方法，却从来没人调用过它，
+     * 于是角色是由调用方碰巧调了哪个方法来决定的 —— 而唯一的调用方调的是普通用户那个。
+     * 现在要改变谁是管理员，是一次数据库改动。
      */
     private String role;
 

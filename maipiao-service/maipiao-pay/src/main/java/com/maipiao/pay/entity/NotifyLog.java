@@ -8,31 +8,25 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_pay.t_pay_notify_log} - layer L1 of the idempotency
- * stack.
+ * 映射 {@code maipiao_pay.t_pay_notify_log} —— 幂等体系里的 L1 层。
  *
- * <p>What L1 does and does not do is easy to get wrong. It dedups the
- * <em>log</em>, not the <em>business effect</em>:
+ * <p>L1 做什么、不做什么，很容易搞错。它去重的是<em>日志</em>，不是<em>业务效果</em>：
  *
  * <pre>
  *   INSERT ... ON DUPLICATE KEY UPDATE retry_times = retry_times + 1
  * </pre>
  *
- * <p>The row that comes back is then inspected:
+ * <p>随后会检查返回的那一行：
  *
  * <ul>
- *   <li>{@code process_status = 1} - already handled. Safe to answer the
- *       provider with success.</li>
- *   <li>{@code process_status = 0} - a first attempt that never finished, or
- *       is still running. It must be processed.</li>
- *   <li>{@code process_status = 2} - the last attempt failed. Also processed
- *       again.</li>
+ *   <li>{@code process_status = 1} —— 已经处理过。可以放心地回给渠道方一个成功。</li>
+ *   <li>{@code process_status = 0} —— 第一次尝试没跑完，或者还在跑。必须处理。</li>
+ *   <li>{@code process_status = 2} —— 上一次尝试失败了。同样要再处理一遍。</li>
  * </ul>
  *
- * <p>Returning success merely because the insert collided would be wrong: if
- * the first attempt inserted the row and then the process died, the payment
- * would be recorded as seen and never handled, and the money would sit there.
- * Business idempotency has to come from L2, the state CAS on the payment.
+ * <p>仅仅因为插入撞了唯一键就返回成功是错的：如果第一次尝试插入了这一行、随后进程就死了，
+ * 这笔支付就会被记成「见过」却从未被处理，钱就搁在那儿了。业务上的幂等必须由 L2
+ * 来提供，也就是支付单上的状态 CAS。
  */
 @Data
 @TableName("t_pay_notify_log")
@@ -49,10 +43,10 @@ public class NotifyLog {
 
     private String channelTradeNo;
 
-    /** PAY / REFUND. Part of the unique key, so the two do not collide. */
+    /** PAY / REFUND。唯一键的一部分，好让这两种回调不会互相撞上。 */
     private String notifyType;
 
-    /** Raw payload, kept for replay and forensics. */
+    /** 原始报文，留着重放和事后追查用。 */
     private String rawBody;
 
     private Integer signVerified;

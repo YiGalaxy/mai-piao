@@ -7,15 +7,14 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
- * seat-service : the seat map, and the atomic locking behind it.
+ * seat-service：座位图，以及其背后的原子加锁。
  *
- * <p>This service owns no database schema. Live seat availability lives in
- * Redis as one bitmap per screening; {@code maipiao_movie.t_event_session_seat}
- * is the durable ledger, read to rebuild a bitmap and compared against by the
- * reconciliation job.
+ * <p>本服务不拥有任何数据库 schema。实时座位可用性以"每个场次一张 bitmap"的形式存在
+ * Redis 里；{@code maipiao_movie.t_event_session_seat} 是持久账本，用来重建 bitmap，
+ * 也是对账任务比对的依据。
  *
- * <p>Everything that must not race is expressed as a single Lua script, so
- * that "check" and "claim" cannot be separated by another request.
+ * <p>所有不能存在竞争的地方，都表达成一个单独的 Lua 脚本，这样"检查"和"占用"就无法
+ * 被另一个请求拆开。
  */
 @SpringBootApplication
 @EnableDiscoveryClient

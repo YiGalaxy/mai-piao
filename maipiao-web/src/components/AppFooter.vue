@@ -18,8 +18,8 @@
 </template>
 
 <script setup>
-// Static footer. Kept as a component so that adding real links later touches
-// one file rather than every page.
+// 静态页脚。之所以做成组件，是为了将来要加真实链接时只改一个文件，
+// 而不是每个页面都改一遍。
 </script>
 
 <style scoped>

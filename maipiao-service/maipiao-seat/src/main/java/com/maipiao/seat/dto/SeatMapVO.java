@@ -7,11 +7,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Everything the seat-selection page needs, in one response.
+ * 选座页面需要的所有东西，一次响应给全。
  *
- * <p>Layout (rows, columns, aisles) comes from the hall's template; seat state
- * comes from Redis. Sending them together avoids a second round trip at the
- * one moment the user is waiting.
+ * <p>布局（排、列、过道）来自厅的模板；座位状态来自 Redis。把它们一起发出去，是为了
+ * 在用户正在等待的那一个瞬间省掉第二次往返。
  */
 @Data
 public class SeatMapVO {
@@ -26,7 +25,7 @@ public class SeatMapVO {
     private LocalDateTime startTime;
     private BigDecimal price;
 
-    /** Hall geometry, used to lay the grid out including its aisles. */
+    /** 厅的几何数据，用来摆放整个网格，包括其中的过道。 */
     private Integer rowCount;
     private Integer colCount;
     private List<Integer> aisleCols;
@@ -34,55 +33,51 @@ public class SeatMapVO {
     private List<SeatItem> seats;
 
     /**
-     * Price bands for this session.
+     * 本场次的票档。
      *
-     * <p>A film has exactly one covering every seat; a performance has
-     * several, and the client colours the map by them. Sending the list rather
-     * than a price per seat keeps the payload small - hundreds of seats
-     * sharing three bands would otherwise repeat the same three objects
-     * hundreds of times.
+     * <p>电影恰好只有一个，覆盖全部座位；演出有多个，客户端按票档给座位图着色。发这个
+     * 列表而不是每个座位带一个价格，是为了让响应体小一些 —— 几百个座位共用三个票档，
+     * 否则同样三个对象要重复几百遍。
      *
-     * <p>Empty for a session that predates tiered pricing, which the client
-     * treats as "one price for everything".
+     * <p>对于早于分档定价出现的场次，这里是空的，客户端把它当作"全都一个价"处理。
      */
     private List<TierItem> tiers;
 
     private Integer totalSeat;
     private Integer remainingSeat;
 
-    /** 1 = rush sale, meaning the client must hold a queue token first. */
+    /** 1 = 抢购场次，意味着客户端必须先拿到一个排队令牌。 */
     private Integer rushMode;
 
-    /** When the rush opens; null for a session that is not a rush sale. */
+    /** 抢购开始的时间；不是抢购场次时为 null。 */
     private LocalDateTime rushStartTime;
 
     /**
-     * Who picks the seat: 0 = the buyer, 1 = the system.
+     * 谁来挑座位：0 = 买家，1 = 系统。
      *
-     * <p>Not the same question as {@link #seatingMode}. A seated stadium is
-     * SEATED and still assigns, because letting a hundred thousand people
-     * browse a seat map at once is not a service anybody can run. The client
-     * reads this to decide whether to draw a map at all.
+     * <p>这和 {@link #seatingMode} 问的不是同一件事。一个有座位的体育场，seatingMode
+     * 是 SEATED，但它照样由系统分配座位，因为让十万人同时浏览一张座位图，不是任何团队
+     * 跑得起来的服务。客户端读这个字段来决定到底要不要画座位图。
      */
     private Integer seatMode;
 
-    /** SEATED / STANDING. Standing sessions have no map to draw. */
+    /** SEATED / STANDING。站席场次没有座位图可画。 */
     private String seatingMode;
 
-    /** Max tickets per order; 0 means unlimited. */
+    /** 每单最多买几张票；0 表示不限。 */
     private Integer purchaseLimit;
 
-    /** 1 = every ticket must name an attendee. */
+    /** 1 = 每张票都必须登记一名观演人。 */
     private Integer requireRealName;
 
-    /** When tickets open, for a session that has not opened yet. */
+    /** 开票时间，给还没开售的场次用。 */
     private LocalDateTime saleStartTime;
 
     /**
-     * A price band.
+     * 一个票档。
      *
-     * @param id    tier id; seats reference this
-     * @param color hex hint used to tint the seats in this band
+     * @param id    票档 id；座位引用它
+     * @param color 十六进制色值，用来给本票档的座位着色
      */
     public record TierItem(
             Long id,
@@ -93,17 +88,15 @@ public class SeatMapVO {
     }
 
     /**
-     * One seat on the map.
+     * 座位图上的一个座位。
      *
-     * @param seatId    "{row}_{col}", stable and human readable
-     * @param seatIndex bitmap offset; what the lock call sends back
-     * @param type      0 normal, 1 couple, 2 accessible
-     * @param status    0 available, 1 taken (locked or sold - the client does
-     *                  not need to distinguish, and should not, since telling
-     *                  a buyer "someone has this in their cart" invites
-     *                  refreshing until it frees up)
-     * @param tierId    which price band this seat belongs to; resolved from
-     *                  {@link #tiers}
+     * @param seatId    "{row}_{col}"，稳定且人能看懂
+     * @param seatIndex 在 bitmap 中的偏移；锁座调用回传的就是它
+     * @param type      0 普通，1 情侣座，2 无障碍座
+     * @param status    0 可选，1 已被占用（已锁或已售 —— 客户端不需要区分，也不应该
+     *                  区分，因为告诉买家"有人把它放进购物车了"只会招来不停刷新，
+     *                  一直刷到它空出来为止）
+     * @param tierId    该座位属于哪个票档；从 {@link #tiers} 里解析
      */
     public record SeatItem(
             String seatId,

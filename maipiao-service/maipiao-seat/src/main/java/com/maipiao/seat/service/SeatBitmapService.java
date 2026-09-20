@@ -17,14 +17,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The seat bitmap, and the only place that writes to it.
+ * 座位 bitmap，同时是唯一会写它的地方。
  *
- * <p>Every mutation goes through a Lua script. That is not a stylistic
- * choice: it is the entire concurrency story. Redis executes a script as a
- * single unit, so the check-then-write inside {@code seat_lock.lua} cannot be
- * interleaved with another request. Splitting it into GETBIT and SETBIT calls
- * would leave a window in which two users both read "free" and both proceed,
- * and the result would be a seat sold twice.
+ * <p>每一次变更都走 Lua 脚本。这不是风格上的选择：并发问题就靠它撑着。Redis 把脚本
+ * 作为单个整体执行，所以 {@code seat_lock.lua} 里的"先检查后写入"不可能被另一个请求
+ * 插进来。拆成 GETBIT 和 SETBIT 两次调用，就会留下一段窗口：两个用户都读到"空着"，
+ * 然后都往下走，结果就是同一个座位被卖了两次。
  */
 @Slf4j
 @Service
@@ -46,7 +44,7 @@ public class SeatBitmapService {
 
     private final StringRedisTemplate redis;
 
-    /** Outcome of a lock attempt. */
+    /** 一次加锁尝试的结果。 */
     public record LockResult(boolean success, int lockedCount, int conflictSeatIndex) {
 
         public static LockResult ok(int count) {
@@ -59,14 +57,13 @@ public class SeatBitmapService {
     }
 
     // ------------------------------------------------------------
-    // lock
+    // 加锁
     // ------------------------------------------------------------
 
     /**
-     * Claims every requested seat, or none of them.
+     * 请求的座位要么全拿到，要么一个都不拿。
      *
-     * @return success with the number claimed, or a conflict naming the first
-     *         seat that was already taken
+     * @return 成功时带上拿到的数量；冲突时给出第一个已被占用的座位索引
      */
     public LockResult lock(Long sessionId, String orderNo, int totalSeat,
                            List<Integer> seatIndexes, Duration ttl) {
@@ -92,8 +89,8 @@ public class SeatBitmapService {
 
         List<?> result = execute(LOCK_SCRIPT, keys, args);
         if (result == null || result.size() < 2) {
-            // The script always returns a two-element table; anything else
-            // means Redis or the script is not what we think it is.
+            // 脚本总是返回一个两元素表；不是这样的话，说明 Redis 或脚本并不是我们
+            // 以为的那个东西。
             log.error("unexpected lock script result: {}", result);
             throw new BizException(ErrorCode.SEAT_MAP_UNAVAILABLE);
         }
@@ -111,10 +108,10 @@ public class SeatBitmapService {
     }
 
     // ------------------------------------------------------------
-    // allocate
+    // 分配
     // ------------------------------------------------------------
 
-    /** Outcome of an allocation attempt. */
+    /** 一次分配尝试的结果。 */
     public record AllocateResult(boolean success, List<Integer> seatIndexes, int longestFreeRun) {
 
         public static AllocateResult ok(List<Integer> seatIndexes) {
@@ -127,19 +124,17 @@ public class SeatBitmapService {
     }
 
     /**
-     * Takes seats from a ranked list of candidate runs.
+     * 从一份排好序的候选连座段里取座。
      *
-     * <p>The candidates come from {@link SeatRuns} and are a snapshot: between
-     * computing them and running this, somebody else may have taken one of the
-     * seats. The script re-checks every bit itself, so a stale candidate can
-     * only ever cost a retry, never a double sale. That is the whole reason the
-     * geometry is allowed to live outside the atomic section.
+     * <p>候选来自 {@link SeatRuns}，是一份快照：从算出它们到执行这一步之间，可能已经
+     * 有人把其中某个座位拿走了。脚本会自己把每一个 bit 重新校验一遍，所以一份过期的
+     * 候选最多只会带来一次重试，绝不会带来一次重复售出。这正是允许把几何计算放在原子
+     * 区之外的唯一理由。
      *
-     * @param runs     candidate runs, best first; each must be adjacent in both
-     *                 index and geometry, which is what {@link SeatRuns}
-     *                 produces
-     * @param adjacent whether the seats must come from within one run, or may
-     *                 be picked from anywhere in the candidate order
+     * @param runs     候选连座段，最优的排在最前；每一段都必须在索引和几何两个意义上
+     *                 都相邻，而这正是 {@link SeatRuns} 产出的东西
+     * @param adjacent 座位是否必须来自同一段；为 false 时可以从候选顺序中的任意位置
+     *                 挑选
      */
     public AllocateResult allocate(Long sessionId, String orderNo, int count, int totalSeat,
                                    List<SeatRuns.Segment> runs, boolean adjacent, Duration ttl) {
@@ -179,9 +174,8 @@ public class SeatBitmapService {
             return AllocateResult.noRun(longest);
         }
 
-        // The script reports the seats it took rather than a starting point,
-        // precisely because in split mode there is no starting point that
-        // implies the rest.
+        // 脚本报告的是它拿到的座位，而不是一个起点，恰恰因为在拆分模式下不存在一个
+        // 能推出其余座位的起点。
         List<Integer> seatIndexes = new ArrayList<>(result.size() - 1);
         for (int i = 1; i < result.size(); i++) {
             seatIndexes.add((int) toLong(result.get(i)));
@@ -199,23 +193,20 @@ public class SeatBitmapService {
     }
 
     // ------------------------------------------------------------
-    // verify
+    // 校验
     // ------------------------------------------------------------
 
     /**
-     * True when the order still holds every seat it names.
+     * 当该订单仍然持有它点名的每一个座位时为 true。
      *
-     * <p>This is the check that makes the lock token mean something at order
-     * time. The token is issued when the seats are locked and carries no
-     * expiry of its own, so on its own it stays "valid" long after the hold it
-     * refers to has lapsed and the seats have been taken by somebody else.
+     * <p>正是这个检查，让锁令牌在创建订单时有意义。令牌在座位加锁时签发，本身不带
+     * 任何有效期，所以单看它自己，在它所指向的持有早已过期、座位已经被别人拿走之后
+     * 很久，它依然是"有效"的。
      *
-     * <p>It narrows a race, it does not close one: a release can still land
-     * between this call and the transaction that follows. What stops that from
-     * overselling is the ledger's own {@code status = 0} compare-and-set. This
-     * call exists so the realistic case - a page left open past the hold, then
-     * submitted - is refused outright instead of costing the current holder
-     * their seat.
+     * <p>它只是把竞争窗口收窄，并没有关掉：一次释放仍然可能落在本次调用和紧随其后的
+     * 事务之间。真正阻止超卖的是账本自己的 {@code status = 0} CAS。这个调用存在的意义
+     * 在于：那种最现实的情形 —— 页面开过了持有期才提交 —— 会被直接拒掉，而不是让
+     * 当前的持有者赔上他的座位。
      */
     public boolean verifyOwnership(Long sessionId, String orderNo, List<Integer> seatIndexes) {
         if (seatIndexes == null || seatIndexes.isEmpty()) {
@@ -238,23 +229,21 @@ public class SeatBitmapService {
     }
 
     // ------------------------------------------------------------
-    // release / confirm
+    // 释放 / 确认
     // ------------------------------------------------------------
 
     /**
-     * Frees the seats held by an order.
+     * 释放某订单持有的座位。
      *
-     * <p>Idempotent, and safe to run after the seats have moved on: the script
-     * only clears a seat whose owner marker still points at this order.
+     * <p>幂等，且在座位已经易主之后再跑也是安全的：脚本只会清掉那些 owner 标记仍然
+     * 指向本订单的座位。
      *
-     * @param force       release seats even when the owner marker is gone; for
-     *                    the reconciliation job only, never a normal flow
-     * @param includeSold also release seats this order has sold, marked
-     *                    {@code SOLD:}. For refunds only: a refunded seat goes
-     *                    back on the market, and without this the bit stays set
-     *                    and the seat is unsellable while the ledger says it is
-     *                    free.
-     * @return how many seats were actually released
+     * @param force       即使 owner 标记已经不在了也照样释放；只给对账任务用，正常
+     *                    流程绝不能传
+     * @param includeSold 连本订单已经卖掉的座位一起释放，也就是标记为 {@code SOLD:}
+     *                    的那些。只给退款用：退掉的座位要重新回到市场上，没有这个
+     *                    参数的话 bit 就一直置着，账本说它空着，实际上却卖不出去。
+     * @return 真正被释放掉的座位数
      */
     public int release(Long sessionId, String orderNo, boolean force, boolean includeSold) {
         List<String> keys = List.of(
@@ -275,11 +264,10 @@ public class SeatBitmapService {
     }
 
     /**
-     * Marks the seats as sold rather than merely locked.
+     * 把座位标记为"已售"，而不只是"已锁"。
      *
-     * <p>The bitmap bit stays set - a sold seat is no more available than a
-     * locked one. What changes is the owner marker, so a later release can
-     * tell a paid seat from a held one.
+     * <p>bitmap 上的 bit 保持置位 —— 已售的座位并不比已锁的座位更可选。变的是 owner
+     * 标记，好让后续的释放能分辨出已付款的座位和只是被持有的座位。
      */
     public int confirm(Long sessionId, String orderNo) {
         List<String> keys = List.of(
@@ -292,10 +280,10 @@ public class SeatBitmapService {
     }
 
     // ------------------------------------------------------------
-    // read / rebuild
+    // 读取 / 重建
     // ------------------------------------------------------------
 
-    /** @return the occupied seat indexes, ascending */
+    /** @return 已占用的座位索引，升序 */
     @SuppressWarnings("unchecked")
     public List<Integer> findOccupiedIndexes(Long sessionId, int totalSeats) {
         List<String> keys = List.of(CommonConstants.SEAT_MAP_KEY + sessionId);
@@ -310,33 +298,28 @@ public class SeatBitmapService {
         return occupied;
     }
 
-    /** True when the bitmap for this screening has been built. */
+    /** 该场次的 bitmap 是否已经建好。 */
     public boolean isInitialised(Long sessionId) {
         return Boolean.TRUE.equals(redis.hasKey(CommonConstants.SEAT_MAP_KEY + sessionId));
     }
 
     /**
-     * Seeds a cold bitmap from the ledger, without ever clearing a bit.
+     * 用账本给一张冷 bitmap 播种，过程中绝不清除任何 bit。
      *
-     * <p>This is the lazy path, taken whenever a screening's bitmap is missing
-     * - a fresh deploy, a flushed Redis, a screening nobody has opened yet.
-     * Several requests hit a cold bitmap at the same moment by definition,
-     * since they are what made it cold, so this has to be safe to run
-     * concurrently with itself and with allocations.
+     * <p>这是懒加载路径，场次的 bitmap 一缺失就会被走到 —— 新部署、Redis 被清过、
+     * 还没人打开过的场次。冷 bitmap 按定义就是被同一时刻的若干个请求一起撞冷的，
+     * 所以这段代码必须能安全地与自己并发，也能与分配操作并发。
      *
-     * <p>Which is why it only sets bits. The earlier version built a temporary
-     * key and renamed it over the live one, which is atomic against a reader
-     * but not against a writer: every concurrent arrival rebuilt from a ledger
-     * that did not yet know about the seats the others had just handed out,
-     * and the rename discarded them. Measured under a rush sale - 300 buyers,
-     * 100 concurrent - it sold 271 seats into 240, with 21 seats handed to two
-     * people. With a warm bitmap the same test sells 160 into 160 and doubles
-     * nothing.
+     * <p>这就是它只置位的原因。更早的版本是建一个临时 key 再 rename 覆盖掉线上那个，
+     * 这对读者是原子的，对写者却不是：每一个并发到达的请求都基于一份账本重建，而那份
+     * 账本还不知道其他人刚刚发出去的座位，紧接着的 rename 把它们全抹掉了。在一次抢购
+     * 中实测过 —— 300 个买家、100 并发 —— 结果是 271 个座位卖进了 240 个位置，其中
+     * 21 个座位发给了两个人。bitmap 预热的情况下，同一个测试是把 160 个座位卖进 160
+     * 个位置，一个都没重复。
      *
-     * <p>The cost of merging is that a stale bit cannot be cleared this way.
-     * That is the right way round: the ledger is authoritative for what is
-     * sold, and a seat that stays occupied is a seat nobody can be sold twice.
-     * Clearing a bit is a repair, and repair is {@link #rebuild}.
+     * <p>合并的代价是：脏掉的 bit 没法用这个办法清掉。这个取舍的方向是对的：什么是
+     * 已售，以账本为准，而一个保持占用状态的座位，就是一个不可能被卖两次的座位。
+     * 清 bit 属于修复，修复走 {@link #rebuild}。
      */
     public void seed(Long sessionId, List<Integer> occupiedIndexes) {
         if (occupiedIndexes == null || occupiedIndexes.isEmpty()) {
@@ -351,19 +334,15 @@ public class SeatBitmapService {
     }
 
     /**
-     * Rebuilds the bitmap from the ledger, discarding whatever was there.
+     * 用账本重建 bitmap，原有内容一律丢弃。
      *
-     * <p>For repair, not for cold starts. Written to a temporary key and then
-     * renamed, so a reader sees either the old bitmap or the new one and never
-     * a partial one - but a writer that runs concurrently loses its bits, so
-     * this must not run while a screening is selling. {@link #seed} is the
-     * path that is safe to reach for lazily.
+     * <p>用于修复，不用于冷启动。先写进临时 key 再 rename，所以读的人要么看到旧
+     * bitmap、要么看到新 bitmap，永远看不到残缺的 —— 但并发运行的写操作会丢掉自己的
+     * bit，所以场次正在售票时不能跑这个。懒加载时该伸手去够的是 {@link #seed}。
      *
-     * <p>The empty case is handled explicitly. A screening where nothing has
-     * been sold yet produces no SETBIT calls at all, so the temporary key is
-     * never created and RENAME fails with "no such key" - on the most common
-     * screening there is. Writing a single zero bit creates the key while
-     * leaving every seat available.
+     * <p>空的情况被显式处理了。一个什么都还没卖出去的场次根本不会产生任何 SETBIT
+     * 调用，于是临时 key 从没被创建，RENAME 就会以 "no such key" 失败 —— 而这恰恰是
+     * 最常见的那种场次。写一个值为 0 的 bit 就能把 key 建出来，同时所有座位依然可用。
      */
     public void rebuild(Long sessionId, List<Integer> occupiedIndexes) {
         String tempKey = CommonConstants.SEAT_MAP_KEY + sessionId + ":rebuild";
@@ -379,7 +358,7 @@ public class SeatBitmapService {
             }
         }
 
-        // RENAME is atomic; there is no instant at which the key is absent.
+        // RENAME 是原子的；不存在任何一个瞬间这个 key 是缺失的。
         redis.rename(tempKey, finalKey);
 
         int count = occupiedIndexes == null ? 0 : occupiedIndexes.size();
@@ -387,18 +366,17 @@ public class SeatBitmapService {
     }
 
     /**
-     * Restores owner markers after a rebuild.
+     * 重建之后把 owner 标记补回来。
      *
-     * <p>Every occupied seat needs one, taken or held alike. The owner marker
-     * is what the release script compares against, so a rebuilt seat without
-     * one can never be freed: the release sees no owner, decides the seat is
-     * not this order's, and leaves the bit set. A held seat rebuilt this way
-     * is dead from the moment it is cancelled until the next rebuild.
+     * <p>每一个被占用的座位都需要一个，已售的、被持有的都一样。owner 标记是释放脚本
+     * 拿来比对的依据，所以一个重建出来却没有标记的座位永远释放不掉：释放时看不到
+     * owner，判定这个座位不属于该订单，于是把那个 bit 留在原地。以这种方式重建出来的
+     * 被持有座位，从被取消的那一刻起就是死的，一直要等到下一次重建。
      *
-     * <p>Sold seats get the {@code SOLD:} prefix so the release path can tell
-     * them from held ones and refuse to put a paid-for seat back on sale.
+     * <p>已售的座位会带上 {@code SOLD:} 前缀，好让释放路径能把它们和被持有的座位区分
+     * 开，拒绝把一个已付款的座位重新放回售卖。
      *
-     * @param owners seat index to owner marker
+     * @param owners 座位索引到 owner 标记的映射
      */
     public void markOwners(Long sessionId, Map<String, String> owners) {
         if (owners.isEmpty()) {
@@ -411,12 +389,11 @@ public class SeatBitmapService {
     // ------------------------------------------------------------
 
     /**
-     * Runs a script, translating a Redis outage into a business error.
+     * 执行脚本，把 Redis 故障翻译成一个业务错误。
      *
-     * <p>Deliberately fail-closed. If Redis is unreachable the lock cannot be
-     * taken safely, and the alternative - falling back to database row locks -
-     * would put the entire seat-selection load onto MySQL and take the
-     * database down with it. Refusing the request is the better failure.
+     * <p>刻意 fail-closed。Redis 不可达时，加锁就无法安全完成，而另一条路 —— 退回
+     * 数据库行锁 —— 会把整个选座流量压到 MySQL 上，顺带把数据库一起拖垮。拒掉这个
+     * 请求是更好的失败方式。
      */
     private <T> T execute(RedisScript<T> script, List<String> keys, List<String> args) {
         try {

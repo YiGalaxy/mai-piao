@@ -11,23 +11,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only queries against {@code maipiao_movie}.
+ * 对 {@code maipiao_event} 的只读查询。
  *
- * <p>seat-service reads this schema but never writes it - the ledger is
- * updated by movie-service during the global transactions. Keeping the reads
- * here avoids a Feign hop on the latency-critical seat map path.
+ * <p>seat-service 读这个库，但从不写它 —— 账本由 movie-service 在全局事务里更新。
+ * 把读操作放在这里，是为了在延迟敏感的座位图路径上省掉一次 Feign 跳转。
  */
 @Mapper
 public interface SeatQueryMapper {
 
     /**
-     * Screening plus its hall geometry template.
+     * 放映场次，外加它所在厅的几何模板。
      *
-     * <p>Every column the seat map reads has to be selected here. Four of them
-     * were not - {@code seatingMode}, {@code purchaseLimit}, {@code
-     * requireRealName}, {@code saleStartTime} - and the map set them from a
-     * key that was never in the result, so they came back null and the fields
-     * silently meant "no limit" for as long as nothing depended on them.
+     * <p>座位图会读的每一列都必须在这里被选出来。曾经有四列没选 ——
+     * {@code seatingMode}、{@code purchaseLimit}、{@code requireRealName}、
+     * {@code saleStartTime} —— 而座位图却从一个根本不在结果里的 key 去取值，于是它们
+     * 拿回来是 null；只要还没有任何东西依赖它们，这几个字段就默不作声地表示"无限制"。
      */
     @Select("""
             SELECT s.id                AS sessionId,
@@ -60,9 +58,9 @@ public interface SeatQueryMapper {
     Map<String, Object> selectScheduleDetail(@Param("sessionId") Long sessionId);
 
     /**
-     * The seat layout of a screening: position and kind of every seat.
+     * 场次的座位布局：每个座位的位置和种类。
      *
-     * <p>State is deliberately not selected - that comes from Redis.
+     * <p>状态是刻意不选的 —— 那来自 Redis。
      */
     @Select("""
             SELECT seat_id    AS seatId,
@@ -78,17 +76,14 @@ public interface SeatQueryMapper {
     List<Map<String, Object>> selectSeatLayout(@Param("sessionId") Long sessionId);
 
     /**
-     * What these seats cost, from the band each one sits in.
+     * 这些座位值多少钱，按各自所在的票档算。
      *
-     * <p>This is the authoritative price of a booking, and it lives here
-     * because this is where the seat-to-band mapping already is. The session's
-     * own {@code price} column is a listing figure - "from ¥580" - and using it
-     * for an order total charges a VIP seat and a stand seat the same, which is
-     * how a concert with four bands ended up with one price.
+     * <p>这才是订单价格的权威来源，放在这里是因为座位到票档的映射本来就在这里。场次
+     * 自己的 {@code price} 列只是个挂牌数字 —— "¥580 起" —— 拿它当订单总价，会让 VIP
+     * 座和站席收一样的钱；一场原本有四个票档的演唱会最后只剩一个价格，就是这么来的。
      *
-     * <p>LEFT JOIN, and the caller asserts the row count: a seat with no band
-     * comes back with a zero price rather than disappearing, so a hole in the
-     * data is visible instead of silently shrinking the total.
+     * <p>用 LEFT JOIN，并由调用方断言返回行数：没有票档的座位会带着 0 价格返回，而不是
+     * 凭空消失，这样数据上的窟窿是看得见的，而不是默默把总价缩小。
      */
     @Select("""
             <script>
@@ -106,11 +101,10 @@ public interface SeatQueryMapper {
                                                @Param("seatIndexes") List<Integer> seatIndexes);
 
     /**
-     * Price bands for a session.
+     * 场次的票档。
      *
-     * A film session has exactly one; a performance has several. The map is
-     * coloured from this, and the price of a seat is looked up through its
-     * tier rather than taken from the session.
+     * 电影场次恰好只有一个；演出有多个。座位图按它着色，座位价格也是经由它的票档查
+     * 出来的，而不是从场次上取的。
      */
     @Select("""
             SELECT id,
@@ -123,7 +117,7 @@ public interface SeatQueryMapper {
             """)
     List<Map<String, Object>> selectTiers(@Param("scheduleId") Long scheduleId);
 
-    /** Seats the ledger says are locked or sold - the input to a bitmap rebuild. */
+    /** 账本上记载为已锁或已售的座位 —— bitmap 重建的输入。 */
     @Select("""
             SELECT seat_index AS seatIndex,
                    status     AS status,

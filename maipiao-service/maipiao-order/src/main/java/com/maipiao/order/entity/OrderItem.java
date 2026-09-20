@@ -9,11 +9,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_order.t_order_item} - one row per seat.
+ * 映射 {@code maipiao_order.t_order_item} —— 一个座位一行。
  *
- * <p>{@code ticketNo} is generated when the order is paid for (G2), not when
- * it is created. A ticket number that exists before payment is a ticket that
- * could be presented before payment.
+ * <p>{@code ticketNo} 是在订单被支付时（G2）生成的，不是在下单时。
+ * 支付之前就已存在的票号，是一张能在支付之前被拿出来用的票。
  */
 @Data
 @TableName("t_order_item")
@@ -28,24 +27,24 @@ public class OrderItem {
 
     private String seatId;
 
-    /** Bitmap offset, kept so a reconciliation can compare against the ledger. */
+    /** 位图偏移量，留着好让对账能拿它和账本比对。 */
     private Integer seatIndex;
 
-    /** Human readable, e.g. "5排7座". */
+    /** 给人看的，例如 "5排7座"。 */
     private String seatLabel;
 
     private BigDecimal price;
 
     /**
-     * The price band this seat was sold at.
+     * 这个座位售出时所在的票档。
      *
-     * <p>Recorded rather than reconstructed: a refund has to give back what
-     * this seat cost, and an order holding a 1880 VIP seat next to a 580 stand
-     * seat has no single figure to derive it from.
+     * <p>记下来，而不是事后重建：退款要退的是这个座位当时花的钱，
+     * 而一笔把 1880 的 VIP 座和 580 的看台座放在一起的订单，
+     * 根本没有任何一个单一数字可以拿来推导。
      */
     private Long tierId;
 
-    /** Admission code, empty until the order is paid. */
+    /** 入场码，在订单支付之前是空的。 */
     private String ticketNo;
 
     private Integer checkStatus;

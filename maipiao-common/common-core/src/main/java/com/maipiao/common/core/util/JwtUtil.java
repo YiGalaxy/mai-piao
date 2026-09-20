@@ -15,13 +15,11 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * JWT issuing and verification.
+ * JWT 的签发与校验。
  *
- * <p>Design note: tokens are stateless, so logging out cannot simply "delete"
- * one. The project keeps a Redis blacklist keyed on the token's {@code jti};
- * the gateway consults it. That is a deliberate trade - a Redis lookup on every
- * authenticated request - to get immediate revocation instead of waiting for the
- * token to expire.
+ * <p>设计说明：token 是无状态的，所以登出没法简单地"删掉"它。项目维护一份以 token
+ * 的 {@code jti} 为键的 Redis 黑名单，由网关去查。这是一次刻意的取舍 —— 每个已认证
+ * 请求多一次 Redis 查询 —— 换来的是立即吊销，而不是干等 token 过期。
  */
 @Slf4j
 public class JwtUtil {
@@ -46,7 +44,7 @@ public class JwtUtil {
     }
 
     // ------------------------------------------------------------
-    // issuing
+    // 签发
     // ------------------------------------------------------------
 
     public String generateUserToken(Long userId, String phone) {
@@ -63,7 +61,7 @@ public class JwtUtil {
 
         return Jwts.builder()
                 .subject(String.valueOf(userId))
-                // jti gives us a stable handle for the logout blacklist
+                // jti 给登出黑名单提供了一个稳定的抓手
                 .id(UUID.randomUUID().toString().replace("-", ""))
                 .claim(CLAIM_PHONE, phone)
                 .claim(CLAIM_ROLE, role)
@@ -75,12 +73,12 @@ public class JwtUtil {
     }
 
     // ------------------------------------------------------------
-    // parsing
+    // 解析
     // ------------------------------------------------------------
 
     /**
-     * @return the token claims, or {@code null} if the token is invalid or expired.
-     *         Callers treat null as "not authenticated" and return 401.
+     * @return token 的 claims；token 无效或已过期时返回 {@code null}。
+     *         调用方把 null 当作"未认证"处理并返回 401。
      */
     public Claims parse(String token) {
         if (token == null || token.isBlank()) {
@@ -98,7 +96,7 @@ public class JwtUtil {
             log.debug("token expired: {}", e.getMessage());
             return null;
         } catch (JwtException | IllegalArgumentException e) {
-            // Covers bad signature, malformed token, wrong issuer.
+            // 涵盖签名不对、token 格式错乱、issuer 不对这几种情况。
             log.debug("token rejected: {}", e.getMessage());
             return null;
         }
@@ -126,7 +124,7 @@ public class JwtUtil {
         return ROLE_ADMIN.equals(getRole(claims));
     }
 
-    /** Epoch millis at which the token expires, used for the blacklist TTL. */
+    /** token 过期的 epoch 毫秒时间戳，用来定黑名单的 TTL。 */
     public long getExpireAtMillis(Claims claims) {
         Date expiration = claims.getExpiration();
         return expiration == null ? System.currentTimeMillis() : expiration.getTime();

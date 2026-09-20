@@ -8,7 +8,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** Maps {@code maipiao_movie.t_event_venue}. */
+/** 映射 {@code maipiao_movie.t_event_venue}。 */
 @Data
 @TableName("t_event_venue")
 public class Cinema {
@@ -22,18 +22,17 @@ public class Cinema {
     private String name;
 
     /**
-     * CINEMA / GYMNASIUM / LIVEHOUSE / STADIUM / THEATER.
+     * CINEMA / GYMNASIUM / LIVEHOUSE / STADIUM / THEATER。
      *
-     * <p>Unmapped until now, which meant the admin screen could not tell a
-     * stadium from a cinema screen when offering somewhere to put a show on.
-     * The class is called Cinema because films came first; the table has
-     * always held every kind of venue, and this column is how it says which.
+     * <p>在此之前一直没有映射，于是后台界面在提供「找个地方办演出」时，分不清体育场
+     * 和影厅。类名叫 Cinema 是因为电影先来；这张表从来就装着各种场馆，而这一列才是
+     * 它用来区分的方式。
      */
     private String venueType;
 
     private String address;
 
-    /** Used for filtering ("which cinemas are near me"). */
+    /** 用来做筛选（「我附近有哪些影院」）。 */
     private String district;
 
     private String phone;

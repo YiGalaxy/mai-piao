@@ -9,17 +9,14 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code maipiao_event.t_event_price_tier} - a price band within a session.
+ * 映射 {@code maipiao_event.t_event_price_tier} —— 一个场次内的票价档。
  *
- * <p>A film session has exactly one tier covering every row. That is not a
- * special case in the code: the seat map colours by tier and the order prices
- * by tier, and a film simply has one of them. The alternative - a nullable
- * price on the session that takes precedence when present - means every
- * consumer has to know which of two pricing models is in play.
+ * <p>电影场次恰好只有一个覆盖全部排的档。这不是代码里的特例：座位图按档着色、下单
+ * 按档定价，而电影只不过是「只有一个档」而已。另一种做法 —— 在场次上放一个可为空的
+ * 价格、有值时就优先 —— 意味着每个下游都得知道当前跑的是两套定价模型里的哪一套。
  *
- * <p>Bands are row ranges because that is how venues sell them ("rows 1-5 are
- * VIP"). The seat carries its tier id from generation time, so a seat's price
- * is never recomputed from its row at request time.
+ * <p>用排区间是因为场馆就是这么卖的（「1-5 排是 VIP」）。座位在生成时就带着自己的
+ * 档 id，所以座位的价格从不在请求时按排重算。
  */
 @Data
 @TableName("t_event_price_tier")
@@ -30,22 +27,22 @@ public class PriceTier {
 
     private Long sessionId;
 
-    /** VIP / floor / stands / standard. */
+    /** VIP / 内场 / 看台 / 标准。 */
     private String name;
 
     private BigDecimal price;
 
     private Integer rowStart;
 
-    /** 0 means "to the last row". */
+    /** 0 表示「一直到最后一排」。 */
     private Integer rowEnd;
 
-    /** Colour hint for the seat map, so bands are distinguishable at a glance. */
+    /** 给座位图的颜色提示，好让各档一眼能分辨。 */
     private String color;
 
     private LocalDateTime createTime;
 
-    /** Whether this tier covers the given row. */
+    /** 这一档是否覆盖给定的排。 */
     public boolean covers(int row) {
         int end = rowEnd == null || rowEnd == 0 ? Integer.MAX_VALUE : rowEnd;
         return row >= rowStart && row <= end;

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Registration, login and the small amount of user lookup other flows need.
+ * 注册、登录，以及其他流程需要的那一点点用户查询。
  */
 @Slf4j
 @Service
@@ -28,14 +28,14 @@ public class UserService {
     private final TokenBlacklistService tokenBlacklistService;
 
     // ------------------------------------------------------------
-    // registration
+    // 注册
     // ------------------------------------------------------------
 
     @Transactional(rollbackFor = Exception.class)
     public Long register(UserDtos.RegisterRequest request) {
-        // Fast path: a readable error instead of a constraint violation.
-        // This check is NOT the guarantee - two concurrent registrations both
-        // pass it and only the unique index stops the second one. See the catch.
+        // 快路径：给出一个读得懂的错误，而不是一个约束冲突。
+        // 这个检查不构成保证 —— 两个并发注册都能通过它，真正拦住第二个的是唯一索引。
+        // 见下面的 catch。
         Long existing = userMapper.selectCount(
                 Wrappers.<User>lambdaQuery().eq(User::getPhone, request.phone()));
         if (existing != null && existing > 0) {
@@ -55,9 +55,8 @@ public class UserService {
         try {
             userMapper.insert(user);
         } catch (DuplicateKeyException e) {
-            // Lost the race against a concurrent registration of the same phone.
-            // Translating it here keeps the API contract consistent regardless
-            // of which path detected the duplicate.
+            // 在同一个手机号的并发注册中输掉了。在这里翻译成业务异常，
+            // 能让 API 契约保持一致，不管重复是被哪条路径发现的。
             throw new BizException(ErrorCode.USER_PHONE_EXISTS);
         }
 
@@ -66,15 +65,15 @@ public class UserService {
     }
 
     // ------------------------------------------------------------
-    // login
+    // 登录
     // ------------------------------------------------------------
 
     public UserDtos.LoginResponse login(UserDtos.LoginRequest request) {
         User user = userMapper.selectOne(
                 Wrappers.<User>lambdaQuery().eq(User::getPhone, request.phone()));
 
-        // Same error for "no such user" and "wrong password" on purpose: telling
-        // them apart lets an attacker enumerate which phone numbers are registered.
+        // 「没有这个用户」和「密码错误」故意返回同一个错误：把它们区分开，
+        // 等于让攻击者能枚举出哪些手机号已经注册过。
         if (user == null || !passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new BizException(ErrorCode.USER_PASSWORD_WRONG);
         }
@@ -82,8 +81,8 @@ public class UserService {
             throw new BizException(ErrorCode.USER_DISABLED);
         }
 
-        // Issued with the account's own role. Anything else would be the
-        // service deciding what the token may reach, which is not its call.
+        // 用账号自己的角色签发。换成别的做法，就等于由这个服务来决定 token 能碰到什么，
+        // 而那不是它该管的事。
         boolean admin = JwtUtil.ROLE_ADMIN.equals(user.getRole());
         String token = admin
                 ? jwtUtil.generateAdminToken(user.getId(), user.getPhone())
@@ -95,13 +94,12 @@ public class UserService {
     }
 
     /**
-     * Revokes a token immediately.
+     * 立刻吊销一个 token。
      *
-     * <p>A JWT cannot be "deleted" - it is valid until it expires, and every
-     * service that trusts the signature will accept it. So logout records the
-     * token's jti in Redis for the remainder of its lifetime, and the gateway
-     * rejects anything on that list. The cost is one Redis lookup per
-     * authenticated request; the benefit is that logout actually logs you out.
+     * <p>JWT 是「删不掉」的 —— 它在过期之前一直有效，每一个信任签名的服务都会接受它。
+     * 所以登出时把 token 的 jti 记进 Redis，存到它自己剩余寿命结束为止，
+     * 而网关会拒绝黑名单上的任何东西。代价是每个已认证请求多一次 Redis 查询；
+     * 换来的是登出真的能把你登出。
      */
     public void logout(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
@@ -111,7 +109,7 @@ public class UserService {
     }
 
     // ------------------------------------------------------------
-    // lookup
+    // 查询
     // ------------------------------------------------------------
 
     public UserDtos.UserVO getUser(Long userId) {
@@ -122,7 +120,7 @@ public class UserService {
         return toVO(user);
     }
 
-    /** Internal use: returns the entity, callers must not expose it directly. */
+    /** 内部使用：返回实体本身，调用方不得把它直接暴露出去。 */
     public User getEntity(Long userId) {
         User user = userMapper.selectById(userId);
         if (user == null) {

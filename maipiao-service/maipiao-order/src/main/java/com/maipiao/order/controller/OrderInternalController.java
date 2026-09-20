@@ -28,17 +28,14 @@ import java.util.Map;
 import java.util.List;
 
 /**
- * Service-to-service endpoints for the payment flow (G2, G3).
+ * 支付流程（G2、G3）用的服务间接口。
  *
- * <p>Reachable only from inside the cluster: the gateway rejects
- * {@code /api/*&#47;inner/**} before consulting its public whitelist, because a
- * whitelist cannot express "public except for these" and these endpoints move
- * money and inventory.
+ * <p>只能从集群内部访问：网关会先于公共白名单拒绝 {@code /api/*&#47;inner/**}，
+ * 因为白名单表达不了「除了这些之外都公开」，而这些接口动的是钱和库存。
  *
- * <p>Each is a branch of a Seata global transaction, so the rule is the same
- * as everywhere else: assert the affected row count and throw when it does not
- * match. A branch that reports success without changing anything would let a
- * payment commit with no tickets behind it.
+ * <p>每一个都是 Seata 全局事务的一个分支，所以规则和其他地方一样：
+ * 断言影响行数，对不上就抛异常。一个什么都没改却报告成功的分支，
+ * 会让一次支付在没有票的情况下提交掉。
  */
 @Slf4j
 @RestController
@@ -53,12 +50,11 @@ public class OrderInternalController {
     private final OrderRefundService orderRefundService;
 
     /**
-     * How much a user has bought.
+     * 某个用户买了多少。
      *
-     * <p>Called by user-service for the user detail screen, which is the only
-     * place that needs it. Deliberately not part of the user list: a page of
-     * twenty users would become twenty of these calls for a number nobody
-     * reads while scanning.
+     * <p>由 user-service 在用户详情页调用，那是唯一需要它的地方。
+     * 故意不放进用户列表：一页二十个用户就会变成二十次这样的调用，
+     * 只为算一个扫列表时没人会读的数字。
      */
     @GetMapping("/stats")
     public R<Map<String, Object>> stats(@RequestParam Long userId) {
@@ -70,12 +66,11 @@ public class OrderInternalController {
     }
 
     /**
-     * G2 branch: order to PAID, and the seat ledger from locked to sold.
+     * G2 分支：订单转已支付，座位账本从已锁定转已售出。
      *
-     * <p>Both halves live behind this one call because they are one fact. Split
-     * across two endpoints, a caller that did the first and not the second
-     * would leave a paid order whose seats still read as held - which is what
-     * happened while this was only the status change.
+     * <p>这两半放在同一个调用后面，因为它们本来就是同一个事实。拆成两个接口的话，
+     * 调用了第一个却没调用第二个的调用方，会留下一笔已支付、座位却还是「已占用」的订单 ——
+     * 这个接口只改状态的那段时间里，发生的正是这件事。
      */
     @PostMapping("/{orderNo}/paid")
     public R<Void> markPaid(@PathVariable String orderNo,
@@ -85,12 +80,10 @@ public class OrderInternalController {
     }
 
     /**
-     * Marks the Redis hold as sold. Called by pay-service <b>after</b> the G2
-     * transaction commits.
+     * 把 Redis 里的占用标记为已售出。由 pay-service 在 G2 事务提交<b>之后</b>调用。
      *
-     * <p>A separate endpoint rather than part of G2 precisely because it must
-     * not be inside it: Redis cannot be rolled back, so a marker written within
-     * the transaction outlives a rollback and pins the seat as sold forever.
+     * <p>单独一个接口而不是并进 G2，正是因为这件事绝不能待在 G2 里面：
+     * Redis 回滚不了，写在事务里的标记会挺过回滚，把座位永久钉成已售。
      */
     @PostMapping("/{orderNo}/confirm-seats")
     public R<Void> confirmSeats(@PathVariable String orderNo) {
@@ -99,11 +92,10 @@ public class OrderInternalController {
     }
 
     /**
-     * G2 branch: issue the tickets.
+     * G2 分支：出票。
      *
-     * <p>Generates a ticket number per seat at the moment of payment. A ticket
-     * number that exists before payment is one that could be presented before
-     * payment.
+     * <p>在支付这一刻，为每个座位生成一个票号。支付之前就已存在的票号，
+     * 是一张能在支付之前被拿出来用的票。
      */
     @PostMapping("/{orderNo}/issue-tickets")
     public R<Void> issueTickets(@PathVariable String orderNo,
@@ -119,7 +111,7 @@ public class OrderInternalController {
         int issued = 0;
         for (OrderItem item : items) {
             if (item.getTicketNo() != null && !item.getTicketNo().isBlank()) {
-                continue; // already issued; a retry must not mint a second code
+                continue; // 已经出过票了；重试不能再造出第二个票号
             }
             item.setTicketNo(SnowflakeIdGenerator.nextString());
             orderItemMapper.updateById(item);
@@ -156,7 +148,7 @@ public class OrderInternalController {
         return R.ok();
     }
 
-    /** Snapshot for the payment page. */
+    /** 支付页要用的订单快照。 */
     @GetMapping("/{orderNo}/summary")
     public R<Order> summary(@PathVariable String orderNo) {
         return R.ok(stateMachine.require(orderNo));

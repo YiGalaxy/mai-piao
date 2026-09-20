@@ -31,26 +31,20 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Generates demo sessions, their price tiers and their seat rows.
+ * 生成演示用的场次、票档和座位行。
  *
- * <p>Handles films and performances through one path, which is the point of
- * the unified model:
+ * <p>电影和演出走同一条路径，这正是统一模型的要点：
  *
  * <ul>
- *   <li>A <b>film</b> session gets one tier covering every row. Nothing
- *       downstream branches on that - the seat map reads a tier like any
- *       other, it is simply the only one.</li>
- *   <li>A <b>performance</b> gets several tiers by row band, each with its own
- *       price, which is how venues actually sell them.</li>
- *   <li>A <b>standing</b> place gets no grid at all. Its bitmap is used as an
- *       admission counter: seat_index still identifies one unit of capacity,
- *       so locking, ordering and refunds need no special case.</li>
+ *   <li><b>电影</b>场次只得到一个覆盖全部排的票档。下游没有任何一处为此分支 ——
+ *       座位图照常读票档，只不过读到的只有这一个。</li>
+ *   <li><b>演出</b>按排区间分若干票档，每档各有一个价，场馆实际上就是这么卖的。</li>
+ *   <li><b>站席</b>场地压根没有网格。它的 bitmap 被用作入场人数计数器：
+ *       seat_index 仍然标识一个容量单位，所以锁定、下单、退款都不需要特例。</li>
  * </ul>
  *
- * <p>Not transactional as a whole. One transaction spanning a hundred thousand
- * inserts holds an enormous undo log and fails entirely on a single bad row;
- * each session is written on its own, and re-running is safe because the
- * generator clears first.
+ * <p>整体不开事务。一个横跨十万次 insert 的事务会撑出巨大的 Undo Log，而且只要有
+ * 一行坏掉就全盘失败；这里每个场次单独写入，并且因为生成器会先清空，重跑是安全的。
  */
 @Slf4j
 @Service
@@ -62,15 +56,15 @@ public class DemoDataService {
             LocalTime.of(19, 0), LocalTime.of(21, 30),
     };
 
-    /** Performances run at night; two slots keeps the demo dataset readable. */
+    /** 演出都在晚上；只留两个时段，好让演示数据集看得过来。 */
     private static final LocalTime[] SHOW_SLOTS = {
             LocalTime.of(19, 30), LocalTime.of(20, 30),
     };
 
-    /** Marks what this generator created, so its reset can leave the rest alone. */
+    /** 标记本生成器创建的数据，这样它重置时可以放过其余的。 */
     private static final String SOURCE_GENERATED = "DEMO";
 
-    /** Marks what an administrator created, which the generator must not touch. */
+    /** 标记管理员创建的数据，生成器不能碰。 */
     private static final String SOURCE_ADMIN = "ADMIN";
 
     private static final int BATCH_SIZE = 1000;
@@ -78,7 +72,7 @@ public class DemoDataService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     // ------------------------------------------------------------
-    // showcase: one stadium, one artist, 2000 seats
+    // showcase：一个体育场、一位艺人、2000 个座位
     // ------------------------------------------------------------
 
     private static final long SHOWCASE_PLACE_ID = 3199L;
@@ -87,14 +81,12 @@ public class DemoDataService {
     private static final int SHOWCASE_NIGHTS = 2;
 
     /**
-     * Price bands stated outright rather than derived from the hall.
+     * 票档直接写死，不从场馆推导。
      *
-     * <p>{@link #buildTiers} prices off {@code place_type}, which is right for
-     * the generated dataset - one rule, 1272 sessions, all consistent. It is
-     * wrong here: a stadium's base of 380 would put the best seat at 684, and
-     * the point of the showcase is that the numbers look like a concert
-     * somebody could actually buy a ticket to. Four bands across 40 rows is
-     * also what a stadium show sells, where a smaller hall sells three.
+     * <p>{@link #buildTiers} 按 {@code place_type} 定价，对生成式数据集来说是对的 ——
+     * 一条规则，1272 个场次，全都自洽。但在这里是错的：体育场 380 的基准价会把最好
+     * 的座位推到 684，而 showcase 的要点是这些数字得像一场真有人会买票的演唱会。
+     * 40 排分四档也是体育场演出的卖法，小一点的场馆才卖三档。
      */
     private static final List<PriceTier> SHOWCASE_TIERS = List.of(
             showcaseTier("内场VIP", 1980, 1, 8, "#e91e63"),
@@ -127,16 +119,14 @@ public class DemoDataService {
     }
 
     /**
-     * Clears what this generator made, and nothing else.
+     * 只清除本生成器造出来的东西，别的都不动。
      *
-     * <p>It used to clear every session there was, which was correct while it
-     * was the only thing creating them. An administrator can now put a show on
-     * sale through the admin screen, and a reset would delete it without a
-     * word - the person who entered it would have no way to tell whether they
-     * had done something wrong.
+     * <p>它以前会清掉所有场次，在它是唯一的创建者时这是对的。现在管理员可以通过
+     * 后台界面把一场演出上架，而一次重置会一声不吭地把它删掉 —— 录入的人根本没法
+     * 判断是不是自己哪一步做错了。
      *
-     * <p>Seats and bands go with their session. They are found through the
-     * session ids rather than by clearing the tables, for the same reason.
+     * <p>座位和票档跟着场次走。它们是通过场次 id 找到的，而不是清空整张表，理由
+     * 相同。
      */
     @Transactional(rollbackFor = Exception.class)
     public void clearSchedules() {
@@ -158,20 +148,17 @@ public class DemoDataService {
     }
 
     /**
-     * The showcase: one stadium, one artist, 2000 seats, two screenings.
+     * showcase：一个体育场、一位艺人、2000 个座位、两场。
      *
-     * <p>Separate from {@link #generate} rather than a flag on it, because the
-     * two want opposite things. The general generator clears the whole
-     * dataset first and derives everything - price bands, seat counts, sale
-     * windows - from the venue's own configuration, which is what makes 1272
-     * sessions cheap to produce and consistent with each other. The showcase
-     * is one session that has to be exactly 2000 seats at prices somebody
-     * would recognise, so it states its numbers instead of deriving them.
+     * <p>它和 {@link #generate} 分开，而不是用个开关挂在上面，因为两者想要的东西
+     * 正好相反。通用生成器先清空整个数据集，再从场馆自身的配置推导一切 —— 票档、
+     * 座位数、售票窗口 —— 这正是 1272 个场次能廉价产出而又彼此自洽的原因。
+     * showcase 则是一个必须恰好 2000 个座位、价格还得让人一眼认得的场次，所以它
+     * 把数字写死，而不是推导出来。
      *
-     * <p>Only its own project's sessions are cleared, so it can be re-run
-     * without disturbing the rest - but it must run <b>after</b>
-     * {@code generate-schedule}, which clears everything. See
-     * {@code docs/sql/11_seed_showcase.sql}.
+     * <p>只清除自己这个项目的场次，因此可以反复重跑而不打扰其余数据 —— 但它必须
+     * 在 {@code generate-schedule} <b>之后</b>运行，那个会把一切都清掉。参见
+     * {@code docs/sql/demo/03_showcase.sql}。
      */
     public GenerateResult generateShowcase() {
         long started = System.currentTimeMillis();
@@ -180,10 +167,10 @@ public class DemoDataService {
         Film project = filmMapper.selectById(SHOWCASE_PROJECT_ID);
         if (place == null || project == null) {
             throw new IllegalStateException(
-                    "showcase venue or project is missing; run docs/sql/11_seed_showcase.sql first");
+                    "showcase venue or project is missing; run docs/sql/demo/03_showcase.sql first");
         }
 
-        // Idempotent for this project alone.
+        // 只对本项目幂等。
         List<Session> existing = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
                 .eq(Session::getProjectId, SHOWCASE_PROJECT_ID));
         for (Session stale : existing) {
@@ -203,11 +190,9 @@ public class DemoDataService {
                 ? LocalDate.now().plusDays(56) : project.getShowDate();
         LocalDateTime now = LocalDateTime.now();
 
-        // Two nights of the same show, differing only in how the tickets are
-        // sold. Having both is what makes the difference demonstrable: the same
-        // seats, the same bands, one with a queue and one without. A concert
-        // plays one show a night, so they are on separate dates rather than
-        // separate times.
+        // 同一场演出演两晚，只有卖票方式不同。两场都有，差别才演示得出来：同样的
+        // 座位、同样的票档，一场有排队、一场没有。演唱会一晚只演一场，所以它们落在
+        // 不同的日期上，而不是同一天的不同时间。
         for (int i = 0; i < SHOWCASE_NIGHTS; i++) {
             LocalDate showDate = firstNight.plusDays(i);
             boolean rush = i == 0;
@@ -222,11 +207,8 @@ public class DemoDataService {
             }
             tierCount += SHOWCASE_TIERS.size();
 
-            // soldRatio 0: the whole point of the showcase is that all 2000 are
-            // on sale. Pre-selling a quarter of them, as the general generator
-            // does to make seat maps look lived-in, would undercut it.
-            // soldRatio 0: the whole point of the showcase is that all 2000 are
-            // on sale, so nothing is pre-sold.
+            // 一张都不预卖。showcase 的要点就是这 2000 张全都挂在售 —— 像通用
+            // 生成器那样为了让座位图看着有人气而预卖四分之一，恰好把这件事抵消掉。
             List<SessionSeat> seats = seatFactory.buildSeats(session.getId(),
                     sessionTiers(session), layout);
             seatFactory.insert(seats);
@@ -242,12 +224,10 @@ public class DemoDataService {
     }
 
     /**
-     * The tiers actually written for a screening.
+     * 某一场实际写进去的票档。
      *
-     * <p>{@link #showcaseTiers} builds them fresh each call so the two
-     * screenings do not share row objects - the tier ids are assigned by the
-     * insert, and reusing them would make the second screening's seats point
-     * at the first screening's bands.
+     * <p>{@link #showcaseTiers} 每次调用都新建，这样两场之间不共享行对象 —— 票档 id
+     * 是插入时分配的，复用会让第二场的座位指向第一场的票档。
      */
     private List<PriceTier> sessionTiers(Session session) {
         return priceTierMapper.selectList(Wrappers.<PriceTier>lambdaQuery()
@@ -273,8 +253,8 @@ public class DemoDataService {
         session.setSoldSeat(0);
         session.setStatus(Session.STATUS_ON_SALE);
 
-        // 1 = the system assigns, which is the whole point of the showcase: a
-        // stadium concert does not let 2000 people pick seats out of a map.
+        // 1 = 系统分配座位，这正是 showcase 的要点：体育场演唱会不可能让 2000 个人
+        // 自己在座位图上挑。
         session.setSeatMode(1);
         session.setSource(SOURCE_GENERATED);
         session.setSaleStartTime(now.minusMinutes(1));
@@ -282,9 +262,8 @@ public class DemoDataService {
         session.setRequireRealName(1);
 
         if (rush) {
-            // Not open yet, so the queue is observable rather than already
-            // over: the demo is the waiting room, and it needs a moment where
-            // people are in it.
+            // 还没开抢，这样队列是可以观察到的，而不是已经结束：要演示的正是等待
+            // 室，而它需要有一段真的有人在里面的时间。
             session.setRushMode(1);
             session.setRushStartTime(now.plusMinutes(5));
         } else {
@@ -293,7 +272,7 @@ public class DemoDataService {
         return session;
     }
 
-    /** Four bands, priced as a stadium concert is rather than derived from the hall. */
+    /** 四个票档，按体育场演唱会的定法写死，不从场馆推导。 */
     private List<PriceTier> showcaseTiers() {
         List<PriceTier> tiers = new ArrayList<>(SHOWCASE_TIERS.size());
         for (PriceTier template : SHOWCASE_TIERS) {
@@ -309,20 +288,16 @@ public class DemoDataService {
     }
 
     /**
-     * Builds the demo dataset.
+     * 构建演示数据集。
      *
-     * <p>Films and performances are generated separately, and that separation
-     * is the point rather than an implementation detail. One loop used to walk
-     * days, then places, then slots, and fill each slot with the next project
-     * that fitted the venue - which is exactly right for a cinema and wrong
-     * for everything else. A cinema runs the same film many times a day for
-     * weeks; that is what a screening is. A concert plays one night at one
-     * venue, announced in advance.
+     * <p>电影和演出分开生成，这个「分开」本身就是要点，而不是实现细节。以前一个
+     * 循环依次走过日期、场地、时段，每个时段填上一个放进该场馆还合适的项目 ——
+     * 这对电影院完全正确，对其他一切都不对。电影院把同一部片子一天放很多场、连放
+     * 好几周，这才叫排片。演唱会则是提前公布、一晚在一个场馆演一场。
      *
-     * <p>Run together, the loop gave a tour stop twelve screenings on a single
-     * day and fifty-four across a week, at six different venues. Nothing
-     * errored - the sessions were valid, the seats were sold, and the result
-     * described a band playing six venues a night for a week.
+     * <p>两者混在一起跑时，那个循环会给巡演的一站安排单日十二场、一周五十四场，
+     * 还分布在六个不同的场馆。什么都没报错 —— 场次合法、座位也卖得出去，只是结果
+     * 描述出来是一支乐队连着一周每晚跑六个场子。
      */
     public GenerateResult generate(int days, double soldRatio, boolean rushSchedule) {
         long started = System.currentTimeMillis();
@@ -336,7 +311,7 @@ public class DemoDataService {
         if (places.isEmpty() || projects.isEmpty()) {
             throw new IllegalStateException(
                     "need places and projects before generating sessions; "
-                            + "run docs/sql/05_seed_base.sql and 08_seed_event.sql first");
+                            + "run docs/sql/schema/*.sql and docs/sql/demo/*.sql first");
         }
 
         LocalDate today = LocalDate.now();
@@ -360,9 +335,9 @@ public class DemoDataService {
     }
 
     /**
-     * The cinema grid: every hall, most slots of the day, every day.
+     * 电影院的排片网格：每个影厅、一天里的大部分时段、每天都排。
      *
-     * <p>This is what scheduling a film actually is, and it is unchanged.
+     * <p>给电影排片本来就是这件事，这部分没有改过。
      */
     private GenerateResult generateScreenings(List<Hall> places, List<Film> projects, int days,
                                               double soldRatio, LocalDate today,
@@ -403,17 +378,14 @@ public class DemoDataService {
     }
 
     /**
-     * Announced dates, not a grid.
+     * 公布出来的日期，不是网格。
      *
-     * <p>A performance gets a home venue and a handful of dates. How many
-     * depends on the room: a stadium or arena is a tour stop and plays one or
-     * two nights, while a small theatre or club can hold a residency and play
-     * several, spread across the run rather than back to back - which is how
-     * both are actually sold.
+     * <p>一场演出有一个主场馆和少数几个日期。几个取决于场地：体育场或体育馆是巡演
+     * 的一站，演一两晚；小剧场或 livehouse 则撑得起驻演，演好几场，而且散布在整个
+     * 档期里而不是连着来 —— 两种场地实际都是这么卖的。
      *
-     * <p>One show a night in every case. Two would be a matinee, which is a
-     * cinema and theatre thing; a concert that plays twice in an evening is
-     * not a thing.
+     * <p>无论哪种，一晚都只演一场。演两场那是日场，是电影院和剧院的做法；一场演唱会
+     * 一晚上演两遍不成立。
      */
     private GenerateResult generatePerformanceRuns(List<Hall> places, List<Film> projects,
                                                    int days, double soldRatio, LocalDate today,
@@ -421,11 +393,9 @@ public class DemoDataService {
         List<Hall> performanceVenues = places.stream()
                 .filter(place -> !isCinemaPlace(place))
                 .toList();
-        // Projects somebody has already scheduled by hand are left alone. The
-        // admin screen exists to say when a show is on, and a generator that
-        // then adds its own dates to the same show contradicts whoever used it
-        // - the 陈奕迅 show booked for December grew an extra pair of
-        // September dates the moment the demo data was regenerated.
+        // 已经被人工排过期的项目不动。后台界面的存在就是为了说明一场演出什么时候
+        // 演，而生成器再往同一个演出上加自己的日期，等于跟用过那个界面的人对着干 ——
+        // 陈奕迅那场订在 12 月的演出，在演示数据一重跑的时候平白多出一对 9 月的日期。
         Set<Long> handScheduled = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
                         .eq(Session::getSource, SOURCE_ADMIN))
                 .stream().map(Session::getProjectId).collect(java.util.stream.Collectors.toSet());
@@ -444,12 +414,10 @@ public class DemoDataService {
         int tierCount = 0;
         Session rushTarget = null;
 
-        // A room holds one thing at a time, which the database enforces with a
-        // unique key on (place, start_time). Performances outnumber venues, so
-        // two of them land on the same room - and without this they landed on
-        // the same evening, at the same hour, and the insert failed halfway
-        // through the run. Tracking what is taken and moving to the next free
-        // evening is the whole of the fix.
+        // 一个场地同一时间只装得下一件事，数据库用 (place, start_time) 上的唯一键
+        // 来强制这一点。演出数量多于场馆，必有两条落进同一个场地 —— 没有这段逻辑
+        // 时，它们会落在同一个晚上、同一个钟点，插入在这一轮跑到一半就失败。把已
+        // 占用的记下来、顺延到下一个空闲的晚上，就是修复的全部。
         Set<String> taken = new HashSet<>();
         for (Session existing : sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
                 .in(Session::getPlaceId, performanceVenues.stream().map(Hall::getId).toList()))) {
@@ -460,21 +428,19 @@ public class DemoDataService {
             Film project = performances.get(i);
             Hall venue = performanceVenues.get(i % performanceVenues.size());
 
-            // A room that only seats a few hundred gets a residency; a hall
-            // that seats thousands gets a night, because that is what the
-            // economics of each actually look like.
+            // 只能坐几百人的场子给驻演，能坐几千人的馆只给一晚，因为两者算下来
+            // 的账实际就长这样。
             boolean bigRoom = "ARENA".equals(venue.getPlaceType());
             int nights = bigRoom ? (i % 2 == 0 ? 2 : 1) : 2 + (i % 3);
 
-            // Spread the dates out. A tour passes through; it does not play
-            // the same room on consecutive evenings for a week.
+            // 把日期摊开。巡演是路过，不会在同一个场地连着一星期每晚都演。
             int gap = Math.max(1, (days - 1) / Math.max(1, nights));
             LocalTime slot = slotsFor(venue)[0];
 
             int placed = 0;
             int offset = 2 + (i % 3);
-            // Walk forward a day at a time until this run has its nights. The
-            // bound is the window itself: there is no point looking past it.
+            // 一天一天往前找，直到这一轮凑够场次。边界就是这个窗口本身：看到窗口
+            // 之外没有意义。
             for (int day = offset; day < days && placed < nights; day++) {
                 if (placed > 0 && (day - offset) % gap != 0) {
                     continue;
@@ -510,12 +476,10 @@ public class DemoDataService {
     }
 
     /**
-     * Marks a share of the seats sold, so seat maps look lived-in.
+     * 把一部分座位标成已售，让座位图看起来有人气。
      *
-     * <p>Belongs to the demo generator rather than the seat factory: a real
-     * session starts empty, and pre-selling is a property of made-up data. The
-     * counter moves with it, because the number on the session has to describe
-     * the rows on the seats.
+     * <p>这属于演示生成器而不属于座位工厂：真实场次一开始是空的，预卖是编造出来的
+     * 数据才有的属性。计数器要跟着一起动，因为场次上的数字必须能描述座位行里的事实。
      */
     private void presell(List<SessionSeat> seats, double soldRatio, Long sessionId) {
         if (soldRatio > 0) {
@@ -537,27 +501,24 @@ public class DemoDataService {
         }
     }
 
-    /** What writing one session produced. Ids stay longs; snowflakes do not fit in an int. */
+    /** 写入一个场次的产出。id 仍用 long；Snowflake 塞不进 int。 */
     private record WrittenSession(Session session, int seatCount, int tierCount) {
     }
 
     /**
-     * Writes one session with its bands and its seats.
+     * 写入一个场次，连同它的票档和座位。
      *
-     * <p>Shared by both generators because a screening and a performance are
-     * the same kind of thing once you get past how they got scheduled: a time,
-     * a place, a set of seats. The difference the caller cares about is the
-     * dates it chooses, not the rows it writes.
+     * <p>两个生成器共用，因为抛开「怎么排出来的」这一层，排片和演出就是同一种东西：
+     * 一个时间、一个场地、一组座位。调用方在意的差别是它挑的日期，而不是它写了
+     * 哪些行。
      */
     private WrittenSession writeSession(Film project, Hall place, LocalDate showDate,
                                         LocalDateTime startTime, double soldRatio) {
         List<PriceTier> tiers = buildTiers(project, place);
 
-        // The layout comes first because it decides how many seats the session
-        // has. Taking the count from the hall's seat_count instead would
-        // disagree with the rows actually written the moment a template
-        // declares aisles or broken seats - and total_seat is what the
-        // anti-oversell guard compares against, so it has to match.
+        // 先算布局，因为它决定这个场次有多少个座位。改从场馆的 seat_count 取数，
+        // 只要模板里声明了过道或坏座，它就会和实际写出的座位行对不上 —— 而
+        // total_seat 正是防超卖判断所比较的那个值，必须一致。
         List<SessionSeatFactory.SeatPosition> layout = seatFactory.layoutOf(place);
 
         Session session = buildSession(project, place, showDate, startTime, tiers, layout.size());
@@ -575,15 +536,14 @@ public class DemoDataService {
     }
 
     // ------------------------------------------------------------
-    // project / place pairing
+    // 项目 / 场地 配对
     // ------------------------------------------------------------
 
     /**
-     * Picks the next project of the kind this place can host.
+     * 挑出下一个这个场地接得住的项目。
      *
-     * <p>Scans forward from the cursor rather than taking the next project
-     * outright, so every project still gets a turn - it just gets its turn at
-     * a place that can actually hold it.
+     * <p>从游标处往后扫，而不是直接取下一个项目，这样每个项目仍然轮得到 —— 只不过
+     * 轮到它的是真装得下它的场地。
      */
     private Film nextMatching(List<Film> projects, Hall place, int from) {
         boolean placeIsCinema = isCinemaPlace(place);
@@ -602,28 +562,26 @@ public class DemoDataService {
     }
 
     /**
-     * When sessions run at a given place.
+     * 某个场地的场次都排在什么时段。
      *
-     * <p>What decides this is the venue kind, not the seating mode: a cinema
-     * screen runs all day, a theatre or arena runs in the evening. Keying it
-     * off {@code standing} would have given seated theatres film schedules and
-     * standing arenas show schedules - right answer for the wrong reason, and
-     * wrong the moment a seated arena is added.
+     * <p>决定这件事的是场馆类型，不是座位形式：影厅全天排，剧场和体育馆排在晚上。
+     * 若拿 {@code standing} 当判据，就会给对号入座的剧场排上电影的时刻表、给站席的
+     * 体育馆排上演出的时刻表 —— 答案碰巧对了，理由却不对，而且一旦加进一个对号
+     * 入座的体育馆就立刻错。
      */
     private LocalTime[] slotsFor(Hall place) {
         return isCinemaPlace(place) ? FILM_SLOTS : SHOW_SLOTS;
     }
 
     // ------------------------------------------------------------
-    // pricing
+    // 定价
     // ------------------------------------------------------------
 
     /**
-     * Price bands for a session.
+     * 一个场次的票档。
      *
-     * <p>A film gets a single band covering every row, so the seat map and the
-     * order flow never branch on category - they read a tier, and for a film
-     * there is exactly one to read.
+     * <p>电影只拿到一个覆盖全部排的票档，这样座位图和下单流程都不必按类型分支 ——
+     * 它们读票档，而电影恰好只有一个可读。
      */
     private List<PriceTier> buildTiers(Film project, Hall place) {
         int rows = place.getRowCount() == null ? 10 : place.getRowCount();
@@ -642,8 +600,7 @@ public class DemoDataService {
 
         List<PriceTier> tiers = new ArrayList<>();
 
-        // Standing areas are one row by construction, so they collapse to a
-        // single band without a special case.
+        // 站席区按构造就只有一排，所以它自然收成单个票档，不需要特例。
         if (place.isStanding() || !project.isPerformance()) {
             String name = place.isStanding() ? "站席" : "标准";
             tiers.add(tier(name, money(base), 1, 0, "#ff6700"));
@@ -675,7 +632,7 @@ public class DemoDataService {
     }
 
     // ------------------------------------------------------------
-    // sessions
+    // 场次
     // ------------------------------------------------------------
 
     private Session buildSession(Film project, Hall place, LocalDate showDate,
@@ -690,8 +647,7 @@ public class DemoDataService {
         session.setStartTime(startTime);
         session.setEndTime(startTime.plusMinutes(project.getDuration() == null ? 120 : project.getDuration()));
 
-        // The listing shows one number; what a seat actually costs comes from
-        // its tier.
+        // 列表页只显示一个数字；一个座位实际花多少钱由它的票档决定。
         session.setPrice(tiers.stream().map(PriceTier::getPrice)
                 .min(BigDecimal::compareTo).orElse(BigDecimal.ZERO));
 
@@ -701,8 +657,8 @@ public class DemoDataService {
         session.setStatus(Session.STATUS_ON_SALE);
         session.setRushMode(0);
 
-        // Admission controls differ by kind, and the defaults leave film
-        // behaviour unchanged rather than making every consumer check.
+        // 入场规则因类型而异，默认值保持电影的行为不变，而不是让每个下游都去判断
+        // 一次类型。
         if (project.isPerformance()) {
             session.setSaleStartTime(LocalDateTime.now().minusDays(1));
             session.setPurchaseLimit(4);

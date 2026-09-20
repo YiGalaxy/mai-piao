@@ -9,11 +9,10 @@ import {
 } from '../utils/session'
 
 /**
- * Session state.
+ * 会话状态。
  *
- * Hydrated from localStorage on creation so a page refresh does not log the
- * user out, but the token itself is never trusted for display - `profile` is
- * refreshed from the server whenever we are not sure it is current.
+ * 创建时从 localStorage 恢复，这样刷新页面不会把人登出；但 token 本身从不
+ * 拿来直接展示 —— 只要不确定 `profile` 是不是最新的，就重新从服务端拉一次。
  */
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -41,14 +40,13 @@ export const useUserStore = defineStore('user', {
 
     async register(payload) {
       const userId = await userApi.register(payload)
-      // Registration does not return a token, so sign in straight away -
-      // making the user type the password again immediately after choosing it
-      // is friction with no security benefit.
+      // 注册接口不返回 token，所以直接就地登录 —— 用户刚设完密码又被要求
+      // 再输一遍，是纯粹的摩擦，换不来任何安全性。
       await this.login({ phone: payload.phone, password: payload.password })
       return userId
     },
 
-    /** Re-reads the profile. Called on app start and after any profile change. */
+    /** 重新拉取资料。应用启动时和任何资料变更之后都会调用。 */
     async refreshProfile() {
       const profile = await userApi.fetchProfile()
       this.profile = profile
@@ -58,12 +56,12 @@ export const useUserStore = defineStore('user', {
 
     async logout() {
       try {
-        // Best effort: the server adds the jti to the blacklist. If it fails,
-        // the local session still goes away - the token simply stays valid
-        // until it expires, which is the pre-existing behaviour anyway.
+        // 尽力而为：服务端会把 jti 加进黑名单。这一步失败了也没关系，
+        // 本地会话照样清掉 —— 只是那个 token 会一直有效到自然过期，
+        // 而这本来就是原来的行为。
         await userApi.logout()
       } catch {
-        // ignored on purpose
+        // 故意忽略
       } finally {
         this.clear()
       }

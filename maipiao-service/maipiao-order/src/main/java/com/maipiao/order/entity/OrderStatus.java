@@ -3,58 +3,56 @@ package com.maipiao.order.entity;
 import java.util.Set;
 
 /**
- * The order state machine.
+ * 订单状态机。
  *
  * <pre>
- *   0 PENDING_PAY --pay--------> 2 PAID --show ends--> 3 COMPLETED
+ *   0 PENDING_PAY --支付--------> 2 PAID --场次结束--> 3 COMPLETED
  *        |                          |
- *        | timeout / cancel         | refund requested
+ *        | 超时 / 取消               | 申请退款
  *        v                          v
- *   4 CANCELLED                5 REFUNDING --refund ok--> 6 REFUNDED
+ *   4 CANCELLED                5 REFUNDING --退款成功--> 6 REFUNDED
  *                                   |
- *                                   | refund fails (retries exhausted)
+ *                                   | 退款失败（重试次数耗尽）
  *                                   v
- *                               2 PAID  (back where it started)
+ *                               2 PAID  （回到出发的地方）
  * </pre>
  *
- * <p>Three states are terminal: COMPLETED, CANCELLED, REFUNDED. Nothing may
- * leave them, and the guards below are what enforce that.
+ * <p>有三个状态是终态：COMPLETED、CANCELLED、REFUNDED。任何东西都不能离开它们，
+ * 而下面这些守卫就是强制执行这件事的东西。
  *
- * <p>PAYING (1) exists so that "the user opened the payment page" is
- * distinguishable from "the user has not started paying". It matters for the
- * timeout job - an order sitting in PAYING is closer to being paid than one in
- * PENDING_PAY, and the job checks with the payment channel before cancelling
- * either.
+ * <p>PAYING（1）存在的意义，是让「用户打开了支付页」和「用户还没开始支付」可以区分开。
+ * 这对超时任务很重要 —— 停在 PAYING 的订单比停在 PENDING_PAY 的更接近已支付，
+ * 而这两种情况任务在取消之前都会先去问一下支付渠道。
  */
 public final class OrderStatus {
 
     private OrderStatus() {
     }
 
-    /** Created, no payment initiated. */
+    /** 已创建，还没有发起支付。 */
     public static final int PENDING_PAY = 0;
-    /** A payment order exists; waiting on the channel. */
+    /** 支付单已经存在，在等渠道。 */
     public static final int PAYING = 1;
-    /** Paid, tickets issued. */
+    /** 已支付，票已出。 */
     public static final int PAID = 2;
-    /** Screening finished. */
+    /** 场次已结束。 */
     public static final int COMPLETED = 3;
-    /** Timed out or cancelled by the user. */
+    /** 超时，或被用户取消。 */
     public static final int CANCELLED = 4;
-    /** Refund requested, waiting on the channel. */
+    /** 已申请退款，在等渠道。 */
     public static final int REFUNDING = 5;
-    /** Refunded. */
+    /** 已退款。 */
     public static final int REFUNDED = 6;
 
     public static final Set<Integer> TERMINAL = Set.of(COMPLETED, CANCELLED, REFUNDED);
 
-    /** Statuses a successful payment callback may act on. */
+    /** 支付成功的回调可以作用在哪些状态上。 */
     public static final Set<Integer> PAYABLE = Set.of(PENDING_PAY, PAYING);
 
-    /** Statuses from which a refund may be requested. */
+    /** 可以从哪些状态发起退款申请。 */
     public static final Set<Integer> REFUNDABLE = Set.of(PAID, COMPLETED);
 
-    /** Statuses the timeout job may cancel. */
+    /** 超时任务可以取消哪些状态。 */
     public static final Set<Integer> CANCELLABLE = Set.of(PENDING_PAY);
 
     public static boolean isTerminal(int status) {

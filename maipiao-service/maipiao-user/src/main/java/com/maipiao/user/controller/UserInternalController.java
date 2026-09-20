@@ -12,16 +12,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 
 /**
- * Service-to-service endpoints. Not routed by the gateway - the paths live
- * under {@code /inner} and the gateway only forwards {@code /api/**}.
+ * 服务间接口。不由网关路由 —— 这些路径都在 {@code /inner} 下面，
+ * 而网关只转发 {@code /api/**}。
  *
- * <p>{@link #lock} is branch ② of the G1 global transaction. It throws when
- * the coupon cannot be held, which is what rolls the whole order back -
- * silently proceeding would create an order with a discount applied against a
- * coupon that is still spendable elsewhere.
+ * <p>{@link #lock} 是 G1 全局事务的分支 ②。优惠券占不住时它会抛异常，
+ * 而正是这一点把整笔订单回滚掉 —— 静默放行会造出一笔减了折扣、
+ * 而那张券在别处还能接着花的订单。
  *
- * <p>The other two are called after the transaction, so they tolerate being
- * called twice.
+ * <p>另外两个在事务之后调用，所以它们容忍被调用两次。
  */
 @Slf4j
 @RestController
@@ -31,7 +29,7 @@ public class UserInternalController {
 
     private final CouponService couponService;
 
-    /** G1 branch: hold the coupon for this order. Throws when it cannot. */
+    /** G1 分支：为这笔订单占住优惠券。占不住就抛异常。 */
     @PostMapping("/lock")
     public R<Void> lock(@RequestParam Long couponId,
                         @RequestParam Long userId,
@@ -41,7 +39,7 @@ public class UserInternalController {
         return R.ok();
     }
 
-    /** Payment succeeded: the hold becomes a permanent use. */
+    /** 支付成功：这次占用变成永久使用。 */
     @PostMapping("/consume")
     public R<Void> consume(@RequestParam Long couponId, @RequestParam String orderNo) {
         couponService.consumeForOrder(couponId, orderNo);
@@ -49,10 +47,10 @@ public class UserInternalController {
     }
 
     /**
-     * Gives the coupon back, on cancellation or refund.
+     * 取消或退款时，把优惠券还回去。
      *
-     * <p>Guarded on {@code order_no}, so a stale compensation from an older
-     * order cannot free a coupon a newer order now holds.
+     * <p>用 {@code order_no} 做守护，所以一笔更早订单发来的过期补偿，
+     * 不能把一张已经被更新的订单占着的券释放掉。
      */
     @PostMapping("/release")
     public R<Void> release(@RequestParam Long couponId, @RequestParam String orderNo) {

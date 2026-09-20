@@ -36,17 +36,17 @@ public class OrderController {
     private final PayClient payClient;
 
     /**
-     * Creates an order for seats the caller already holds.
+     * 为调用方已经持有的座位创建订单。
      *
-     * <p>This is the G1 entry point: the service method opens a Seata global
-     * transaction spanning this service, movie-service and user-service.
+     * <p>这是 G1 的入口：service 方法会开启一个跨越本服务、movie-service
+     * 和 user-service 的 Seata 全局事务。
      */
     @PostMapping("/create")
     public R<OrderDtos.CreateOrderResponse> create(@Valid @RequestBody OrderDtos.CreateOrderRequest request) {
         return R.ok(orderService.create(request, UserContext.require()));
     }
 
-    /** My orders, newest first, optionally filtered by status. */
+    /** 我的订单，最新的在前，可选按状态过滤。 */
     @GetMapping("/list")
     public R<List<Order>> list(@RequestParam(required = false) Integer status) {
         return R.ok(orderService.listByUser(UserContext.require(), status));
@@ -58,23 +58,20 @@ public class OrderController {
     }
 
     /**
-     * Cancels an unpaid order and frees its seats.
+     * 取消一笔未支付的订单并释放它的座位。
      *
-     * <p>Returns whether this call is the one that cancelled it. A false result
-     * is not an error - it means the order was already cancelled, typically by
-     * the timeout job firing a second before the user pressed the button.
+     * <p>返回本次调用是不是完成取消的那一次。返回 false 不是错误 ——
+     * 它意味着订单已经被取消了，通常是被超时任务抢在用户按下按钮前的一秒干掉的。
      */
     /**
-     * Asks for a refund.
+     * 申请退款。
      *
-     * <p>Guards are evaluated here, not trusted from the client: within the
-     * refund window, not yet entered, and actually paid. A button that is
-     * greyed out in the browser is a courtesy, not a rule.
+     * <p>各种关卡在这里判定，而不是信客户端：还在退款窗口内、尚未验票、确实已支付。
+     * 浏览器里置灰的按钮是礼貌，不是规则。
      *
-     * <p>The state move and the money move are separate calls on purpose. The
-     * order goes to REFUNDING first and the provider is asked afterwards, so
-     * a provider that is slow or down leaves a record of what was wanted
-     * rather than a customer who pressed a button that did nothing.
+     * <p>状态的动作和钱的动作是两个分开的调用，这是故意的。订单先变成 REFUNDING，
+     * 之后才去问支付渠道，所以一个迟缓或宕掉的渠道，留下的是「有人申请过什么」的记录，
+     * 而不是一个按了按钮却什么都没发生的客户。
      */
     @PostMapping("/{orderNo}/refund")
     public R<Map<String, Object>> refund(@PathVariable String orderNo,
@@ -88,7 +85,7 @@ public class OrderController {
         BigDecimal amount = orderRefundService.startRefund(orderNo,
                 reason == null || reason.isBlank() ? "USER_REQUEST" : reason);
 
-        // Then hand it to pay-service, which owns the refund transaction.
+        // 然后交给 pay-service，退款事务归它管。
         String refundNo = payClient.applyRefund(orderNo, amount).getData();
 
         Map<String, Object> body = new HashMap<>();
@@ -97,7 +94,7 @@ public class OrderController {
         return R.ok(body);
     }
 
-    /** Whether a refund is possible, so the page can grey the button out. */
+    /** 能不能退款，好让页面把按钮置灰。 */
     @GetMapping("/{orderNo}/refundable")
     public R<Map<String, Object>> refundable(@PathVariable String orderNo) {
         Long userId = UserContext.require();

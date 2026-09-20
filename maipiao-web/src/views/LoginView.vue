@@ -76,8 +76,8 @@ const formRef = ref()
 const loading = ref(false)
 const form = reactive({ phone: '', password: '' })
 
-// Mirrors the server's constraints. The server validates again regardless;
-// this only saves a round trip on obviously wrong input.
+// 与服务端的约束保持一致。服务端无论如何都会再校验一遍；
+// 这里只是让明显错误的输入省掉一次来回。
 const rules = {
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
@@ -101,11 +101,11 @@ async function onSubmit() {
     await userStore.login({ phone: form.phone, password: form.password })
     ElMessage.success('登录成功')
 
-    // Return the user to wherever the guard intercepted them.
+    // 把用户送回当初被守卫拦下的地方。
     const redirect = route.query.redirect
     await router.replace(typeof redirect === 'string' ? redirect : '/')
   } catch {
-    // request.js already surfaced the reason.
+    // 原因已经由 request.js 提示过了。
   } finally {
     loading.value = false
   }

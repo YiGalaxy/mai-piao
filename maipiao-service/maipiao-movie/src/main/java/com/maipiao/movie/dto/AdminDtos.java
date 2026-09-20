@@ -13,17 +13,15 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
- * Shapes for the admin screen.
+ * 后台界面用的数据结构。
  *
- * <p>Separate from the public DTOs because the two answer different questions.
- * A buyer asks what is on; an administrator says what will be on, and needs to
- * be able to state a date, a venue and a price rather than pick from a list
- * somebody else generated.
+ * <p>和公开的 DTO 分开，因为两者回答的是不同的问题。买家问的是现在有什么；管理员
+ * 说的是将会有什么，而且他需要能直接指定日期、场馆和价格，而不是从别人生成好的
+ * 列表里挑。
  *
- * <p>This is the piece the demo generator was standing in for. A performance
- * is announced - one night, one venue, months ahead - and there was no way to
- * say that, so the generator said it instead and said it wrong: a concert
- * booked twelve times in a day, at six venues, for a week.
+ * <p>这一块正是演示生成器当初代为顶上的位置。一场演出是提前几个月公布的 ——
+ * 一个晚上、一个场馆 —— 而当时没有办法表达这件事，于是生成器替它说了，还说错了：
+ * 一场演唱会被排成一天十二场、六个场馆、连着一个星期。
  */
 public final class AdminDtos {
 
@@ -31,17 +29,16 @@ public final class AdminDtos {
     }
 
     /**
-     * Creates the thing being sold, before any date is attached.
+     * 创建被售卖的那个东西，此时还没有挂任何日期。
      *
-     * <p>{@code category} decides almost everything downstream: whether the
-     * poster says 导演 or 艺人, whether the sessions are called 排片 or 场次,
-     * and whether a seat map is offered at all.
+     * <p>{@code category} 几乎决定了下游的一切：海报上写的是 导演 还是 艺人、场次
+     * 叫 排片 还是 场次、以及到底提不提供座位图。
      */
     public record CreateProjectRequest(
             @NotBlank(message = "标题不能为空") String title,
             String enTitle,
             @NotBlank(message = "类型不能为空") String category,
-            /** Concerts and stage shows; films use director and actors instead. */
+            /** 演唱会和舞台演出用；电影则改用导演和演员。 */
             String artist,
             String organizer,
             String director,
@@ -55,11 +52,10 @@ public final class AdminDtos {
     }
 
     /**
-     * One price band.
+     * 一个票价档。
      *
-     * <p>Row ranges, not seat lists, because that is how a venue sells: "rows
-     * 1 to 8 are the VIP block". {@code rowEnd} of 0 means to the end of the
-     * hall, so the last band does not have to know how many rows there are.
+     * <p>用排区间而不是座位清单，因为场馆就是这么做买卖的：「1 到 8 排是 VIP 区」。
+     * {@code rowEnd} 为 0 表示一直到场馆末尾，这样最后一档不必知道自己有多少排。
      */
     public record TierSpec(
             @NotBlank(message = "票档名不能为空") String name,
@@ -71,42 +67,39 @@ public final class AdminDtos {
     }
 
     /**
-     * Puts a project on sale at a place and a time.
+     * 让一个项目在某个场地、某个时间上架开卖。
      *
-     * <p>Every field a cinema would derive from a repeating schedule is stated
-     * here instead, because a performance has no schedule to derive from - it
-     * has a date. One call creates one night.
+     * <p>电影院会从循环排期里推出来的每个字段，这里都改成直接写出来，因为演出没有
+     * 排期可推 —— 它只有一个日期。一次调用创建一晚。
      *
-     * <p>{@code tierSpecs} is required rather than defaulted. A session with no
-     * bands would price every seat at nothing, and a free concert is a mistake
-     * far more often than it is an intention.
+     * <p>{@code tierSpecs} 是必填而不是给默认值。一个没有任何票档的场次会把每个座位
+     * 定成零价，而一场免费演唱会「是失误」的次数远远多于「是有意为之」。
      */
     public record CreateSessionRequest(
             @NotNull(message = "项目不能为空") Long projectId,
             @NotNull(message = "场馆不能为空") Long placeId,
             @NotNull(message = "日期不能为空") LocalDate showDate,
             @NotNull(message = "开演时间不能为空") LocalTime startTime,
-            /** 0 = the buyer picks a seat, 1 = the system assigns. Null means 0. */
+            /** 0 = 买家自己选座，1 = 系统分配。null 按 0 处理。 */
             Integer seatMode,
-            /** 0 means no limit beyond the platform ceiling. */
+            /** 0 表示除平台上限之外不再限制。 */
             Integer purchaseLimit,
             Integer requireRealName,
-            /** 1 puts the sale behind a queue. */
+            /** 1 表示这场售卖走排队。 */
             Integer rushMode,
-            /** When the queue opens; required when rushMode is 1. */
+            /** 队列开启时间；rushMode 为 1 时必填。 */
             LocalDateTime rushStartTime,
-            /** When tickets open; null means immediately. */
+            /** 开票时间；null 表示立即开票。 */
             LocalDateTime saleStartTime,
             @NotEmpty(message = "至少需要一个票档") @Valid List<TierSpec> tierSpecs
     ) {
     }
 
     /**
-     * A performance with the dates it plays.
+     * 一场演出，连同它上演的日期。
      *
-     * <p>Returned as a group because that is what an administrator thinks in:
-     * the show, and when it is on. The flat session list is available too, but
-     * it answers a scheduling question rather than an editorial one.
+     * <p>成组返回，因为管理员就是按这个单位想的：这场演出，以及它什么时候演。平铺的
+     * 场次列表也有，但它回答的是排期问题，不是编排问题。
      */
     public record ProjectSummary(
             Long id,
@@ -120,15 +113,14 @@ public final class AdminDtos {
     }
 
     // ------------------------------------------------------------
-    // venues and places
+    // 场馆和场地
     // ------------------------------------------------------------
 
     /**
-     * A venue: the building.
+     * 一个场馆：那栋楼。
      *
-     * <p>{@code venueType} is not decoration - it is what the admin screen
-     * groups by and what tells a stadium from a cinema screen when somebody is
-     * looking for somewhere to put a show on.
+     * <p>{@code venueType} 不是装饰 —— 它既是后台界面分组的依据，也是有人在找地方
+     * 办演出时，用来区分体育场和影厅的那个字段。
      */
     public record VenueRequest(
             @NotBlank(message = "名称不能为空") String name,
@@ -138,39 +130,36 @@ public final class AdminDtos {
             String phone,
             BigDecimal longitude,
             BigDecimal latitude,
-            /** 0 closed, 1 open. Nulls default to open. */
+            /** 0 停业，1 营业。传 null 默认营业。 */
             Integer status
     ) {
     }
 
     /**
-     * A room inside a venue, and the grid of seats in it.
+     * 场馆里的一个场地，以及它里面的座位网格。
      *
-     * <p>{@code seatTemplate} is the venue's own description of itself -
-     * aisles, broken seats, paired seats - and every session created here
-     * builds its rows from it. Editing it therefore changes what future
-     * sessions look like and leaves existing ones alone: their seats were
-     * written out at the time and are the truth for those sessions. A room can
-     * genuinely be reconfigured between events, and pretending otherwise would
-     * mean refusing a change that is perfectly ordinary.
+     * <p>{@code seatTemplate} 是场馆对自己的描述 —— 过道、坏座、成对座 —— 在这里
+     * 创建的每个场次都按它构造座位行。所以改它会改变之后场次的样子，而不动已有的：
+     * 那些场次的座位是当时写下来的，对它们来说那就是事实。一个场子完全可能在两场
+     * 活动之间被重新布置，硬要装作不会，等于拒绝一个再平常不过的改动。
      */
     public record PlaceRequest(
             @NotNull(message = "所属场馆不能为空") Long venueId,
             @NotBlank(message = "名称不能为空") String name,
             @NotBlank(message = "场地类型不能为空") String placeType,
-            /** SEATED / STANDING / MIXED. */
+            /** SEATED / STANDING / MIXED。 */
             @NotBlank(message = "座位形式不能为空") String seatingMode,
             @NotNull(message = "行数不能为空") @Positive Integer rowCount,
             @NotNull(message = "列数不能为空") @Positive Integer colCount,
             /** JSON: {"aisleCols":[9,24],"brokenSeats":["1-1"],"coupleSeats":[["7-8","7-9"]]} */
             String seatTemplate,
-            /** Declared capacity. Informational; sessions count their own rows. */
+            /** 声明的容量。仅供参考；场次自己数自己的座位行。 */
             Integer seatCount,
             Integer status
     ) {
     }
 
-    /** A project, as it can be edited after creation. */
+    /** 一个项目，按它在创建之后可以被编辑的样子。 */
     public record UpdateProjectRequest(
             String title,
             String enTitle,
@@ -183,19 +172,17 @@ public final class AdminDtos {
             String description,
             Integer duration,
             LocalDate showDate,
-            /** 0 upcoming, 1 on sale, 2 offline. */
+            /** 0 待映，1 在售，2 下架。 */
             Integer status
     ) {
     }
 
     /**
-     * A session, as it can be edited after creation.
+     * 一个场次，按它在创建之后可以被编辑的样子。
      *
-     * <p>Date, time and the price bands are absent on purpose. Moving a
-     * session moves every seat it sold, and re-banding one remaps the seats
-     * people already hold - both are cancellations wearing a disguise, and a
-     * cancellation has to give money back. What is here changes how tickets
-     * are sold, not what was sold.
+     * <p>日期、时间和票价档是故意缺位的。挪动一个场次会连带动到它卖出去的每一个
+     * 座位，重新划分票档会把人们已经握在手里的座位重新映射 —— 两者都是披着伪装的
+     * 取消，而取消是要退钱的。这里有的东西改的是票怎么卖，不是已经卖了什么。
      */
     public record UpdateSessionRequest(
             Integer purchaseLimit,
@@ -203,7 +190,7 @@ public final class AdminDtos {
             Integer rushMode,
             LocalDateTime rushStartTime,
             LocalDateTime saleStartTime,
-            /** 0 on sale, 1 suspended. Taking a session off sale stops sales. */
+            /** 0 在售，1 暂停。把场次下架即停止售卖。 */
             Integer status
     ) {
     }
@@ -244,7 +231,7 @@ public final class AdminDtos {
     ) {
     }
 
-    /** What creating a session produced, so the caller can check it. */
+    /** 创建一个场次产出了什么，好让调用方核对。 */
     public record SessionCreated(
             Long sessionId,
             Long placeId,

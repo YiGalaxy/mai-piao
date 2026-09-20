@@ -17,17 +17,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * The single exit for every order status change.
+ * 订单状态变更的唯一出口。
  *
- * <p>Nothing else in the codebase may write {@code t_order_order.status}. That
- * is not a style preference: the guard lives entirely in the WHERE clause, so a
- * write that bypasses this class bypasses the guard too, and the state machine
- * silently stops being one.
+ * <p>代码库里其他地方都不许写 {@code t_order_order.status}。这不是风格偏好：
+ * 整个守护条件都活在 WHERE 子句里，所以任何绕过这个类的写入，同时也绕过了那道守护，
+ * 状态机就悄无声息地不再是状态机了。
  *
- * <p>Every method returns whether <em>this</em> call performed the transition.
- * {@code false} is not an error - it means somebody else (a retried message, a
- * double-clicked button, the timeout job racing a payment callback) got there
- * first. Callers treat it as idempotent success.
+ * <p>每个方法返回的都是<em>本次</em>调用是否真的完成了这次迁移。
+ * {@code false} 不是错误 —— 它意味着别人先到了（重投的消息、被连点的按钮、
+ * 和支付回调抢跑的超时任务）。调用方把它当作幂等成功处理。
  */
 @Slf4j
 @Service
@@ -38,21 +36,19 @@ public class OrderStateMachine {
     private final OrderStatusLogMapper statusLogMapper;
 
     /**
-     * Cancels an unpaid order.
+     * 取消一笔未支付的订单。
      *
-     * @return true when this call cancelled it, false when it was already
-     *         cancelled, or had moved on to being paid
+     * @return 本次调用完成了取消时为 true；已经被取消、或已经推进到支付状态时为 false
      */
     public boolean cancel(String orderNo, String operator, String remark) {
-        // Only PENDING_PAY is cancellable. PAYING is excluded on purpose: a
-        // payment may be in flight, and the timeout job checks with the
-        // channel before cancelling rather than racing it.
+        // 只有 PENDING_PAY 可以取消。PAYING 是被故意排除的：支付可能正在路上，
+        // 超时任务在取消之前会先去问支付渠道，而不是跟它抢。
         boolean moved = doTransition(orderNo,
                 List.of(OrderStatus.PENDING_PAY), OrderStatus.CANCELLED, operator, remark);
         return moved;
     }
 
-    /** @return true when this call was the one that marked it paid */
+    /** @return 本次调用就是把它标成已支付的那一次时为 true */
     public boolean markPaid(String orderNo, LocalDateTime payTime, String operator) {
         int rows = orderMapper.markPaid(orderNo, List.of(OrderStatus.PENDING_PAY, OrderStatus.PAYING), payTime);
         boolean moved = rows == 1;
@@ -62,23 +58,22 @@ public class OrderStateMachine {
     }
 
     /**
-     * Moves a paid order to completed once its screening has finished.
+     * 场次结束后，把已支付的订单推进到已完成。
      *
-     * <p>Completed orders can no longer be refunded through the normal path,
-     * which is why this is driven by the screening end time rather than by a
-     * timer alone.
+     * <p>已完成的订单不能再走常规退款路径，所以这件事由场次结束时间来驱动，
+     * 而不是单靠一个定时器。
      */
     public boolean complete(String orderNo, String operator) {
         return doTransition(orderNo, List.of(OrderStatus.PAID), OrderStatus.COMPLETED, operator, "screening finished");
     }
 
-    /** Marks a refund as requested. */
+    /** 把订单标记为已发起退款。 */
     public boolean startRefund(String orderNo, String operator) {
         return doTransition(orderNo, List.of(OrderStatus.PAID, OrderStatus.COMPLETED),
                 OrderStatus.REFUNDING, operator, "refund requested");
     }
 
-    /** @return true when this call was the one that recorded the refund */
+    /** @return 本次调用就是记下这笔退款的那一次时为 true */
     public boolean markRefunded(String orderNo, BigDecimal amount, Long operator) {
         int rows = orderMapper.markRefunded(orderNo, amount, LocalDateTime.now());
         boolean moved = rows == 1;
@@ -88,11 +83,10 @@ public class OrderStateMachine {
     }
 
     /**
-     * Puts a refunding order back to paid.
+     * 把一笔退款中的订单放回已支付。
      *
-     * <p>Used when the refund has failed permanently: the money never left, so
-     * the order is still paid and the tickets are still valid. Leaving it in
-     * REFUNDING would strand it - not usable, not refundable.
+     * <p>用在退款彻底失败时：钱根本没出去，所以订单仍然是已支付、票仍然有效。
+     * 把它丢在 REFUNDING 里就是把它晾死 —— 用不了，也退不了。
      */
     public boolean rollbackRefund(String orderNo, String reason) {
         return doTransition(orderNo, List.of(OrderStatus.REFUNDING), OrderStatus.PAID,
@@ -110,18 +104,17 @@ public class OrderStateMachine {
     }
 
     /**
-     * Appends to the audit trail.
+     * 往审计轨迹里追加一条。
      *
-     * <p>Deliberately not part of the transaction and failure-tolerant: the log
-     * is useful, but losing a row must never roll back a status change that has
-     * already happened.
+     * <p>故意不放进事务里，并且容忍失败：日志是有价值，但丢一行日志，
+     * 绝不能把一次已经发生的状态变更回滚掉。
      */
     private void logTransition(String orderNo, int toStatus, String operator, String remark) {
         try {
             OrderStatusLog entry = new OrderStatusLog();
             entry.setId(SnowflakeIdGenerator.next());
             entry.setOrderNo(orderNo);
-            entry.setFromStatus(-1); // authoritative from-status is in the CAS itself
+            entry.setFromStatus(-1); // 权威的 from-status 在 CAS 本身里
             entry.setToStatus(toStatus);
             entry.setOperator(operator == null ? "SYSTEM" : operator);
             entry.setRemark(remark);
@@ -132,7 +125,7 @@ public class OrderStateMachine {
         }
     }
 
-    /** Reads an order and asserts it exists. */
+    /** 读一笔订单，并断言它存在。 */
     public Order require(String orderNo) {
         Order order = orderMapper.selectByOrderNo(orderNo);
         if (order == null) {

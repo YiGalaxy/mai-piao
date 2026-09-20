@@ -1,25 +1,25 @@
 package com.maipiao.common.core.result;
 
 /**
- * Business error codes.
+ * 业务错误码。
  *
- * <p>Code ranges - keep new codes inside their range so that a log line is
- * enough to tell which domain failed:
+ * <p>码段划分 —— 新加的码要留在自己那一段里，这样看一眼日志就能知道是哪个领域
+ * 出的错：
  * <pre>
- *   0         success
- *   400-599   transport / framework level
- *   10000+    seat and schedule
- *   20000+    order
- *   30000+    payment
- *   40000+    user and coupon
- *   50000+    queue / rush sale
+ *   0         成功
+ *   400-599   传输 / 框架层
+ *   10000+    座位与场次
+ *   20000+    订单
+ *   30000+    支付
+ *   40000+    用户与优惠券
+ *   50000+    排队 / 抢购
  * </pre>
  */
 public enum ErrorCode {
 
     SUCCESS(0, "success"),
 
-    // ---------------- framework ----------------
+    // ---------------- 框架层 ----------------
     PARAM_ERROR(400, "invalid parameter"),
     UNAUTHORIZED(401, "not logged in or token expired"),
     FORBIDDEN(403, "no permission"),
@@ -29,7 +29,7 @@ public enum ErrorCode {
     SYSTEM_ERROR(500, "system error, please retry later"),
     SERVICE_UNAVAILABLE(503, "service temporarily unavailable"),
 
-    // ---------------- seat / schedule (10xxx) ----------------
+    // ---------------- 座位 / 场次 (10xxx) ----------------
     SEAT_OCCUPIED(10001, "seat already taken"),
     SEAT_LOCK_EXPIRED(10002, "seat lock expired, please pick again"),
     SEAT_LOCK_NOT_FOUND(10003, "seat lock not found"),
@@ -40,16 +40,15 @@ public enum ErrorCode {
     SCHEDULE_STOCK_NOT_ENOUGH(10008, "not enough seats left"),
     SEAT_MAP_UNAVAILABLE(10009, "seat service unavailable, please retry later"),
     /**
-     * No run of the requested length in the band.
+     * 该票档里找不到一段满足所需长度的连座。
      *
-     * <p>Distinct from {@link #SEAT_OCCUPIED} because nothing was taken and
-     * nothing failed: the band simply cannot seat that many together. The
-     * client answers it by offering to split the party, which is a choice the
-     * buyer makes, not one the server makes for them.
+     * <p>和 {@link #SEAT_OCCUPIED} 分开，是因为没有座位被拿走，也没有任何东西失败：
+     * 只是这个票档坐不下这么多连在一起的人。客户端对此的应对是提示可以拆开坐，
+     * 这个选择该由买家来做，而不是服务端替他们做。
      */
     SEAT_NOT_ADJACENT(10010, "no adjacent seats available in this price tier"),
 
-    // ---------------- order (20xxx) ----------------
+    // ---------------- 订单 (20xxx) ----------------
     ORDER_NOT_FOUND(20001, "order not found"),
     ORDER_STATUS_ILLEGAL(20002, "order status does not allow this operation"),
     ORDER_EXPIRED(20003, "order expired and was cancelled"),
@@ -58,7 +57,7 @@ public enum ErrorCode {
     REFUND_NOT_ALLOWED(20006, "refund is not allowed for this order"),
     REFUND_ALREADY_APPLIED(20007, "refund already applied"),
 
-    // ---------------- payment (30xxx) ----------------
+    // ---------------- 支付 (30xxx) ----------------
     PAYMENT_NOT_FOUND(30001, "payment not found"),
     PAYMENT_STATUS_ILLEGAL(30002, "payment status does not allow this operation"),
     PAYMENT_AMOUNT_MISMATCH(30003, "payment amount mismatch"),
@@ -66,7 +65,7 @@ public enum ErrorCode {
     PAYMENT_SIGN_INVALID(30005, "invalid signature"),
     PAYMENT_LATE_ARRIVAL(30006, "payment arrived after the order was closed, refunding"),
 
-    // ---------------- user / coupon (40xxx) ----------------
+    // ---------------- 用户 / 优惠券 (40xxx) ----------------
     USER_NOT_FOUND(40001, "user not found"),
     USER_PHONE_EXISTS(40002, "phone number already registered"),
     USER_PASSWORD_WRONG(40003, "wrong phone number or password"),
@@ -74,7 +73,7 @@ public enum ErrorCode {
     COUPON_NOT_FOUND(40005, "coupon not found"),
     COUPON_NOT_AVAILABLE(40006, "coupon is not usable for this order"),
 
-    // ---------------- queue / rush sale (50xxx) ----------------
+    // ---------------- 排队 / 抢购 (50xxx) ----------------
     QUEUE_SOLD_OUT(50001, "sold out"),
     QUEUE_PAUSED(50002, "rush sale is paused"),
     QUEUE_TOKEN_INVALID(50003, "queue ticket invalid or expired"),
