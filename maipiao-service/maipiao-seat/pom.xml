@@ -55,7 +55,7 @@
     </dependency>
 
     <!--
-      This service reads maipiao_movie (schedules, halls, and the seat ledger)
+      This service reads maipiao_event (sessions, places, and the seat ledger)
       directly rather than calling movie-service for it.
 
       It is a deliberate exception to database-per-service: the seat ledger is

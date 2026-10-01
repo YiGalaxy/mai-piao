@@ -216,8 +216,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
      * 它自己就会覆盖到 {@code /api/movie/admin/**}。
      */
     private boolean isAdminPath(String path) {
+        // Demo data generation mutates schedules and clears existing data. It is
+        // kept under the movie route for local convenience, but must never be
+        // opened by the public movie browsing whitelist.
         return PATH_MATCHER.match("/api/*/admin/**", path)
-                || PATH_MATCHER.match("/api/*/admin", path);
+                || PATH_MATCHER.match("/api/*/admin", path)
+                || PATH_MATCHER.match("/api/movie/demo/**", path)
+                || PATH_MATCHER.match("/api/movie/demo", path);
     }
 
     /**

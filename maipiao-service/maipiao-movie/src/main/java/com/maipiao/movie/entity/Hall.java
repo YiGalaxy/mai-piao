@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 映射 {@code maipiao_movie.t_event_place}。
+ * 映射 {@code maipiao_event.t_event_place}。
  *
  * <p>{@code seatTemplate} 是原始的 JSON 布局。它在生成排期时被解析一次，变成具体的
  * 座位行 —— 从不在请求时解析。

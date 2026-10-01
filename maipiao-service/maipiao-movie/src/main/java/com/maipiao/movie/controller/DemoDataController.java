@@ -14,11 +14,11 @@ import org.springframework.web.bind.annotation.RestController;
  * 演示数据生成。
  *
  * <p>它存在是因为排期这几张表没法用 SQL 初始化 —— 那套算术见
- * {@link DemoDataService}。这是开发期的便利，不是产品功能，所以被一个开关挡住：
- * 没有显式设置 {@code maipiao.demo.enabled} 的部署环境够不到它。
+ * {@link DemoDataService}。这是开发期的便利，不是产品功能，所以默认关闭；只有显式设置
+ * {@code MAIPIAO_DEMO_ENABLED=true} 的本地环境才会打开它。
  *
- * <p>等 admin-service 落地，排期创建会带着正经的鉴权搬过去。在那之前，这是拿到
- * 可预订场次的唯一办法。
+ * <p>网关要求管理员身份访问 {@code /api/movie/demo/**}；本地直连 9002 端口会绕过
+ * 网关，所以不得对外开放业务服务端口。
  */
 @Slf4j
 @RestController
@@ -28,7 +28,7 @@ public class DemoDataController {
 
     private final DemoDataService demoDataService;
 
-    @Value("${maipiao.demo.enabled:true}")
+    @Value("${maipiao.demo.enabled:false}")
     private boolean demoEnabled;
 
     /**

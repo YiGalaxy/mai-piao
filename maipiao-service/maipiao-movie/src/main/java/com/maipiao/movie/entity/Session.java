@@ -10,7 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 映射 {@code maipiao_movie.t_event_session} —— 一场排片。
+ * 映射 {@code maipiao_event.t_event_session} —— 一场排片。
  *
  * <p>库存模型：{@code total_seat = locked_seat + sold_seat + remaining}。三者一起
  * 更新，从不「先读再写」，防超卖关卡就是一条带条件的 UPDATE：

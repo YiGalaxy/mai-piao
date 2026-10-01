@@ -71,9 +71,7 @@ spring:
           filters:
             - StripPrefix=1
 
-      # More routes are added as services come online:
-      #   maipiao-admin  /api/admin/**   :9006
-      #   maipiao-queue  /api/queue/**   :9008
+      # Admin endpoints live under each business service's /admin path.
 
       globalcors:
         cors-configurations:

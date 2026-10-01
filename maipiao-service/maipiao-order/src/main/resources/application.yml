@@ -46,8 +46,8 @@ spring:
           min-idle: 2
 
   # ------------------------------------------------------------
-  # RocketMQ. The timeout-cancel message is the primary path for
-  # releasing seats; the scheduled sweep is the fallback.
+  # RocketMQ configuration is reserved for a future delayed-message flow.
+  # OrderTimeoutJob currently scans expired orders with @Scheduled.
   # ------------------------------------------------------------
 rocketmq:
   name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}

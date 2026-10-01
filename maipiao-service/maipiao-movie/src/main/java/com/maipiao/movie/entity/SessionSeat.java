@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 映射 {@code maipiao_movie.t_event_session_seat} —— 每场排片每个座位一行。这是持久
+ * 映射 {@code maipiao_event.t_event_session_seat} —— 每场排片每个座位一行。这是持久
  * 账本；Redis 里放的是实时可售状态。
  *
  * <p>状态流转及其守卫，每一个都必须断言受影响的行数：
