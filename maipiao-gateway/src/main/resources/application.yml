@@ -23,9 +23,7 @@ spring:
         file-extension: yaml
 
     gateway:
-      # Route by path prefix. /api is stripped before forwarding, so the
-      # downstream service sees the same path it exposes locally - a controller
-      # mapped at /user/login is reachable as /api/user/login from outside.
+      # Strip /api before forwarding to the target service.
       routes:
         - id: maipiao-user
           uri: lb://maipiao-user
@@ -62,11 +60,7 @@ spring:
         - id: maipiao-pay
           uri: lb://maipiao-pay
           predicates:
-            # Callbacks are NOT routed here. A provider posts to the URL it was
-            # given at onboarding, and that URL points straight at pay-service -
-            # payment notifications do not travel through our gateway, and
-            # putting them behind it would mean verifying a provider's
-            # signature with our own auth filter first.
+            # Payment callbacks use the pay-service callback URL directly.
             - Path=/api/pay/**
           filters:
             - StripPrefix=1
@@ -76,13 +70,7 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            # allowedOriginPatterns (not allowedOrigins) is what permits the
-            # wildcard together with credentials - allowedOrigins refuses "*"
-            # once allowCredentials is true.
-            #
-            # Dev-only. Before this is exposed anywhere real, list the actual
-            # origins: a wildcard with credentials lets any site call the API
-            # with the user's token.
+            # Development default. Restrict origins before deployment.
             allowedOriginPatterns: "*"
             allowedMethods: "*"
             allowedHeaders: "*"
@@ -110,24 +98,15 @@ maipiao:
 
   gateway:
     auth:
-      # Everything not listed requires a valid token.
-      # Patterns include the /api prefix, because that is the path the gateway
-      # matches on - before StripPrefix rewrites it.
+      # All paths except these entries require a valid token.
       whitelist:
         - /api/user/login
         - /api/user/register
-        # Public browsing: film lists, cinema lists, schedules and seat maps are
-        # readable without an account, the same way the real product works.
-        #
-        # /api/queue/position is deliberately NOT here. It answers "where am I
-        # in the queue", which is a question about the caller - whitelisting it
-        # would leave the gateway not resolving a token, so it would not inject
-        # X-User-Id, and the service would have no idea who was asking.
+        # Public browsing endpoints. Queue position remains authenticated.
         - /api/movie/**
         - /api/seat/map/**
         - /actuator/health
-      # One Redis round trip per authenticated request. Off means logout stops
-      # taking effect immediately.
+      # Check the token blacklist on authenticated requests.
       check-blacklist: true
 
 management:

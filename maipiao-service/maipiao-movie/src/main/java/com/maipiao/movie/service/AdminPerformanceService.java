@@ -26,16 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 创建演出，与生成演示演出相对。
- *
- * <p>值得说清的差别：{@link DemoDataService} 拿到的是一段日期窗口并把它填满，
- * 这对电影是对的，对其他一切都不对。这里拿到的是一个日期、一个场地和一组价格，
- * 并且只创建一个场次。一场公布出来的演唱会没有网格要填。
- *
- * <p>以场次为事务边界。创建一个场次要写入一个场次、它的票档和场馆里每一行座位 ——
- * 几千行 —— 而写了一半的场次会变成一个卖着座位却没有座位行的排片。
- */
+/** 创建后台演出场次，并在同一事务内写入票档和座位。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -85,13 +76,7 @@ public class AdminPerformanceService {
         return project.getId();
     }
 
-    /**
-     * 让一个项目在某一天、某个场地上架开卖。
-     *
-     * <p>座位经过 {@link SessionSeatFactory} 取自场馆自己的模板，所以场馆里有条过道，
-     * 数据里就有条过道。座位数就是它算出来的那个 —— 不是调用方给的数字，因为两者
-     * 一旦对不上，差的就是「满座」和「超卖」。
-     */
+    /** 在指定日期和场地创建场次；座位由场馆模板生成。 */
     @Transactional(rollbackFor = Exception.class)
     public AdminDtos.SessionCreated createSession(AdminDtos.CreateSessionRequest request) {
         Film project = filmMapper.selectById(request.projectId());
@@ -137,13 +122,7 @@ public class AdminPerformanceService {
                 .orderByAsc(Session::getStartTime));
     }
 
-    /**
-     * 删掉一个场次和挂在它下面的一切。
-     *
-     * <p>一旦卖出过座位就拒绝。一个背后有票的场次不是排期时手滑、可以随手收拾掉的
-     * 东西 —— 那是有人掏过钱的，取消它意味着给这些人退款，而那是另一回事，后果也
-     * 不一样。
-     */
+    /** 删除场次及其票档、座位；已有售票记录时拒绝删除。 */
     @Transactional(rollbackFor = Exception.class)
     public void deleteSession(Long sessionId) {
         Session session = sessionMapper.selectById(sessionId);
@@ -177,13 +156,7 @@ public class AdminPerformanceService {
         return venue.getId();
     }
 
-    /**
-     * 编辑一个场馆。
-     *
-     * <p>不做限制，类型也能改。类型是选择器用来分组、也是用来推荐默认票价档的依据；
-     * 生成场次座位时并不查它，所以改它不会让已经存在的座位失效。名称、地址、坐标
-     * 同样是展示性的 —— 下单时订单会把它们快照一份，留着自己的副本。
-     */
+    /** 更新场馆信息；已创建场次使用自己的快照，不受影响。 */
     @Transactional(rollbackFor = Exception.class)
     public void updateVenue(Long venueId, AdminDtos.VenueRequest request) {
         Cinema venue = cinemaMapper.selectById(venueId);
@@ -195,14 +168,7 @@ public class AdminPerformanceService {
         log.info("venue updated: id={}, name={}", venueId, venue.getName());
     }
 
-    /**
-     * 一次建好一个场馆和它下面的场地。
-     *
-     * <p>一个事务。分成两次调用会留下「场馆建好了、场地没建成」的中间状态，
-     * 那种场馆排不了演出也卖不了票，而在界面上它和「场地填错了」长得一模一样。
-     *
-     * @return 场馆 id 和建好的场地 id，顺序与请求一致
-     */
+    /** 在一个事务内创建场馆及其场地。 */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> createVenueWithPlaces(AdminDtos.CreateVenueWithPlacesRequest request) {
         Long venueId = createVenue(request.venue());
@@ -255,13 +221,7 @@ public class AdminPerformanceService {
         return place.getId();
     }
 
-    /**
-     * 编辑一个场地，座位模板也能改。
-     *
-     * <p>已有场次保留它们创建时的座位。那些座位行是当时写下来的，对那批场次就是事实
-     * —— 一个场子在两场活动之间确实可能重新布置，拒绝这件事等于拒绝一件再平常不过
-     * 的事。这里改动影响的是之后创建的每一个场次。
-     */
+    /** 更新场地及座位模板；仅影响后续创建的场次。 */
     @Transactional(rollbackFor = Exception.class)
     public void updatePlace(Long placeId, AdminDtos.PlaceRequest request) {
         Hall place = hallMapper.selectById(placeId);
@@ -300,13 +260,7 @@ public class AdminPerformanceService {
         place.setStatus(request.status() == null ? Hall.STATUS_ACTIVE : request.status());
     }
 
-    /**
-     * 声明的容量和模板对不上时给出警告。
-     *
-     * <p>这不是错误：{@code seat_count} 是个标签，说话算数的是模板。但它们是描述
-     * 同一个场子的两个数字，而一个人看着 716 旁边摆着一个得出 720 的网格，宁愿现在
-     * 就知道，也不想等到某个场次的大小上才发现。
-     */
+    /** 检查声明容量与模板实际容量是否一致。 */
     private void warnIfCapacityDiffers(Hall place) {
         int actual = seatFactory.layoutOf(place).size();
         if (place.getSeatCount() != null && place.getSeatCount() > 0
@@ -371,16 +325,7 @@ public class AdminPerformanceService {
         log.info("project updated: id={}, title={}", projectId, project.getTitle());
     }
 
-    /**
-     * 改的是一个场次怎么卖，不是它在卖什么。
-     *
-     * <p>日期、时间和票价档是故意不放进来的。挪动一个场次等于挪动它卖出去的每一个
-     * 座位；重新划分票档会把人们已经握在手里的座位重新映射。两者都是换了个说法的
-     * 取消，而取消是要退钱的 —— 那是另一回事、另一种后果，不该偷偷塞进一个编辑
-     * 表单里。
-     *
-     * <p>把场次下架是允许的，因为那才是停止售卖的诚实做法：不必假装过去没发生过。
-     */
+    /** 更新场次售卖配置；日期、时间和票档不可修改，下架仅停止售卖。 */
     @Transactional(rollbackFor = Exception.class)
     public void updateSession(Long sessionId, AdminDtos.UpdateSessionRequest request) {
         Session session = sessionMapper.selectById(sessionId);
@@ -426,13 +371,7 @@ public class AdminPerformanceService {
 
     // ------------------------------------------------------------
 
-    /**
-     * 一个场地同一时间只装得下一件事。
-     *
-     * <p>数据库用唯一键强制这一点，但唯一键只在插入真正执行时才生效 —— 到那时调用方
-     * 拿到的是一个约束冲突，而不是一句解释。先查一次，把它变成一句人能照着行动的话。
-     * 而在并发下真正让这件事成立的，仍然是那个唯一键。
-     */
+    /** 检查场地时间冲突；并发约束由数据库唯一键兜底。 */
     private void requirePlaceFree(Hall place, LocalDateTime startTime) {
         Session clash = sessionMapper.selectOne(Wrappers.<Session>lambdaQuery()
                 .eq(Session::getPlaceId, place.getId())
@@ -444,13 +383,7 @@ public class AdminPerformanceService {
         }
     }
 
-    /**
-     * 票档得先讲得通，才写进去。
-     *
-     * <p>票档之间留出空档，就意味着有座位不属于任何一档，而那些座位定不出价来。
-     * 工厂会兜底落到最后一档，所以空档是无声的 —— 这正是它要在这里被检查、而不是
-     * 等到开票时才发现的原因。
-     */
+    /** 校验票档区间连续且覆盖有效范围。 */
     private void validateTiers(List<AdminDtos.TierSpec> specs) {
         for (AdminDtos.TierSpec spec : specs) {
             int end = spec.rowEnd() == null ? 0 : spec.rowEnd();

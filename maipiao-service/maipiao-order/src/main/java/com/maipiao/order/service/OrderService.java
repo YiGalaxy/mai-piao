@@ -26,11 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 订单创建，以及围绕它的整个生命周期。
- *
- * <p>真正有料的是 {@link #create}，也就是 G1 全局事务。
- */
+/** 订单创建及生命周期管理；{@link #create} 是 G1 全局事务入口。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -47,33 +43,13 @@ public class OrderService {
     @Value("${maipiao.order.lock-minutes:15}")
     private int lockMinutes;
 
-    // ============================================================
-    // G1 - 订单创建
-    // ============================================================
+    // G1：订单创建
 
-    /**
-     * 针对用户已经锁定的座位创建订单。
-     *
-     * <p>这里要写三个服务，所以整体跑在一个 Seata AT 全局事务里。操作的先后顺序是有讲究的：
-     *
-     * <ol>
-     *   <li>座位在进入这个方法<b>之前</b>就已经锁在 Redis 里了。Redis 不属于全局事务，
-     *       因此它没法成为一个分支 —— 它由下面 catch 块里的补偿动作显式撤销。把加锁放到
-     *       这里来做，等于把一个非事务性资源塞进了事务边界，那样回滚就是一句假话。</li>
-     *   <li>先占库存，再锁优惠券，最后才写订单行。</li>
-     * </ol>
-     *
-     * <p>每个分支都会断言自己的影响行数，对不上就抛异常。这就是机制本身：Seata 只回滚那些
-     * 明着报错的失败，一个默默返回「没有行被改动」的分支，只会把一个半成品订单提交掉。
-     *
-     * <p>注意哪些东西是<b>不</b>在事务里的：通知、统计，以及任何要碰支付渠道的动作。
-     * 放进来只会拉长事务的存活时间和行锁持有时间，换不来任何正确性上的好处。
-     */
+    /** 创建订单；座位已在 Redis 锁定，库存、优惠券和订单写入 G1 全局事务。 */
     @GlobalTransactional(name = "create-order", rollbackFor = Exception.class, timeoutMills = 30000)
     public OrderDtos.CreateOrderResponse create(OrderDtos.CreateOrderRequest request, Long userId) {
 
-        // seat-service 发放的 lock token 同时充当订单号，
-        // 这样 Redis 里的占用和订单行在构造上就不可能跑到两处去。
+        // 锁座 token 同时作为订单号，保证两侧使用同一幂等键。
         String orderNo = request.lockToken();
 
         Order existing = orderMapper.selectByOrderNo(orderNo);
@@ -83,16 +59,7 @@ public class OrderService {
             throw new BizException(ErrorCode.ORDER_DUPLICATE);
         }
 
-        // token 只是个标识，本身不构成任何证明：它是在锁座那一刻发出的，自身不带过期时间，
-        // 所以在它背后的占用早已失效、座位已经被别人拿走之后，它依然可用。
-        // 先向 seat 服务确认一次，才让它成为证据。
-        //
-        // 故意放在事务外面 —— 它读 Redis，而 Seata 回滚不了 Redis，
-        // 放进去就等于让回滚变成谎话。
-        // 它只是把竞态窗口收窄，并没有关上：一次 release 仍可能落在这一步和 G1 之间。
-        // 真正拦住超卖的是账本自己的 status = 0 比较并交换（CAS）；而这里拦下的，
-        // 是现实中真会出现的那个版本 —— 页面开着超过了占用时限才提交 ——
-        // 在那个版本里，被拒的会是那个公平赢得座位的人。
+        // token 需经 Redis 持有校验；该检查在全局事务外执行，账本 CAS 负责最终并发仲裁。
         HeldSeats held = requireHeld(request.scheduleId(), orderNo, request.seatIndexes());
 
         Map<String, Object> schedule = fetchSchedule(request.scheduleId());
@@ -101,28 +68,25 @@ public class OrderService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expireTime = now.plusMinutes(lockMinutes);
 
-        // 价格按座位实际所在的票档算，而不是按场次详情页上那个数字。
-        // 那个数字是详情页「¥580 起」的门面；拿它去收一张 1880 的 VIP 座就是少收钱，
-        // 而一场同时卖四个票档的演唱会，会让它成为当时唯一存在的价格。
+        // 订单金额按实际座位票档计算，不信任客户端价格。
         BigDecimal totalAmount = held.amount();
         BigDecimal discount = request.discountAmount() == null ? BigDecimal.ZERO : request.discountAmount();
         BigDecimal payAmount = totalAmount.subtract(discount).max(BigDecimal.ZERO);
 
         try {
-            // ---- 分支 1：预占场次库存 ----
-            // expireTime 以 ISO-8601 的形式过线；原因见 MovieClient.occupy。
+            // 分支 1：预占场次库存。
             requireOk(movieClient.occupy(request.scheduleId(), orderNo, userId, seatCount,
                             expireTime.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                             request.seatIndexes()),
                     "锁定场次库存失败");
 
-            // ---- 分支 2：选了优惠券就把它占住 ----
+            // 分支 2：锁定优惠券。
             if (request.couponId() != null) {
                 requireOk(userClient.lockCoupon(request.couponId(), userId, orderNo, totalAmount),
                         "优惠券不可用");
             }
 
-            // ---- 分支 3：写订单本身 ----
+            // 分支 3：写入订单及明细。
             Order order = buildOrder(request, userId, schedule, orderNo, now, expireTime,
                     seatCount, totalAmount, discount, payAmount);
             orderMapper.insert(order);
@@ -134,31 +98,21 @@ public class OrderService {
             return new OrderDtos.CreateOrderResponse(orderNo, payAmount, expireTime);
 
         } catch (Exception e) {
-            // Redis 里的占用在事务之外，Seata 撤销不了它。在这里释放，
-            // 才能让一个下单失败的订单不至于把座位卡满整个占用时长。
-            //
-            // 重复执行是安全的：释放脚本只清那些归属标记仍指向本订单的座位。
+            // Redis 不受 Seata 回滚，失败时补偿释放；释放脚本按订单归属保证幂等。
             compensateSeatLock(request.scheduleId(), orderNo, e);
             throw e;
         }
     }
 
-    /**
-     * 下单失败后，尽力释放 Redis 里的占用。
-     *
-     * <p>这里失败只记日志，不再往上抛：调用方需要看到的是最初那个异常，
-     * 而且占用本身带 TTL，到点自己就没了。这里漏掉的，由对账任务兜底。
-     */
+    /** 下单失败后补偿释放 Redis 座位占用。 */
     private void compensateSeatLock(Long scheduleId, String orderNo, Exception cause) {
         log.warn("order creation failed, releasing seat hold: orderNo={}, reason={}",
                 orderNo, cause.getMessage());
         try {
-            // 走 seat-service 带归属校验的释放，而不是强制释放，
-            // 所以它不会清掉并发重试已经抢过去的座位。
+            // 按订单归属释放，避免误删并发重试的新占用。
             seatClient.release(scheduleId, orderNo);
         } catch (Exception e) {
-            // 只记日志，不重抛 —— 而且无论怎样都能恢复：占用带 TTL，
-            // 超时清扫会找到它。
+            // 释放失败仅记录日志，TTL 和超时清扫负责兜底。
             log.error("could not release seat hold after failed order: orderNo={}", orderNo, e);
         }
     }
@@ -167,13 +121,7 @@ public class OrderService {
     // 生命周期
     // ============================================================
 
-    /**
-     * 取消一笔未支付的订单并释放它的座位。
-     *
-     * <p>座位释放本质上是个异步动作：订单变成 CANCELLED 才是权威事实，
-     * 释放座位是随之而来的、可以重试的后果。把它做成一件事，
-     * 只要 seat-service 抖一下取消就会失败，而失败的理由用户根本无从处理。
-     */
+    /** 取消未支付订单，并释放库存、座位和优惠券。 */
     @Transactional(rollbackFor = Exception.class)
     public boolean cancel(String orderNo, Long userId, boolean byUser) {
         Order order = stateMachine.require(orderNo);
@@ -197,56 +145,23 @@ public class OrderService {
         return stateMachine.complete(orderNo, "SYSTEM");
     }
 
-    /**
-     * G2：订单已支付，它占着的座位随之变成已售。
-     *
-     * <p>两处写入，而第二处很容易被落下，因为第一处看起来就把活干完了。
-     * 把订单标成已支付并不会动座位账本，而账本才是所有计数、所有退款、所有对账读取的东西。
-     * 一笔已支付的座位如果只停在「已锁定」，意味着：
-     *
-     * <ul>
-     *   <li>{@code locked_seat} 再也降不下来，于是某个场次会一边还有空位、
-     *       一边慢慢把自己报成售罄 —— {@code locked + sold + n <= total} 这道防线
-     *       分不清「锁座变成了售出」和「锁座永远不会成交」；</li>
-     *   <li>{@code sold_order_no} 一直是 null，于是退款时按
-     *       {@code status = 2 AND sold_order_no = ?} 去释放，什么都匹配不上，
-     *       座位退不回来；</li>
-     *   <li>这笔销售对账本不可见，而账本正是设计上唯一说真话的地方。</li>
-     * </ul>
-     *
-     * <p>运行在调用方的全局事务里，所以账本的迁移和订单状态同生共死。
-     *
-     * @throws BizException 订单不在可支付状态时，或账本拒绝这次迁移时 ——
-     *                      占用在我们脚下被释放掉，意味着座位已经没了
-     */
+    /** G2：标记订单已支付，并将账本座位从锁定转为已售。 */
     @Transactional(rollbackFor = Exception.class)
     public void markPaid(String orderNo, LocalDateTime payTime) {
         Order order = stateMachine.require(orderNo);
 
-        // false 表示订单已经走过去了 —— 支付还在路上时被超时任务取消了。
-        // 这种情况必须大声失败：钱已经收了，却拿不出任何东西来交付。
+        // 状态迁移失败表示订单已过期或已处理，不能继续出票。
         if (!stateMachine.markPaid(orderNo, payTime, "PAY_CALLBACK")) {
             log.error("payment arrived for an order that is not payable: orderNo={}", orderNo);
             throw new BizException(ErrorCode.ORDER_STATUS_ILLEGAL, "订单状态不允许支付");
         }
 
-        // 由分支自己断言：账本里的锁定座位数少于订单声明的数量时它会抛异常，
-        // 而从这里的视角看，那正是「占用被超时任务释放掉了」的样子。
+        // 库存分支校验锁定数量，防止超时释放后继续出票。
         requireOk(movieClient.confirmSold(order.getScheduleId(), orderNo, order.getSeatCount()),
                 "座位出票失败");
     }
 
-    /**
-     * 把 Redis 里的占用标记从「已锁定」改成「已售出」。
-     *
-     * <p>在 G2 提交之后调用，绝不放在 G2 里面。Redis 不是事务性资源，
-     * 写在事务内的标记会挺过回滚，留下一个座位读起来是已售、背后却没有已支付订单的状态 ——
-     * 而释放路径拒绝释放标记为 {@code SOLD:} 的座位，那个座位从此就再也放不出来了。
-     *
-     * <p>尽力而为。漏打一个标记，座位反正还是不可用的，因为位图里那一位已经置上了；
-     * 真正丢掉的是那道区分 —— 它用来防止这次占用在之后被当成「仅仅是个占用」而释放掉。
-     * 当前流程里没有任何地方会释放一笔已支付的订单，所以这里是第二道防线，不是第一道。
-     */
+    /** G2 提交后，将 Redis 座位占用标记为已售。 */
     public void confirmSeatHold(String orderNo) {
         try {
             Order order = stateMachine.require(orderNo);
@@ -257,33 +172,17 @@ public class OrderService {
         }
     }
 
-    /**
-     * 把已取消订单的座位和优惠券还回去。
-     *
-     * <p>一个座位存在两个地方：movie-service 里的账本行，和 seat-service 里的位图位。
-     * 取消必须把两边都撤掉。只释放账本，会让座位在数据库里读起来可选，
-     * 而选座图仍然拒绝任何人选中它 —— 一个死座位，而且悄无声息，
-     * 因为没有任何东西会再去碰一个已经进入终态的订单。
-     *
-     * <p>先动账本。如果随后位图调用失败，座位反正都是死的；但先释放位图，
-     * 额外会把一个可选座位递到下一个买家手里，而他的 G1 会卡在账本的比较并交换上 ——
-     * 代价是让一个什么都没做错的人拿到一个错误，换来的结果却一点也不更好。
-     */
+    /** 释放已取消订单的账本座位、Redis 占用和优惠券。 */
     private void releaseResources(Order order) {
         try {
-            // releaseToPool = false：这些座位从头到尾只是被占用过、从未售出，
-            // 所以售出计数不能减。
+            // 未支付订单只释放锁定库存，不减少已售计数。
             movieClient.release(order.getScheduleId(), order.getOrderNo(), order.getSeatCount(), false);
         } catch (Exception e) {
             log.error("could not release seats for cancelled order: {}", order.getOrderNo(), e);
         }
 
         try {
-            // Redis 没有加入全局事务，所以没有任何东西会替我们回滚它，
-            // 也没有任何东西会重试它 —— 要么在这里做，要么永远不做。
-            //
-            // 在 seat 一侧是幂等且带归属校验的：只有归属标记仍写着本订单的位才会被清掉，
-            // 所以即使超时任务已经释放过，再跑一遍也不会多释放任何东西。
+            // Redis 不受事务回滚；释放接口按订单归属幂等执行。
             Integer freed = seatClient.release(order.getScheduleId(), order.getOrderNo()).getData();
             log.debug("seat hold released for cancelled order: orderNo={}, seats={}",
                     order.getOrderNo(), freed);

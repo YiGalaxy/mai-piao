@@ -20,39 +20,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * 等待队列。
- *
- * <p>这里所有东西都在 Redis 上，没有任何东西是持久的，这是刻意的。队列在开票之后的
- * 几秒内被灌满，几分钟后就空了；把它写进数据库，意味着多一张几乎永远是空的表，以及
- * 在系统最热的那条路径上多一次写入。Redis 要是没了，售票本来也进行不下去，所以没有
- * 什么东西值得为持久化去换。
- *
- * <p>每个场次四个 key：
- *
- * <ul>
- *   <li>{@code queue:wait:{id}} —— ZSet，member 是用户 id，score 是他们到达的时间。
- *       用 ZSet 而不是 list，因为重复加入不能让人排两次队，而 set 的 member 按构造
- *       就是唯一的 —— 第二次 {@code ZADD} 只会去改一个本来不该被改的 score，所以这里
- *       写成保留最初到达时间的方式。</li>
- *   <li>{@code queue:inflight:{id}} —— 谁已经被放进来但还没动作。准入名额既要按库存算，
- *       也要按它来算，否则一个调度器醒两次就会放两次人。</li>
- *   <li>{@code queue:token:{id}:{uid}} —— 准入令牌本身。</li>
- *   <li>{@code rush:schedules} —— 哪些场次正在排队，好让调度器有东西可遍历。</li>
- * </ul>
- */
+/** 基于 Redis 的场次等待队列。队列 key 使用 ZSet、inflight 集合和短期令牌。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QueueService {
 
-    /**
-     * 准入是一个脚本，而不是 {@code ZPOPMIN}。
-     *
-     * <p>Redisson 解不了 {@code ZPOPMIN} 的应答：弹出在服务端发生了，客户端却永远不知道
-     * 弹走了什么，于是排队位置凭空消失，而没有任何人被放进来。它的表象就是"队列是空的"
-     * —— 和一切正常时的样子一模一样。
-     */
+    /** 原子弹出候选用户并生成准入令牌。 */
     private static final RedisScript<List> ADMIT_SCRIPT =
             LuaScriptLoader.ofList("lua/queue_admit.lua");
 
@@ -60,16 +34,7 @@ public class QueueService {
     private final MovieClient movieClient;
     private final QueueProperties properties;
 
-    /**
-     * 拦住场次元数据拉取的惊群。
-     *
-     * <p>抢购一开始的那一瞬间，几万个 join 同时涌进来，而它们每一个都要同一份元数据。
-     * 没有这道闸，每一次都会是缓存未命中，每一次未命中都会变成一次对 movie-service 的
-     * 调用，把整场销售里最忙的那一秒变成一个扇出，打向一个并不是为此而建的服务。
-     *
-     * <p>进程本地、且很粗糙：一个线程去拉，其余等它。对一个所有调用方拿到的都是同一份、
-     * 而且马上就要被缓存的值来说，这个取舍是对的。
-     */
+    /** 进程内闸门，合并并发的场次元数据查询。 */
     private final AtomicLong sessionFetchGate = new AtomicLong();
 
     private static final long GATE_HOLD_MS = 2000;
@@ -78,13 +43,7 @@ public class QueueService {
     // 加入队列
     // ------------------------------------------------------------
 
-    /**
-     * 把用户排进队列，或者让他待在原地不动。
-     *
-     * <p>按构造就是幂等的：{@code ZADD NX} 只在 member 不存在时才添加，所以一个把页面
-     * 刷新了一百次的用户会保住他最初的位置，而不是把它丢掉；一个想靠重复加入换个好位置
-     * 的用户，则干脆不会挪动。
-     */
+    /** 将用户加入队列；重复加入保留首次排位。 */
     public QueueDtos.PositionVO join(Long scheduleId, Long userId) {
         Map<String, Object> session = sessionOf(scheduleId);
 
@@ -156,13 +115,7 @@ public class QueueService {
                 total == null ? 0 : total.intValue(), null);
     }
 
-    /**
-     * 离开队列。
-     *
-     * <p>只移除还没被放行的排队位置。一个拿着令牌就把标签页关掉的人，其实早就已经放弃了
-     * 他的排队位置；他手上攥着的不是一个位置，而是对某个座位的主张，而那个会自己过期。
-     * 在这里把它释放掉，等于让用户可以随手放掉一个他还在犹豫要不要的座位。
-     */
+    /** 移除尚未放行的排队位置。已发放的令牌由 TTL 回收。 */
     public void leave(Long scheduleId, Long userId) {
         redis.opsForZSet().remove(CommonConstants.QUEUE_WAIT_KEY + scheduleId,
                 String.valueOf(userId));

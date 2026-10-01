@@ -18,17 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * 退款：记录、发出、以及把失败的再退一次。
- *
- * <p>G3，也是 {@link PaymentTxService} 的对称面。形状一样，原因也一样：本地写入和
- * 远程写入必须一起提交或一起失败，所以带事务的那部分单独放在一个 bean 里，而不是放在
- * 一个会被 {@code this} 调用、从而丢掉代理的方法里。
- *
- * <p>操作顺序与支付刻意相反。支付是先落记录再动作；退款是先动作、再记录成已完成，
- * 因为拿主意的是渠道方。先写下来的是<b>意图</b> —— 那行退款单 —— 这样两者之间一旦
- * 崩溃，留下的是一个可以重试的起点，而不是一笔渠道方知道、我们却不知道的退款。
- */
+/** 退款记录、发起和失败重试。G3 结算由 {@link PaymentTxService} 执行。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -48,16 +38,7 @@ public class RefundService {
 
     // ------------------------------------------------------------
 
-    /**
-     * 记下一笔退款，然后发给渠道方。
-     *
-     * <p>幂等，而且保证幂等的是数据库上的唯一键（{@code payment_no}），不是这里
-     * 任何一段判断。一笔订单只会有一笔成功的支付，所以「按支付单唯一」在实践中
-     * 就等于「按订单唯一」—— 但机制在支付单上，只说「按订单幂等」会把这条链说丢。
-     *
-     * <p>约束放在数据库而不是写成「先查后做」，是因为后者在并发下会漏：两个请求
-     * 同时查、都查到没有、都去插入。给用户退两次钱是这个类能干出的最坏的一件事。
-     */
+    /** 创建退款单并发起渠道退款；幂等由 payment_no 唯一键保证。 */
     public String refund(String orderNo, BigDecimal amount) {
         Payment payment = paymentMapper.selectLatestByOrderNo(orderNo);
         if (payment == null || payment.getStatus() != Payment.STATUS_SUCCESS) {
@@ -78,13 +59,7 @@ public class RefundService {
         return refundNo;
     }
 
-    /**
-     * 在任何别的事情发生之前，先把退款行写下去。
-     *
-     * <p>幂等设计里的 L4：{@code payment_no} 上的唯一键让重复请求发生冲突，
-     * 而不是造出第二笔退款。冲突本身就是答案，不是失败 —— 已经存在的那一行，
-     * 正是调用方想要的。
-     */
+    /** 先写入退款意图，利用唯一键避免重复退款单。 */
     @Transactional(rollbackFor = Exception.class)
     public String createRefund(Payment payment, BigDecimal amount) {
         String refundNo = SnowflakeIdGenerator.nextString();
@@ -111,14 +86,7 @@ public class RefundService {
         return refundNo;
     }
 
-    /**
-     * 发出一笔退款，并根据结果做相应处理。
-     *
-     * <p>{@code paymentTxService.settleRefund} 之所以是另一个 bean，是因为它带着
-     * {@code @GlobalTransactional}：从这里调它就属于自调用，代理会被绕过，注解会
-     * 悄无声息地失效。正是这个错误造就了 {@link PaymentTxService} 这个类，
-     * 不值得再犯第二次。
-     */
+    /** 调用渠道退款，并在成功后进入 G3 结算。 */
     public void send(Refund refund) {
         PaymentChannel channel = channelFactory.get(refund.getChannel());
 
@@ -157,12 +125,7 @@ public class RefundService {
         clearSeatHold(refund.getOrderNo());
     }
 
-    /**
-     * 清掉退款订单在 Redis 里的座位占用。尽力而为。
-     *
-     * <p>失败只记日志不上抛：订单和账本都已经正确了，座位图慢一拍是次要问题；
-     * 而抛出去会让调用方以为退款本身失败了 —— 钱已经退了，那是个更糟的误导。
-     */
+    /** 清理退款订单的 Redis 座位占用；失败只记录日志。 */
     private void clearSeatHold(String orderNo) {
         try {
             orderClient.releaseRefundedSeats(orderNo);
@@ -172,13 +135,7 @@ public class RefundService {
         }
     }
 
-    /**
-     * 把还没退成功的退款再发一遍。
-     *
-     * <p>设计里的任务 9。退避是指数式的，而且由 {@code recordFailure} 在 SQL 里算好，
-     * 所以这里只需要问「哪些到期了」。一笔把每次重试都用光的退款会被标记为失败并就此
-     * 搁置：一个永远重试的循环，会把那唯一一件需要人来处理的事藏起来。
-     */
+    /** 扫描到期退款并按退避策略重试。 */
     public int retryPending() {
         List<Refund> pending = refundMapper.selectRetryable(MAX_RETRIES, refundBatch);
 

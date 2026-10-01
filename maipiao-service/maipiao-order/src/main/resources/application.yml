@@ -45,10 +45,7 @@ spring:
           max-idle: 8
           min-idle: 2
 
-  # ------------------------------------------------------------
-  # RocketMQ configuration is reserved for a future delayed-message flow.
-  # OrderTimeoutJob currently scans expired orders with @Scheduled.
-  # ------------------------------------------------------------
+# RocketMQ is reserved for delayed messages; OrderTimeoutJob currently scans with @Scheduled.
 rocketmq:
   name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
   producer:
@@ -66,31 +63,11 @@ mybatis-plus:
     db-config:
       id-type: assign_id
 
-# ============================================================
-# Seata client
-#
-# The TC address is configured directly rather than discovered through Nacos.
-#
-# Why: the Seata server runs in a container and registers itself with the IP
-# it detects, which is the Docker-internal one. The services run on the host
-# and cannot route to 172.x.x.x, so Nacos discovery hands back an address that
-# is guaranteed unreachable:
-#     can not connect to [172.28.0.8:8091]
-# which reads like the TC is down when it is perfectly healthy.
-#
-# SEATA_IP is the documented way to override what gets registered, but it is
-# documented not to accept 127.0.0.1, and a host LAN address would be a
-# hard-coded value that changes with DHCP. Pointing the client straight at the
-# published port removes the problem instead of working around it.
-#
-# To switch back to discovery once the services also run in Docker, change
-# registry.type to `nacos` and drop the grouplist.
-# ============================================================
+# Seata TC uses the published Docker port because services run on the host.
 seata:
   enabled: true
   application-id: ${spring.application.name}
-  # Must match service.vgroupMapping on the server, or startup fails with
-  # "can not get cluster name in registry config".
+  # Must match the server-side vgroup mapping.
   tx-service-group: maipiao_tx_group
   enable-auto-data-source-proxy: true
   service:
