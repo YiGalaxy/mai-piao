@@ -63,6 +63,23 @@ public final class CommonConstants {
     /** sold_out:{scheduleId} —— 存在即表示该场次已售罄。 */
     public static final String SOLD_OUT_KEY = "sold_out:";
 
+    /**
+     * seat:active —— 当前还有未释放占用的 scheduleId 集合。
+     *
+     * <p>存在的理由是让超时回收器有一份现成的名单可以遍历。没有它，回收器只能
+     * {@code SCAN seat:delay:*}：那是 O(Redis 整个键空间) 的，而且扫出来的绝大多数
+     * 键都是别的业务的。这和 {@link #RUSH_SCHEDULES_KEY} 是同一个思路 ——
+     * 与其让清扫方去猜谁有事，不如让写的人顺手登记一下。
+     *
+     * <p>登记在 Lua 里做，不在 Java 里补一刀：补的那一刀和加锁不是原子的，
+     * 中间挂掉就会留下一个「有占用但没登记」的场次，而它的座位永远不会被回收。
+     *
+     * <p>退场也在一段 Lua 里做（{@code ZCARD} 为 0 才 {@code SREM}）。分成「先查
+     * 空了没、再删」两步的话，一次并发的加锁可以恰好插在中间，
+     * 于是那个场次带着一个活着的占用被摘掉名单。
+     */
+    public static final String SEAT_ACTIVE_KEY = "seat:active";
+
     /** rush:paused:{scheduleId} —— 抢购的紧急暂停开关。 */
     public static final String RUSH_PAUSED_KEY = "rush:paused:";
 

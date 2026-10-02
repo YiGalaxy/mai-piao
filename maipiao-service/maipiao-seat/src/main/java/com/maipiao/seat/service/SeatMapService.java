@@ -23,7 +23,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 组装座位图并执行锁座、分配和释放；布局来自账本，可用性来自 Redis bitmap。 */
+/**
+ * 座位图的组装与加锁。
+ *
+ * <p>两个来源合到一起：布局（有哪些座位、分别在哪）来自账本；可用性来自 Redis 的
+ * bitmap。
+ *
+ * <p>关于锁令牌：加锁成功后返回的值是一个雪花 id，它同时就是订单服务将要使用的订单号。
+ * 这是刻意做的简化 —— 另一种做法是让 order-service 自己生成一个单号，再请 seat-service
+ * 把持有关系从令牌转移到订单上，那是多一次往返、多一种失败方式，在当前的规模下换不来
+ * 任何好处。如果哪天这两者真的需要不一样，该做的就是那次转移。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -100,7 +110,13 @@ public class SeatMapService {
         return vo;
     }
 
-    /** 返回场次票档；座位通过票档 ID关联价格和颜色。 */
+    /**
+     * 场次的票档。
+     *
+     * <p>电影恰好只有一个，覆盖全部座位；演出有多个，座位图按票档着色。发这个列表
+     * 而不是每个座位带一个价格，是为了让响应体小一些 —— 几百个座位共用三个票档，
+     * 否则同样三个值要重复几百遍。
+     */
     private List<SeatMapVO.TierItem> loadTiers(Long sessionId) {
         List<Map<String, Object>> rows = seatQueryMapper.selectTiers(sessionId);
         List<SeatMapVO.TierItem> tiers = new ArrayList<>(rows.size());
@@ -114,7 +130,13 @@ public class SeatMapService {
         return tiers;
     }
 
-    /** 查询座位可用性；bitmap 缺失时从账本播种。 */
+    /**
+     * 取可用性；bitmap 缺失时用账本把它重建出来。
+     *
+     * <p>冷 bitmap 不是错误状态 —— 刚部署的实例、被清过的 Redis、还没人打开过的
+     * 场次，看起来就是这样。在首次读取时重建，意味着不存在一个会被忘掉的独立预热
+     * 步骤，也不存在一段场次显示为全部空着的窗口。
+     */
     private List<Integer> loadOccupiedIndexes(Long sessionId, int totalSeat) {
         if (seatBitmapService.isInitialised(sessionId)) {
             return seatBitmapService.findOccupiedIndexes(sessionId, totalSeat);
@@ -127,7 +149,22 @@ public class SeatMapService {
         return seedFromLedger(sessionId, totalSeat);
     }
 
-    /** 从账本播种 bitmap 和 owner 标记；只增不删，避免并发初始化覆盖新锁座。 */
+    /**
+     * 用 {@code t_event_session_seat} 给 bitmap 和 owner 标记播种。
+     *
+     * <p>是播种而不是重建：只要 bitmap 缺失就会走到这里，而这按构造就意味着会有若干个
+     * 请求同时到达。在这里做一次破坏性的重建，会把它们正并发发出去的座位一起丢掉 ——
+     * 实测 300 个买家、100 并发，它把 271 笔售出变成了 240 个占用座位，其中 21 个
+     * 各自发给了两个人。
+     *
+     * <p>owner 标记和 bit 同样重要，两种占用状态都是如此。释放脚本拒绝清除 owner 与
+     * 请求方对不上的座位，所以一个播种时没带上 owner 的座位，谁也没法释放它 —— bit
+     * 一直置着，这个座位就是死的。这对已售和被持有的座位同样成立，而被持有才是更常见
+     * 的情况：一个开了一段时间的场次里，未付款的持有通常比已售的还多。
+     *
+     * <p>已售座位标成 {@code SOLD:}，好让释放路径拒绝把一个付过钱的座位放回售卖；
+     * 被持有的座位就原样带着订单号，这正是它们还能被释放的原因。
+     */
     private List<Integer> seedFromLedger(Long sessionId, int totalSeat) {
         List<Map<String, Object>> rows = seatQueryMapper.selectOccupiedSeats(sessionId);
 
@@ -217,7 +254,17 @@ public class SeatMapService {
                 (int) ttl.getSeconds());
     }
 
-    /** 为系统分配座位的场次分配并锁定座位；连座不足时返回可用的最长连座数。 */
+    /**
+     * 为不让买家自己挑座的场次发座位。
+     *
+     * <p>买家只报一个票档和一个数量；座位在这里选。结果和 {@link #lockSeats} 一模一样
+     * —— 一个持有、一个令牌、一个价格 —— 所以它下游的一切，从订单事务到退款，都不用改。
+     * 加锁和分配只是通往"一个被持有的座位"的两条路，不是两种座位。
+     *
+     * <p>凑不出所需长度的连座时宁可拒绝，也不把同行的人拆开。"两个座位"和"两个挨着的
+     * 座位"是两个不同的承诺，悄悄拿一个顶替另一个，是那种顾客到了场馆才发现的事。调用方
+     * 会被告知最多能有几个人坐在一起，好据此给出一个真实的选择。
+     */
     public SeatDtos.LockSeatResponse assignSeats(SeatDtos.AssignSeatRequest request, Long userId) {
         Long sessionId = request.scheduleId();
         int quantity = request.quantity();
@@ -293,7 +340,20 @@ public class SeatMapService {
                 (int) ttl.getSeconds());
     }
 
-    /** 校验并消费排队令牌；队列服务不可达时拒绝请求。 */
+    /**
+     * 为有排队的场次，花掉调用方的排队资格。
+     *
+     * <p>这里是真正的执行点，而且刻意放在这里、而不是只放在网关。网关从 query string 里
+     * 读场次 id —— 那是调用方自己给的值 —— 所以一个谎报自己买的是哪一场的调用方就能绕
+     * 过去。在这里，场次 id 就是本请求真正对应的那个，令牌也是拿由它派生出来的 key 去
+     * 校验的。
+     *
+     * <p>是消费掉，不是仅仅校验一下：一次用过还能继续用的准入资格，会让一个排队位置反复
+     * 购买。
+     *
+     * <p>queue-service 不可达时 fail-closed。一次故障不能被解读成"所有人都放行" —— 那等于
+     * 恰好在它本该吸收的负载最高的时候，把队列关掉。
+     */
     private void spendQueueAdmission(Map<String, Object> schedule, Long sessionId,
                                      Long userId, String queueToken) {
         if (toInt(schedule.get("rushMode")) != 1) {
@@ -335,7 +395,18 @@ public class SeatMapService {
         return band;
     }
 
-    /** 按座位所属票档计算明细和总价；价格完全由服务端解析。 */
+    /**
+     * 一组座位值多少钱，逐座算以及合计。
+     *
+     * <p>按每个座位所在的票档算，而不是用场次的挂牌价。一场演出会同时卖好几个票档，
+     * 唯一正确的总价就是实际拿到的那几个座位各自价格之和 —— {@code schedule.price}
+     * 是"¥580 起"那种宣传价，拿它去收一个 1880 的 VIP 座位，是实打实的少收钱，而不是
+     * 一点零头差异。
+     *
+     * <p>之所以暴露出来，是为了让校验调用能在返回持有状态的同时把价格一起带回去。
+     * 客户端从不发送价格，也没有价格可发：它是这里根据服务端自己解析出来的座位算出来
+     * 的。
+     */
     public SeatPricing priceOf(Long sessionId, List<Integer> seatIndexes) {
         List<Map<String, Object>> rows = seatQueryMapper.selectSeatPrices(sessionId, seatIndexes);
 
@@ -357,7 +428,12 @@ public class SeatMapService {
         return new SeatPricing(lines, total);
     }
 
-    /** 已解析票档和价格的座位明细。 */
+    /**
+     * 一组已定价的座位。
+     *
+     * <p>给明细行而不是只给一个总额，是因为订单要记下每张票是按哪个票档卖的 —— 退款
+     * 必须退回那个座位实际花掉的钱，而这是没法从一个均价里还原出来的。
+     */
     public record SeatPricing(List<Line> lines, BigDecimal total) {
 
         public record Line(int seatIndex, Long tierId, BigDecimal price) {

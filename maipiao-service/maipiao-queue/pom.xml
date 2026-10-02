@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-queue</artifactId>
   <name>maipiao-queue</name>
-  <description>Rush-sale queue : admission control in front of the seat service</description>
+  <description>抢购排队：挡在座位服务前面的准入控制</description>
 
   <dependencies>
     <dependency>

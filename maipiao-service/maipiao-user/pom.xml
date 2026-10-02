@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-user</artifactId>
   <name>maipiao-user</name>
-  <description>User service : registration, login, JWT issuing, coupons</description>
+  <description>用户服务：注册、登录、签发 JWT、优惠券</description>
 
   <dependencies>
     <dependency>
@@ -40,7 +40,7 @@
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
     </dependency>
-    <!-- Enables spring.config.import=nacos:... resolution -->
+    <!-- 让 spring.config.import=nacos:... 能被解析 -->
     <dependency>
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-bootstrap</artifactId>
@@ -58,10 +58,9 @@
     </dependency>
 
     <!--
-      Added when user administration gained a user detail screen that shows
-      order counts. Until then this service never called another one, so it had
-      no client - the one place it needs is that screen, and a degraded count
-      is better than a broken page if order-service is down.
+      后台用户管理多了一个展示订单数的用户详情页时才加的。在那之前这个服务
+      从没调过别的服务，所以它没有客户端 —— 唯一用得上的地方就是那个页面，
+      而 order-service 挂了的时候，订单数降级总好过整个页面打不开。
     -->
     <dependency>
       <groupId>org.springframework.cloud</groupId>
@@ -78,15 +77,14 @@
     </dependency>
 
     <!--
-      Distributed transaction, as a branch participant.
+      分布式事务，作为分支参与者。
 
-      Coupon locking is a G1 branch: the coupon is held for the order, and if
-      the order fails it has to come back. Without the client here the hold is a
-      local transaction that commits on its own, so a failed order leaves the
-      coupon locked against an order that does not exist - the customer keeps a
-      coupon they cannot use and the failure looks like nothing went wrong.
+      优惠券锁定是一个 G1 分支：券为订单被占住，订单失败就必须还回来。
+      这里不放客户端，占住它的就只是一个自己提交的本地事务，于是一个失败的订单
+      会把券一直锁在一张根本不存在的订单上 —— 用户手里攥着一张自己用不了的券，
+      而这次失败从外面看像是什么都没出错。
 
-      Same exclusion dance as maipiao-order; see the comment there.
+      排除依赖的那套动作和 maipiao-order 里一样，看那边的注释。
     -->
     <dependency>
       <groupId>com.alibaba.cloud</groupId>

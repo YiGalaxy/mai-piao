@@ -23,7 +23,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 库存服务间接口；写操作通过影响行数参与 Seata 分支校验。 */
+/**
+ * 库存的服务间接口。不属于公开 API。
+ *
+ * <p>三个写接口各自是 Seata 全局事务的一个分支。它们无一例外地遵守一条规则：
+ * <b>断言受影响的行数</b>。一个什么都没改却返回成功的分支，会让全局事务提交一个
+ * 只建了一半的订单，因为 Seata 只回滚那些大声失败的东西。
+ *
+ * <p>这些路径不由网关路由 —— 它们挂在 {@code /inner} 下，而网关只转发
+ * {@code /api/**}。
+ */
 @Slf4j
 @RestController
 @RequestMapping("/inner/schedule")
@@ -34,7 +43,13 @@ public class MovieInternalController {
     private final SessionSeatMapper sessionSeatMapper;
     private final SessionService sessionService;
 
-    /** G1 分支：预占库存并锁定对应座位。 */
+    /**
+     * G1 分支：预占座位并把对应的账本行标为锁定。
+     *
+     * <p>两次写入，都是有条件的。库存更新是防超卖的关卡；座位行则带着逐座位的关卡。
+     * 只要其中任何一个影响的行数不对，异常就会抛出去，Seata 回滚这个事务里已经做完
+     * 的一切。
+     */
     @PostMapping("/occupy")
     public R<Void> occupy(@RequestParam Long sessionId,
                           @RequestParam String orderNo,
@@ -93,7 +108,12 @@ public class MovieInternalController {
         return R.ok();
     }
 
-    /** G3 分支：释放锁定或已售座位。 */
+    /**
+     * G3 分支：把座位还回去。
+     *
+     * @param releaseToPool true 表示正常退款（sold -&gt; available）；false 表示
+     *                      这些座位只是被占着、从未售出，或者已经被超时任务释放过
+     */
     @PostMapping("/release")
     public R<Void> release(@RequestParam Long sessionId,
                            @RequestParam String orderNo,
@@ -134,7 +154,14 @@ public class MovieInternalController {
         return R.ok();
     }
 
-    /** 返回订单快照及队列计算所需的座位总量。 */
+    /**
+     * 快照：order-service 用它拼订单行，queue-service 用它确定抢购放多少人进来。
+     *
+     * <p>{@code totalSeat} 是队列需要的那个值：它的调度器根据还剩多少座位决定放
+     * 多少人通过，而这个「还剩」是按 {@code totalSeat - BITCOUNT(seat:map)} 读的。
+     * 改用别的方式推这个总量 —— 从 bitmap 推，或者自己维护一个计数器 —— 会为整个
+     * 售卖所系的那一个数字造出第二个事实来源。
+     */
     @GetMapping("/{sessionId}/snapshot")
     public R<Map<String, Object>> snapshot(@PathVariable Long sessionId) {
         SessionVO detail = sessionService.detail(sessionId);
@@ -162,12 +189,34 @@ public class MovieInternalController {
 
     // ------------------------------------------------------------
 
-    /** 从账本归属标记查询订单座位。 */
+    /**
+     * 一个订单持有的座位 id，从账本的锁定标记读出。
+     *
+     * <p>出票和释放两条路径用它，它们都在座位已经被占下之后才跑，所以标记是这里该
+     * 查的东西。
+     *
+     * <p>从数据库读而不是从请求里取：信任调用方给的下标到座位 id 的映射，会让订单
+     * 被写到与实际占用的座位不同的座位上去。
+     */
     private List<String> seatIdsOf(Long sessionId, String orderNo) {
         return seatIdsOf(sessionId, orderNo, false);
     }
 
-    /** 按座位状态选择 lock_order_no 或 sold_order_no 查询。 */
+    /**
+     * 按订单号找出座位。
+     *
+     * <p>两个归属列，用哪个取决于座位当前处于什么状态，而这不是可以猜的：
+     *
+     * <ul>
+     *   <li>锁定中的座位把订单号写在 {@code lock_order_no}；</li>
+     *   <li>已售座位的 {@code lock_order_no} 在出票时被**置空**了，订单号挪到
+     *       {@code sold_order_no}。</li>
+     * </ul>
+     *
+     * <p>只查锁定列的话，退款会一条都找不到，然后按「没有需要释放的」返回成功 ——
+     * 账本里的座位永远停在已售，售出计数也永远减不下去，而调用方看到的是 200。
+     * 这个 bug 的表现是退款成功、钱退了、票还在账上。
+     */
     private List<String> seatIdsOf(Long sessionId, String orderNo, boolean soldSeats) {
         return sessionSeatMapper.selectList(
                         com.baomidou.mybatisplus.core.toolkit.Wrappers.<SessionSeat>lambdaQuery()

@@ -15,7 +15,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
-/** 支付回调中的 Seata 事务操作，独立成 Bean 以确保调用经过 AOP 代理。 */
+/**
+ * 支付回调里带事务的那一半。
+ *
+ * <p>它被拆成一个独立的 bean，而不是 {@link PaymentService} 上的私有方法，这就是它存在的
+ * 全部理由。{@code @GlobalTransactional} 是由 Spring AOP 代理施加的，而一个 bean 内部
+ * 方法之间的调用永远到不了代理 —— 于是这个注解就被悄悄忽略了。在这里，那意味着 G2 实际
+ * 上是三个互不相干的本地事务：支付可能提交了而订单没有，也没有任何东西会去回滚。没有报错，
+ * 也没有日志；唯一的症状是一行没人会去找的 "Begin new global transaction" 不见了。
+ *
+ * <p>跨 bean 边界的调用才能让这次调用重新经过代理。任何把这些方法合并回
+ * {@code PaymentService} 的重构，都会把这个 bug 带回来。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -25,7 +36,12 @@ public class PaymentTxService {
     private final RefundMapper refundMapper;
     private final OrderClient orderClient;
 
-    /** 应用成功回调；重复回调按已处理返回。 */
+    /**
+     * 应用一个「成功」回调。
+     *
+     * <p>无事可做时返回 {@code false} —— 从渠道方的角度看这就是成功，也必须按成功
+     * 答复它，否则它会一直重试一个早就应用过的回调。
+     */
     @GlobalTransactional(name = "pay-success-ticket", rollbackFor = Exception.class, timeoutMills = 30000)
     public boolean markPaid(PaymentChannel.NotifyResult notify) {
 
@@ -49,7 +65,25 @@ public class PaymentTxService {
         return true;
     }
 
-    /** G3：原子更新退款单、订单状态和座位账本；已结清时幂等返回。 */
+    /**
+     * G3：渠道方已经把退的钱还回去了，订单那边也要如实反映。
+     *
+     * <p>三处写入描述的是同一个事实，它们要么一起提交，要么一起失败：
+     *
+     * <ol>
+     *   <li>退款单转入已结清，并以金额为守卫，这样一笔金额对不上的确认
+     *       就没法把另一笔退款给结掉；</li>
+     *   <li>订单从 REFUNDING 走到 REFUNDED，它的座位账本行从已售退回可选；</li>
+     *   <li>已售计数减下来 —— 这一步才真正把座位放回市场，而不只是把它们标记成空闲。</li>
+     * </ol>
+     *
+     * <p>这里不碰 Redis。清掉占用是调用方的事，在这一步提交之后 —— 见
+     * {@code OrderRefundService.clearSeatHold}。在事务里清掉的位图会在回滚后残留下来，
+     * 让座位挂出去卖，而订单却还读作已支付。
+     *
+     * <p>幂等：已经结清的退款直接返回、什么都不做，因为重试扫描和最初的请求都
+     * 可能走到这里。
+     */
     @GlobalTransactional(name = "refund-settle", rollbackFor = Exception.class, timeoutMills = 30000)
     public void settleRefund(Refund refund, String channelRefundNo) {
         int rows = refundMapper.casRefundSuccess(
@@ -78,7 +112,12 @@ public class PaymentTxService {
         return true;
     }
 
-    /** 区分重复回调、过期支付、金额不一致和未知支付。 */
+    /**
+     * 判断 CAS 一行都没匹配上，到底是哪种情况。
+     *
+     * <p>「改了 0 行」背后藏着五种不同的境况，而它们需要四种不同的应对。最要紧的是
+     * {@code LATE_PAY}：钱在订单取消之后才到，这笔钱必须退回去，不能留下。
+     */
     private boolean handleCasMiss(PaymentChannel.NotifyResult notify) {
         Payment payment = paymentMapper.selectByPaymentNo(notify.paymentNo());
 

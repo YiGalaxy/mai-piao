@@ -30,7 +30,22 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
-/** 生成演示用场次、票档和座位；电影、演出和站席共用同一数据模型。 */
+/**
+ * 生成演示用的场次、票档和座位行。
+ *
+ * <p>电影和演出走同一条路径，这正是统一模型的要点：
+ *
+ * <ul>
+ *   <li><b>电影</b>场次只得到一个覆盖全部排的票档。下游没有任何一处为此分支 ——
+ *       座位图照常读票档，只不过读到的只有这一个。</li>
+ *   <li><b>演出</b>按排区间分若干票档，每档各有一个价，场馆实际上就是这么卖的。</li>
+ *   <li><b>站席</b>场地压根没有网格。它的 bitmap 被用作入场人数计数器：
+ *       seat_index 仍然标识一个容量单位，所以锁定、下单、退款都不需要特例。</li>
+ * </ul>
+ *
+ * <p>整体不开事务。一个横跨十万次 insert 的事务会撑出巨大的 Undo Log，而且只要有
+ * 一行坏掉就全盘失败；这里每个场次单独写入，并且因为生成器会先清空，重跑是安全的。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -41,15 +56,15 @@ public class DemoDataService {
             LocalTime.of(19, 0), LocalTime.of(21, 30),
     };
 
-    /** 演出时段。 */
+    /** 演出都在晚上；只留两个时段，好让演示数据集看得过来。 */
     private static final LocalTime[] SHOW_SLOTS = {
             LocalTime.of(19, 30), LocalTime.of(20, 30),
     };
 
-    /** 生成器数据标记。 */
+    /** 标记本生成器创建的数据，这样它重置时可以放过其余的。 */
     private static final String SOURCE_GENERATED = "DEMO";
 
-    /** 管理员数据标记。 */
+    /** 标记管理员创建的数据，生成器不能碰。 */
     private static final String SOURCE_ADMIN = "ADMIN";
 
     private static final int BATCH_SIZE = 1000;
@@ -65,7 +80,14 @@ public class DemoDataService {
     private static final LocalTime SHOWCASE_SLOT = LocalTime.of(19, 30);
     private static final int SHOWCASE_NIGHTS = 2;
 
-    /** Showcase 的固定票档，不从场馆类型推导。 */
+    /**
+     * 票档直接写死，不从场馆推导。
+     *
+     * <p>{@link #buildTiers} 按 {@code place_type} 定价，对生成式数据集来说是对的 ——
+     * 一条规则，1272 个场次，全都自洽。但在这里是错的：体育场 380 的基准价会把最好
+     * 的座位推到 684，而 showcase 的要点是这些数字得像一场真有人会买票的演唱会。
+     * 40 排分四档也是体育场演出的卖法，小一点的场馆才卖三档。
+     */
     private static final List<PriceTier> SHOWCASE_TIERS = List.of(
             showcaseTier("内场VIP", 1980, 1, 8, "#e91e63"),
             showcaseTier("内场", 1280, 9, 20, "#ff6700"),
@@ -96,7 +118,16 @@ public class DemoDataService {
     public record GenerateResult(int sessionCount, int seatCount, int tierCount, long elapsedMs) {
     }
 
-    /** 清除生成器创建的场次及其票档、座位，不影响管理员数据。 */
+    /**
+     * 只清除本生成器造出来的东西，别的都不动。
+     *
+     * <p>它以前会清掉所有场次，在它是唯一的创建者时这是对的。现在管理员可以通过
+     * 后台界面把一场演出上架，而一次重置会一声不吭地把它删掉 —— 录入的人根本没法
+     * 判断是不是自己哪一步做错了。
+     *
+     * <p>座位和票档跟着场次走。它们是通过场次 id 找到的，而不是清空整张表，理由
+     * 相同。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void clearSchedules() {
         List<Session> generated = sessionMapper.selectList(Wrappers.<Session>lambdaQuery()
@@ -116,7 +147,19 @@ public class DemoDataService {
         log.info("generated sessions cleared: count={}", ids.size());
     }
 
-    /** 生成固定体育场 Showcase 数据；仅清理并重建该项目的场次。 */
+    /**
+     * showcase：一个体育场、一位艺人、2000 个座位、两场。
+     *
+     * <p>它和 {@link #generate} 分开，而不是用个开关挂在上面，因为两者想要的东西
+     * 正好相反。通用生成器先清空整个数据集，再从场馆自身的配置推导一切 —— 票档、
+     * 座位数、售票窗口 —— 这正是 1272 个场次能廉价产出而又彼此自洽的原因。
+     * showcase 则是一个必须恰好 2000 个座位、价格还得让人一眼认得的场次，所以它
+     * 把数字写死，而不是推导出来。
+     *
+     * <p>只清除自己这个项目的场次，因此可以反复重跑而不打扰其余数据 —— 但它必须
+     * 在 {@code generate-schedule} <b>之后</b>运行，那个会把一切都清掉。参见
+     * {@code docs/sql/demo/03_showcase.sql}。
+     */
     public GenerateResult generateShowcase() {
         long started = System.currentTimeMillis();
 
@@ -244,7 +287,18 @@ public class DemoDataService {
         return tiers;
     }
 
-    /** 按电影排片和演出排期两条规则生成演示数据。 */
+    /**
+     * 构建演示数据集。
+     *
+     * <p>电影和演出分开生成，这个「分开」本身就是要点，而不是实现细节。以前一个
+     * 循环依次走过日期、场地、时段，每个时段填上一个放进该场馆还合适的项目 ——
+     * 这对电影院完全正确，对其他一切都不对。电影院把同一部片子一天放很多场、连放
+     * 好几周，这才叫排片。演唱会则是提前公布、一晚在一个场馆演一场。
+     *
+     * <p>两者混在一起跑时，那个循环会给巡演的一站安排单日十二场、一周五十四场，
+     * 还分布在六个不同的场馆。什么都没报错 —— 场次合法、座位也卖得出去，只是结果
+     * 描述出来是一支乐队连着一周每晚跑六个场子。
+     */
     public GenerateResult generate(int days, double soldRatio, boolean rushSchedule) {
         long started = System.currentTimeMillis();
 
@@ -280,7 +334,11 @@ public class DemoDataService {
         return total;
     }
 
-    /** 生成电影院的日期、影厅和时段网格。 */
+    /**
+     * 电影院的排片网格：每个影厅、一天里的大部分时段、每天都排。
+     *
+     * <p>给电影排片本来就是这件事，这部分没有改过。
+     */
     private GenerateResult generateScreenings(List<Hall> places, List<Film> projects, int days,
                                               double soldRatio, LocalDate today,
                                               LocalDateTime now) {
@@ -319,7 +377,16 @@ public class DemoDataService {
         return new GenerateResult(sessionCount, seatCount, tierCount, 0);
     }
 
-    /** 为演出生成少量公布日期，每晚一个场次。 */
+    /**
+     * 公布出来的日期，不是网格。
+     *
+     * <p>一场演出有一个主场馆和少数几个日期。几个取决于场地：体育场或体育馆是巡演
+     * 的一站，演一两晚；小剧场或 livehouse 则撑得起驻演，演好几场，而且散布在整个
+     * 档期里而不是连着来 —— 两种场地实际都是这么卖的。
+     *
+     * <p>无论哪种，一晚都只演一场。演两场那是日场，是电影院和剧院的做法；一场演唱会
+     * 一晚上演两遍不成立。
+     */
     private GenerateResult generatePerformanceRuns(List<Hall> places, List<Film> projects,
                                                    int days, double soldRatio, LocalDate today,
                                                    LocalDateTime now, boolean rushSchedule) {
@@ -408,7 +475,12 @@ public class DemoDataService {
         return new GenerateResult(sessionCount, seatCount, tierCount, 0);
     }
 
-    /** 预售部分座位并同步场次计数，仅用于演示数据。 */
+    /**
+     * 把一部分座位标成已售，让座位图看起来有人气。
+     *
+     * <p>这属于演示生成器而不属于座位工厂：真实场次一开始是空的，预卖是编造出来的
+     * 数据才有的属性。计数器要跟着一起动，因为场次上的数字必须能描述座位行里的事实。
+     */
     private void presell(List<SessionSeat> seats, double soldRatio, Long sessionId) {
         if (soldRatio > 0) {
             for (SessionSeat seat : seats) {
@@ -433,7 +505,13 @@ public class DemoDataService {
     private record WrittenSession(Session session, int seatCount, int tierCount) {
     }
 
-    /** 写入场次、票档和座位。电影与演出共用此持久化流程。 */
+    /**
+     * 写入一个场次，连同它的票档和座位。
+     *
+     * <p>两个生成器共用，因为抛开「怎么排出来的」这一层，排片和演出就是同一种东西：
+     * 一个时间、一个场地、一组座位。调用方在意的差别是它挑的日期，而不是它写了
+     * 哪些行。
+     */
     private WrittenSession writeSession(Film project, Hall place, LocalDate showDate,
                                         LocalDateTime startTime, double soldRatio) {
         List<PriceTier> tiers = buildTiers(project, place);
@@ -461,7 +539,12 @@ public class DemoDataService {
     // 项目 / 场地 配对
     // ------------------------------------------------------------
 
-    /** 从游标开始选择容量匹配的下一个项目。 */
+    /**
+     * 挑出下一个这个场地接得住的项目。
+     *
+     * <p>从游标处往后扫，而不是直接取下一个项目，这样每个项目仍然轮得到 —— 只不过
+     * 轮到它的是真装得下它的场地。
+     */
     private Film nextMatching(List<Film> projects, Hall place, int from) {
         boolean placeIsCinema = isCinemaPlace(place);
         for (int i = 0; i < projects.size(); i++) {
@@ -478,7 +561,14 @@ public class DemoDataService {
         return "IMAX".equals(type) || "3D".equals(type) || "NORMAL".equals(type);
     }
 
-    /** 按场馆类型返回排片时段；影厅全天排，演出场馆使用晚间时段。 */
+    /**
+     * 某个场地的场次都排在什么时段。
+     *
+     * <p>决定这件事的是场馆类型，不是座位形式：影厅全天排，剧场和体育馆排在晚上。
+     * 若拿 {@code standing} 当判据，就会给对号入座的剧场排上电影的时刻表、给站席的
+     * 体育馆排上演出的时刻表 —— 答案碰巧对了，理由却不对，而且一旦加进一个对号
+     * 入座的体育馆就立刻错。
+     */
     private LocalTime[] slotsFor(Hall place) {
         return isCinemaPlace(place) ? FILM_SLOTS : SHOW_SLOTS;
     }
@@ -487,7 +577,12 @@ public class DemoDataService {
     // 定价
     // ------------------------------------------------------------
 
-    /** 构建场次票档；电影使用覆盖全部座位的单一票档。 */
+    /**
+     * 一个场次的票档。
+     *
+     * <p>电影只拿到一个覆盖全部排的票档，这样座位图和下单流程都不必按类型分支 ——
+     * 它们读票档，而电影恰好只有一个可读。
+     */
     private List<PriceTier> buildTiers(Film project, Hall place) {
         int rows = place.getRowCount() == null ? 10 : place.getRowCount();
         String placeType = place.getPlaceType() == null ? "NORMAL" : place.getPlaceType();

@@ -22,9 +22,9 @@ spring:
         group: DEFAULT_GROUP
         file-extension: yaml
 
-  # No datasource. A queue lives for minutes and the seat ledger behind it is
-  # what has to survive; keeping the line in a table would mean a write on the
-  # hottest path in the system for data nobody would ever read.
+  # 不要数据源。队列只活几分钟，真正要活下来的是它背后的座位账本；
+  # 把排队存进表里，等于在系统最热的路径上多一次写入，
+  # 而为的是一批根本不会有人去读的数据。
 
   data:
     redis:
@@ -35,10 +35,10 @@ spring:
       timeout: 3000ms
       lettuce:
         pool:
-          # Larger than the other services: the dispatcher and the join path
-          # are both Redis-bound, and at peak this is the busiest service there
-          # is - by design, because everything it absorbs is a request the seat
-          # service never sees.
+          # 比别的服务配得大：放行器和入队路径都压在 Redis 上，
+          # 而峰值时这里是全系统最忙的服务 —— 这是设计使然，
+          # 因为它挡下来的每一个请求，
+          # 座位服务都根本不会看到。
           max-active: 64
           max-idle: 32
           min-idle: 8
@@ -54,7 +54,7 @@ maipiao:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
 
   queue:
-    # See QueueProperties for what each of these means and why.
+    # 每一项是什么意思、为什么这么定，见 QueueProperties。
     admit-factor: 1.5
     token-seconds: 300
     dispatch-interval-ms: 200
@@ -70,7 +70,7 @@ logging:
   level:
     root: info
     com.maipiao: debug
-    # The dispatcher logs a line every time it admits anyone. At a 200ms tick
-    # that is the noisiest thing in the service, and it is only interesting
-    # while a sale is actually running.
+    # 放行器每放一个人就记一行日志。200ms 一跳的节奏下，
+    # 它是这个服务里最吵的东西，
+    # 而它只有在一场售卖真的在跑的时候才值得看。
     com.maipiao.queue.service.AdmissionDispatcher: info

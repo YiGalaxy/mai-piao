@@ -7,6 +7,7 @@ import com.maipiao.common.web.context.UserContext;
 import com.maipiao.order.dto.OrderDtos;
 import com.maipiao.order.entity.Order;
 import com.maipiao.order.feign.PayClient;
+import com.maipiao.order.mq.OrderTimeoutProducer;
 import com.maipiao.order.service.OrderRefundService;
 import com.maipiao.order.service.OrderService;
 import com.maipiao.order.service.OrderStateMachine;
@@ -34,6 +35,7 @@ public class OrderController {
     private final OrderRefundService orderRefundService;
     private final OrderStateMachine stateMachine;
     private final PayClient payClient;
+    private final OrderTimeoutProducer orderTimeoutProducer;
 
     /**
      * 为调用方已经持有的座位创建订单。
@@ -43,7 +45,19 @@ public class OrderController {
      */
     @PostMapping("/create")
     public R<OrderDtos.CreateOrderResponse> create(@Valid @RequestBody OrderDtos.CreateOrderRequest request) {
-        return R.ok(orderService.create(request, UserContext.require()));
+        OrderDtos.CreateOrderResponse response = orderService.create(request, UserContext.require());
+
+        // 投递超时取消的延时消息。
+        //
+        // 位置在这里，不在 create() 里面，是有讲究的：create() 上的
+        // @GlobalTransactional 在它返回时才真正定局，在此之前「订单已经存在」
+        // 还不是一个确定的事实。消息必须指向一个一定查得到的订单。
+        // 详细理由见 OrderTimeoutProducer 的类注释。
+        //
+        // 投递失败不影响这次调用 —— 下单已经成功，扫表会兜住那个座位。
+        orderTimeoutProducer.scheduleCancel(response.orderNo(), response.expireTime());
+
+        return R.ok(response);
     }
 
     /** 我的订单，最新的在前，可选按状态过滤。 */

@@ -13,7 +13,7 @@
 
   <artifactId>maipiao-movie</artifactId>
   <name>maipiao-movie</name>
-  <description>Movie service : films, cinemas, halls, schedules and seat ledger</description>
+  <description>演出服务：项目、场馆、影厅、场次、座位账本、管理接口</description>
 
   <dependencies>
     <dependency>
@@ -41,9 +41,8 @@
       <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
     </dependency>
 
-    <!-- OpenFeign: this service is called by order-service during the G1
-         global transaction, and calls back into seat-service to release
-         Redis seat locks when a booking fails. -->
+    <!-- OpenFeign：G1 全局事务里 order-service 会调这个服务，而这个服务
+         会在下单失败时回调 seat-service，去释放 Redis 座位锁。 -->
     <dependency>
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-openfeign</artifactId>
@@ -65,21 +64,18 @@
     </dependency>
 
     <!--
-      Distributed transaction, as a branch participant.
+      分布式事务，作为分支参与者。
 
-      This service owns inventory and the seat ledger, and both are written
-      from inside G1. Without the client here those writes are plain local
-      transactions that commit immediately: Seata cannot see them, cannot
-      enlist them as a branch, and cannot undo them when the order fails. The
-      global transaction still reports itself as rolled back - it rolled back
-      the branches it knew about - while the seats stay reserved and the
-      counters stay incremented.
+      这个服务持有库存和座位账本，而这两者都是在 G1 里面写的。这里不放客户端，
+      那些写就只是普通的本地事务，直接就提交了：Seata 看不见它们，没法把它们
+      收编成一个分支，订单失败时也没法撤销它们。全局事务照样报告自己回滚了 ——
+      它回滚了它知道的那几个分支 —— 而座位仍然占着，计数器仍然涨着。
 
-      That is not a theoretical failure: it is what left seats locked with no
-      order behind them and no path that would ever release them.
+      这不是理论上的失败：正是它留下了一批座位锁，后面没有任何订单，
+      也没有任何路径会去释放它们。
 
-      The exclusion dance is the same as in maipiao-order; see the comment
-      there for why the bundled starter is removed and re-declared.
+      排除依赖的那套动作和 maipiao-order 里一样；自带的 starter 为什么要排掉
+      再重新声明，看那边的注释。
     -->
     <dependency>
       <groupId>com.alibaba.cloud</groupId>

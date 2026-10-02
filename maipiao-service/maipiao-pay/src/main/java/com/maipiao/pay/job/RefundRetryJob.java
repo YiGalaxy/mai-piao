@@ -3,6 +3,7 @@ package com.maipiao.pay.job;
 import com.maipiao.pay.service.RefundService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>重试满 5 次的会被标记为失败并停止 —— 需要人来看了。一个永远重试的循环会把这件
  * 唯一需要人的事藏起来。
+ *
+ * <p>多实例同时跑并不会退错钱：{@code refundMapper.insertIfAbsent} 靠 {@code payment_no}
+ * 上的唯一键挡住重复，渠道那一侧收到的也还是一笔退款。加锁省下的是重复的渠道调用 ——
+ * 而渠道调用是有外部成本的，这一点让它比「省点数据库往返」更值得防。
  */
 @Slf4j
 @Component
@@ -27,6 +32,10 @@ public class RefundRetryJob {
 
     private final RefundService refundService;
 
+    // lockAtLeastFor 刻意取得和 fixedDelay 同一个量级：退款重试要打渠道，
+    // 而渠道本身就是这里最容易出问题的一环，不该被多实例轮着打。
+    @SchedulerLock(name = "refund-retry-sweep",
+            lockAtMostFor = "PT5M", lockAtLeastFor = "PT30S")
     @Scheduled(fixedDelayString = "${maipiao.pay.refund-retry-interval-ms:60000}")
     public void retryPendingRefunds() {
         try {

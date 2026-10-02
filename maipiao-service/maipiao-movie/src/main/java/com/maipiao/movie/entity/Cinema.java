@@ -8,7 +8,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** 映射 {@code maipiao_event.t_event_venue}。 */
+/** 映射 {@code maipiao_movie.t_event_venue}。 */
 @Data
 @TableName("t_event_venue")
 public class Cinema {

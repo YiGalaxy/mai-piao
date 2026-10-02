@@ -45,12 +45,19 @@ spring:
           max-idle: 8
           min-idle: 2
 
-# RocketMQ is reserved for delayed messages; OrderTimeoutJob currently scans with @Scheduled.
+  # ------------------------------------------------------------
+  # RocketMQ。
+  #
+  # 超时取消的延时消息是主路径，定时扫描是兜底。两者都存在是设计的一部分，
+  # 理由见 OrderTimeoutConsumer 的类注释 —— 简单说，消息负责准时，扫表负责一定。
+  # ------------------------------------------------------------
 rocketmq:
   name-server: ${ROCKETMQ_ADDR:127.0.0.1:9876}
   producer:
     group: maipiao-order-producer
     send-message-timeout: 5000
+    # 生产者自己重试两次。收到的是 broker 明确说没写成功的失败；
+    # 三次都没成功就往上抛，由 OrderTimeoutProducer 吞掉并记日志 —— 扫表会兜住。
     retry-times-when-send-failed: 2
 
 mybatis-plus:
@@ -63,11 +70,28 @@ mybatis-plus:
     db-config:
       id-type: assign_id
 
-# Seata TC uses the published Docker port because services run on the host.
+# ============================================================
+# Seata 客户端
+#
+# TC 的地址直接写死，而不是走 Nacos 发现。
+#
+# 原因：Seata 服务端跑在容器里，注册上去的是它自己探测到的 IP，也就是容器内网地址。
+# 而各个服务跑在宿主机上，根本路由不到 172.x.x.x，于是 Nacos 发现返回的是一个
+# 保证连不上的地址：
+#     can not connect to [172.28.0.8:8091]
+# 看起来像 TC 挂了，其实它健康得很。
+#
+# SEATA_IP 是官方用来覆盖注册地址的变量，但官方文档明确说不接受 127.0.0.1；
+# 而写宿主机的局域网地址，会变成一个随 DHCP 变化的硬编码值。
+# 让客户端直接连映射出来的端口，是把问题去掉，而不是绕开它。
+#
+# 等哪天服务也搬进 Docker，把 registry.type 改回 `nacos`、删掉 grouplist 即可。
+# ============================================================
 seata:
   enabled: true
   application-id: ${spring.application.name}
-  # Must match the server-side vgroup mapping.
+  # 必须和服务端的 service.vgroupMapping 对上，否则启动就报
+  # "can not get cluster name in registry config"。
   tx-service-group: maipiao_tx_group
   enable-auto-data-source-proxy: true
   service:
@@ -85,6 +109,10 @@ maipiao:
     secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
   order:
     lock-minutes: 15
+    # 延时消息的 topic 与消费者组。写成可配的，是为了让压测能把它们指到别处，
+    # 不和生产用的队列互相干扰。
+    timeout-topic: ${MAIPIAO_ORDER_TIMEOUT_TOPIC:maipiao-order-timeout}
+    timeout-consumer-group: ${MAIPIAO_ORDER_TIMEOUT_GROUP:maipiao-order-timeout-consumer}
 
 springdoc:
   api-docs:

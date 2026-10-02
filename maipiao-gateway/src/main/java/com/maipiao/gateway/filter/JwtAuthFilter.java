@@ -28,7 +28,26 @@ import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 
-/** 网关 JWT 过滤器：清理身份头、校验令牌并注入用户身份。 */
+/**
+ * 在入口处校验一次 JWT，并把解析出的用户 id 转发下去。
+ *
+ * <p>每个请求先净化，再分级：内部接口直接拒绝，公开接口放行，其余的一律要 token
+ * —— 其中管理端接口还要求 token 携带管理员角色。顺序是有讲究的，每一步摆在哪个
+ * 位置，正是它能生效的原因：
+ *
+ * <ol>
+ *   <li><b>净化。</b>把客户端自己带上的 {@code X-User-Id} 和 {@code X-Internal-Call}
+ *       剥掉。下游服务信任这些头，所以能设置它们的客户端就能冒充任何用户，或者冒充
+ *       另一个服务。白名单路径同样要跑这一步 —— 匿名请求不能偷偷夹带一个身份进来。</li>
+ *   <li><b>认证。</b>非白名单路径需要一个签名和有效期都过关、且 {@code jti} 不在登出
+ *       黑名单上的 token。</li>
+ *   <li><b>授权。</b>管理端接口额外还要求管理员角色。这个角色从一开始就往下游注入，
+ *       却没有任何人去读它，所以任何已登录用户都能访问到管理端。</li>
+ * </ol>
+ *
+ * <p>排序在 {@link Ordered#HIGHEST_PRECEDENCE}，为的是净化先跑，等其他 filter
+ * 看到那些头的时候，它们已经被净化过了。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -56,7 +75,14 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        // 内部接口必须先于公开白名单拦截，服务间调用不经过网关。
+        // ---- 2. 内部接口永远不能从外部路由到 ----
+        // 先于白名单检查，而且是刻意的：/api/movie/** 为了浏览而公开，它同时也
+        // 会匹配上 /api/movie/inner/schedule/occupy —— 也就是给订单事务预留库存
+        // 的那个分支。任何人不用带 token 就能调它。
+        //
+        // 白名单表达不了"公开，但这些除外"，所以这条规则单独拎出来，并且先跑。
+        // 服务之间的调用走 Feign 直连目标服务，根本不经过网关，所以这里不会挡下
+        // 任何合法调用。
         if (isInternal(path)) {
             log.warn("blocked external call to internal endpoint: {} {}", request.getMethod(), path);
             // 返回 404 而不是 403：403 等于承认这个接口存在。
@@ -68,7 +94,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(withRequest(exchange, sanitized));
         }
 
-        // 管理端路径不参与公开白名单匹配。
+        // ---- 4. 公开接口 ----
+        // 不管白名单怎么写，管理端路径都算不上公开，所以让它们跳过这一步，而不是
+        // 指望白名单里永远不会有哪个模式覆盖到它们。
         if (!isAdminPath(path) && isWhitelisted(path)) {
             return chain.filter(withRequest(exchange, sanitized));
         }
@@ -81,7 +109,8 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         Claims claims = jwtUtil.parse(token);
         if (claims == null) {
-            // 不向客户端暴露令牌失败原因。
+            // parse() 会把原因记进 debug 日志：过期、签名不对、issuer 不对。
+            // 这些一点都不告诉客户端，因为这个区分对攻击者的用处大于对合法调用方。
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
         }
 
@@ -90,7 +119,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return unauthorized(exchange, ErrorCode.UNAUTHORIZED);
         }
 
-        // 管理端接口额外校验管理员角色。
+        // ---- 6. 管理端接口需要管理员角色 ----
+        // 角色从一开始就写进了 X-User-Role，却没有任何人去读，所以每个管理端接口
+        // 任何已登录用户都能访问。token 仅仅有效，不等于已获授权。
+        //
+        // 放在黑名单检查之前，因为它不需要查任何东西；对一个本来就不会被放行的
+        // 请求做吊销检查，是白费功夫。
         if (isAdminPath(path) && !jwtUtil.isAdmin(claims)) {
             log.warn("non-admin token rejected for admin path: path={}, userId={}", path, userId);
             return forbidden(exchange);
@@ -111,7 +145,8 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                     }
                     return chain.filter(withIdentity(exchange, sanitized, userId, claims));
                 })
-                // 黑名单查询失败时拒绝请求。
+                // Redis 挂了：fail closed。把故障当成"未被吊销"，等于把 Redis 的
+                // 一次抖动变成一个窗口，窗口期内已登出的 token 照样好使。
                 .onErrorResume(e -> {
                     log.error("blacklist lookup failed, rejecting request", e);
                     return unauthorized(exchange, ErrorCode.SERVICE_UNAVAILABLE);
@@ -156,7 +191,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return false;
     }
 
-    /** 判断是否为服务间调用接口。 */
+    /**
+     * 判断是否为服务间调用接口。
+     *
+     * <p>每个服务都把内部接口挂在 {@code /inner/...} 下，经网关访问时是
+     * {@code /api/{service}/inner/...}。这个模式匹配任意深度，所以某个服务把
+     * controller 嵌套得跟别人不一样，也照样能覆盖到。
+     */
     private boolean isInternal(String path) {
         return PATH_MATCHER.match("/api/*/inner/**", path)
                 || PATH_MATCHER.match("/api/*/inner", path);
@@ -167,16 +208,25 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return exchange.getResponse().setComplete();
     }
 
-    /** 判断是否为管理端接口或演示数据接口。 */
+    /**
+     * 判断是否为管理端接口。
+     *
+     * <p>和 {@code /inner} 一样先于公开白名单匹配，这样一条覆盖整个服务的白名单
+     * 条目不会顺手把它打开。这不是假设：{@code /api/movie/**} 为浏览而公开，
+     * 它自己就会覆盖到 {@code /api/movie/admin/**}。
+     */
     private boolean isAdminPath(String path) {
-        // 演示数据接口会修改场次数据，不能随公开电影接口放行。
         return PATH_MATCHER.match("/api/*/admin/**", path)
-                || PATH_MATCHER.match("/api/*/admin", path)
-                || PATH_MATCHER.match("/api/movie/demo/**", path)
-                || PATH_MATCHER.match("/api/movie/demo", path);
+                || PATH_MATCHER.match("/api/*/admin", path);
     }
 
-    /** 返回管理端权限错误。 */
+    /**
+     * 返回 403，不是 404。
+     *
+     * <p>不像 {@code /inner} —— 对互联网来说它压根不存在；管理端接口是要让它的
+     * 使用者找到的。告诉一个已登录的非管理员"你不是管理员"，比假装这个页面不存在
+     * 更有用。
+     */
     private Mono<Void> forbidden(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.FORBIDDEN);
