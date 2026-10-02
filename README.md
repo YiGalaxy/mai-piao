@@ -121,7 +121,6 @@ curl -X POST "http://127.0.0.1:9002/movie/demo/generate-showcase"
 - [压测报告](docs/压测报告.md)：测试场景、数据和瓶颈分析
 - [压测工具](docs/loadtest/)：排队和锁座压测脚本
 - [数据库脚本说明](docs/sql/README.md)：结构脚本与演示数据导入方式
-- [面试准备](docs/面试准备.md)：项目介绍、技术问题和回答要点
 - [历史规划](docs/历史规划.md)：早期方案和未完全落地的规划内容
 
 ## 当前边界
