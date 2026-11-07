@@ -1,0 +1,18 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,xml,html,css,js,vue,md,sql,sh}]
+indent_size = 2
+
+[*.java]
+indent_size = 4
+
+[*.bat]
+end_of_line = crlf
+indent_style = tab

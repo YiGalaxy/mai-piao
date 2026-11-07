@@ -1,0 +1,209 @@
+<template>
+  <div class="mp-container film-list-page">
+    <div class="filter-bar mp-card">
+      <div class="filter-row">
+        <span class="filter-label">类型</span>
+        <el-radio-group v-model="category" @change="reload">
+          <el-radio-button :value="null">全部</el-radio-button>
+          <el-radio-button v-for="tab in CATEGORY_TABS" :key="tab.value" :value="tab.value">
+            {{ tab.label }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div class="filter-row">
+        <span class="filter-label">状态</span>
+        <el-radio-group v-model="status" @change="reload">
+          <el-radio-button :value="1">在售</el-radio-button>
+          <el-radio-button :value="0">待开售</el-radio-button>
+          <el-radio-button :value="null">全部</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div v-if="keyword" class="filter-row">
+        <span class="filter-label">搜索</span>
+        <el-tag closable @close="clearKeyword">“{{ keyword }}”</el-tag>
+      </div>
+    </div>
+
+    <el-skeleton v-if="loading" :rows="8" animated />
+
+    <el-empty v-else-if="films.length === 0" :description="emptyHint" />
+
+    <div v-else class="mp-film-grid">
+      <div
+        v-for="film in films"
+        :key="film.id"
+        class="mp-film-card"
+        @click="router.push(`/films/${film.id}`)"
+      >
+        <div class="mp-poster" :style="posterStyle(film)">
+          <img
+            v-if="film.posterUrl && isPosterUsable(film.id)"
+            :src="film.posterUrl"
+            :alt="film.title"
+            @error="markPosterBroken(film.id)"
+          />
+          <span v-else class="mp-poster-fallback">{{ film.title.slice(0, 2) }}</span>
+
+          <div v-if="film.status === 1 && film.score > 0" class="mp-score">
+            评分 <b>{{ film.score.toFixed(1) }}</b>
+          </div>
+          <div v-else class="mp-score mp-score-none">
+            {{ film.status === 0 ? `待映 ${film.showDate}` : '暂无评分' }}
+          </div>
+        </div>
+
+        <div class="mp-film-body">
+          <h3 class="mp-film-title">{{ film.title }}</h3>
+          <p class="mp-film-sub">{{ film.tags }} · {{ film.duration }}分钟</p>
+          <p class="mp-film-sub">导演 {{ film.director }}</p>
+          <div class="mp-film-action">
+            <el-button
+              v-if="film.status === 1"
+              type="primary"
+              size="small"
+              @click.stop="router.push(`/films/${film.id}`)"
+            >
+              选座购票
+            </el-button>
+            <el-button v-else size="small" plain disabled>暂未开售</el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { fetchFilms } from '../api/movie'
+
+const router = useRouter()
+const route = useRoute()
+
+const films = ref([])
+const loading = ref(true)
+const status = ref(1)
+const category = ref(null)
+const keyword = ref('')
+
+/** 空的影片列表和空的演出列表，不是同一种「没有」。 */
+const emptyHint = computed(() =>
+  category.value === 'MOVIE' ? '没有符合条件的影片' : '没有符合条件的演出'
+)
+
+/** 和首页用同一套标签，这样两处对「有什么」的说法不会打架。 */
+const CATEGORY_TABS = [
+  { value: 'MOVIE', label: '电影' },
+  { value: 'CONCERT', label: '演唱会' },
+  { value: 'TALK_SHOW', label: '脱口秀' },
+  { value: 'THEATER', label: '话剧' },
+  { value: 'MUSICAL', label: '音乐剧' }
+]
+
+onMounted(() => {
+  // 支持深链接，比如从首页「全部」链接点进来的 /films?category=CONCERT。
+  if (typeof route.query.category === 'string') {
+    category.value = route.query.category
+  }
+  if (route.query.status !== undefined) {
+    const parsed = Number(route.query.status)
+    status.value = Number.isNaN(parsed) ? null : parsed
+  }
+  if (typeof route.query.q === 'string') {
+    keyword.value = route.query.q
+  }
+  reload()
+})
+
+watch(
+  () => route.query.q,
+  (value) => {
+    keyword.value = typeof value === 'string' ? value : ''
+  }
+)
+
+async function reload() {
+  loading.value = true
+  try {
+    const params = {}
+    if (status.value !== null) params.status = status.value
+    if (category.value !== null) params.category = category.value
+    const list = await fetchFilms(params)
+    films.value = filterByKeyword(list || [])
+  } catch {
+    films.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * 过滤放在客户端做，因为剧目库还小，搜索框只是个便利，算不上功能。
+ * 剧目库要是长大了，这里就改成服务端查询，后面配个索引。
+ */
+function filterByKeyword(list) {
+  const needle = keyword.value.trim().toLowerCase()
+  if (!needle) {
+    return list
+  }
+  return list.filter(
+    (f) =>
+      f.title.toLowerCase().includes(needle) ||
+      (f.enTitle || '').toLowerCase().includes(needle) ||
+      (f.director || '').toLowerCase().includes(needle)
+  )
+}
+
+function clearKeyword() {
+  keyword.value = ''
+  router.replace({ query: {} })
+  reload()
+}
+
+function isPosterUsable(filmId) {
+  return brokenPosters.value[filmId] !== false
+}
+
+const brokenPosters = ref({})
+
+function markPosterBroken(filmId) {
+  brokenPosters.value = { ...brokenPosters.value, [filmId]: false }
+}
+
+function posterStyle(film) {
+  const hue = (film.id * 47) % 360
+  return {
+    background: `linear-gradient(135deg, hsl(${hue} 58% 46%), hsl(${(hue + 40) % 360} 62% 30%))`
+  }
+}
+</script>
+
+<style scoped>
+.film-list-page {
+  padding-top: 20px;
+}
+
+.filter-bar {
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.filter-row + .filter-row {
+  margin-top: 12px;
+}
+
+.filter-label {
+  color: var(--mp-text-muted);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+</style>

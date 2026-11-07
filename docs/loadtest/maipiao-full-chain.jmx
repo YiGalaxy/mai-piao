@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="MaiPiao Full Purchase Chain" enabled="true">
+      <stringProp name="TestPlan.comments">One unique buyer and seat per thread: register/login, lock seat, create order, MOCK payment, callback, ticket issuance.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="One purchase per buyer" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Once per buyer" enabled="true"><boolProp name="LoopController.continue_forever">false</boolProp><stringProp name="LoopController.loops">1</stringProp></elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,2)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampSeconds,2)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp><stringProp name="ThreadGroup.duration"></stringProp><stringProp name="ThreadGroup.delay"></stringProp><boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Complete purchase chain" enabled="true">
+          <stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script"><![CDATA[
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.nio.charset.StandardCharsets
+import java.net.HttpURLConnection
+import java.net.URL
+
+def gateway = props.getProperty('baseUrl', 'http://127.0.0.1:9000').replaceAll('/+$', '')
+def mockBase = props.getProperty('mockPayUrl', 'http://127.0.0.1:9007').replaceAll('/+$', '')
+long scheduleId = (props.getProperty('scheduleId', '') as long)
+int seatIndex = (props.getProperty('seatIndexBase', '0') as int) + ctx.getThreadNum()
+long userIndex = (props.getProperty('userIndexBase', '100000') as long) + ctx.getThreadNum()
+String phone = props.getProperty('phonePrefix', '139') + String.format('%08d', userIndex)
+String password = props.getProperty('password', '123456')
+int timeoutMs = (props.getProperty('timeoutMs', '30000') as int)
+int pollMs = (props.getProperty('pollMs', '250') as int)
+int maxPolls = (props.getProperty('maxPolls', '40') as int)
+int orderRetries = (props.getProperty('orderRetries', '3') as int)
+def json = new JsonSlurper()
+def currentStage = 'setup'
+
+def call = { String label, String method, String url, String token, Object body ->
+    def child = new org.apache.jmeter.samplers.SampleResult()
+    child.setSampleLabel(label)
+    child.setDataType(org.apache.jmeter.samplers.SampleResult.TEXT)
+    child.setContentType('application/json')
+    child.sampleStart()
+    HttpURLConnection connection = null
+    try {
+        connection = (HttpURLConnection) new URL(url).openConnection()
+        connection.setRequestMethod(method)
+        connection.setConnectTimeout(5000)
+        connection.setReadTimeout(timeoutMs)
+        connection.setRequestProperty('Accept', 'application/json')
+        if (token) connection.setRequestProperty('Authorization', 'Bearer ' + token)
+        if (body != null) {
+            connection.setDoOutput(true)
+            connection.setRequestProperty('Content-Type', 'application/json')
+            connection.outputStream.withCloseable { it.write(JsonOutput.toJson(body).getBytes(StandardCharsets.UTF_8)) }
+        }
+        int status = connection.responseCode
+        InputStream stream = status < 400 ? connection.inputStream : connection.errorStream
+        String response = stream == null ? '' : stream.getText('UTF-8')
+        child.setResponseCode(status.toString())
+        child.setResponseMessage(connection.responseMessage ?: '')
+        child.setResponseData(response, 'UTF-8')
+        child.setSuccessful(status >= 200 && status < 300)
+        if (!child.isSuccessful()) throw new IllegalStateException(label + ' HTTP ' + status + ': ' + response)
+        return response ? json.parseText(response) : [:]
+    } catch (Throwable e) {
+        child.setResponseCode(child.getResponseCode() == '200' ? '500' : child.getResponseCode())
+        child.setResponseMessage(e.toString())
+        child.setResponseData(e.toString(), 'UTF-8')
+        child.setSuccessful(false)
+        throw e
+    } finally {
+        child.sampleEnd()
+        SampleResult.addSubResult(child)
+        if (connection != null) connection.disconnect()
+    }
+}
+
+def data = { response ->
+    if (response?.success != true || response?.code != 0) throw new IllegalStateException('business response rejected: ' + JsonOutput.toJson(response))
+    response.data
+}
+
+try {
+    if (!scheduleId) throw new IllegalArgumentException('Pass -JscheduleId for an isolated seat-map session')
+    if (seatIndex < 0) throw new IllegalArgumentException('seatIndexBase must be >= 0')
+
+    currentStage = 'register'
+    def registered = call('01-register', 'POST', gateway + '/api/user/register', null,
+            [phone: phone, password: password, nickname: 'JMeter-' + userIndex])
+    data(registered)
+
+    currentStage = 'login'
+    def login = data(call('02-login', 'POST', gateway + '/api/user/login', null, [phone: phone, password: password]))
+    String token = login?.token?.toString()
+    if (!token) throw new IllegalStateException('login did not return JWT')
+
+    currentStage = 'seat-map'
+    def seatMap = data(call('03-seat-map', 'GET', gateway + '/api/seat/map/' + scheduleId, token, null))
+    def seat = seatMap?.seats?.find { (it.seatIndex as int) == seatIndex }
+    if (seat == null || (seat.status as int) != 0) throw new IllegalStateException('seat unavailable: index=' + seatIndex)
+
+    currentStage = 'lock-seat'
+    def lock = data(call('04-lock-seat', 'POST', gateway + '/api/seat/lock', token,
+            [scheduleId: scheduleId, seatIndexes: [seatIndex], queueToken: null]))
+    if (!lock?.lockToken) throw new IllegalStateException('lock response missing lockToken')
+
+    currentStage = 'create-order'
+    def orderRequest = [lockToken: lock.lockToken, scheduleId: scheduleId, seatIndexes: [seatIndex], seatLabels: lock.seatLabels, couponId: null, discountAmount: null, revise: false]
+    def created
+    for (int attempt = 0; attempt <= orderRetries; attempt++) {
+        created = data(call('05-create-order', 'POST', gateway + '/api/order/create', token, orderRequest))
+        if (created?.state == 'SUCCEEDED' || created?.state != 'RETRYABLE' || attempt == orderRetries) break
+        Thread.sleep(300L * (attempt + 1))
+    }
+    if (created?.state != 'SUCCEEDED' || !created?.orderNo || created?.payAmount == null) throw new IllegalStateException('order creation not SUCCEEDED: ' + JsonOutput.toJson(created))
+    String orderNo = created.orderNo.toString()
+
+    currentStage = 'precreate-payment'
+    def payment = data(call('06-precreate-payment', 'POST', gateway + '/api/pay/precreate', token,
+            [orderNo: orderNo, amount: created.payAmount, channel: 'MOCK']))
+    if (!payment?.paymentNo || !payment?.channelTradeNo) throw new IllegalStateException('precreate response incomplete')
+
+    currentStage = 'mock-confirm'
+    def confirmed = call('07-mock-confirm', 'POST', mockBase + '/mock-pay/cashier/' + payment.channelTradeNo + '/confirm', null, null)
+    if (confirmed?.success != true) throw new IllegalStateException('mock payment confirm rejected: ' + JsonOutput.toJson(confirmed))
+
+    currentStage = 'payment-callback'
+    boolean paid = false
+    for (int i = 0; i < maxPolls; i++) {
+        def pay = data(call('08-payment-query', 'GET', gateway + '/api/pay/query/' + payment.paymentNo, token, null))
+        if ((pay?.status as int) == 1) { paid = true; break }
+        Thread.sleep(pollMs)
+    }
+    if (!paid) throw new IllegalStateException('payment callback timeout after ' + maxPolls + ' polls')
+
+    currentStage = 'ticket-issuance'
+    boolean issued = false
+    def detail
+    for (int i = 0; i < maxPolls; i++) {
+        detail = data(call('09-order-query', 'GET', gateway + '/api/order/' + orderNo, token, null))
+        def order = detail?.order
+        def items = detail?.items ?: []
+        if ((order?.status as int) == 2 && items.size() == 1 && items[0]?.ticketNo) { issued = true; break }
+        Thread.sleep(pollMs)
+    }
+    if (!issued) throw new IllegalStateException('order is not paid with issued ticket: ' + JsonOutput.toJson(detail))
+
+    SampleResult.setSampleLabel('full-chain-success')
+    SampleResult.setResponseCode('200')
+    SampleResult.setResponseMessage('payment succeeded and ticket issued; orderNo=' + orderNo)
+    SampleResult.setResponseData(JsonOutput.toJson([orderNo: orderNo, paymentNo: payment.paymentNo, ticketNo: detail.items[0].ticketNo]), 'UTF-8')
+    SampleResult.setSuccessful(true)
+} catch (Throwable e) {
+    SampleResult.setSampleLabel('full-chain-failure-' + currentStage)
+    SampleResult.setResponseCode('500')
+    SampleResult.setResponseMessage(currentStage + ': ' + e.toString())
+    SampleResult.setResponseData(e.toString(), 'UTF-8')
+    SampleResult.setSuccessful(false)
+} finally {
+}
+          ]]></stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="Full chain results" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp><name>saveConfig</name><value class="SampleSaveConfiguration"><time>true</time><latency>true</latency><timestamp>true</timestamp><success>true</success><label>true</label><code>true</code><message>true</message><threadName>true</threadName><dataType>true</dataType><encoding>true</encoding><assertions>true</assertions><subresults>true</subresults><responseData>false</responseData><samplerData>false</samplerData><xml>false</xml><fieldNames>true</fieldNames><responseHeaders>false</responseHeaders><requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError><saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage><assertionsResultsToSave>0</assertionsResultsToSave><bytes>true</bytes><sentBytes>true</sentBytes><url>true</url><threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime></value></objProp>
+        <stringProp name="filename">${__P(results,results/maipiao-full-chain.jtl)}</stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

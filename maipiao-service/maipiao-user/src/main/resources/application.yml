@@ -1,0 +1,119 @@
+server:
+  port: 9001
+
+spring:
+  application:
+    name: maipiao-user
+
+  # Nacos 上有配置就拉下来，没有也不影响启动。
+  # `optional:` 是刻意的 —— 服务必须能在刚 clone 下来、什么都还没发布到 Nacos
+  # 的环境里起来。本地运行需要的一切在这个文件里都有默认值，
+  # Nacos 上有对应的配置时再覆盖它。
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yaml
+
+  cloud:
+    nacos:
+      # 用 8858，不是默认的 8848 —— 这台机器上 8848 被另一个项目的 Nacos 占了
+      server-addr: ${NACOS_ADDR:127.0.0.1:8858}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 端口 3309：3306 被这台机器上原生安装的 MySQL 服务占了
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3309}/maipiao_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:maipiao123}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  data:
+    redis:
+      # 端口 6381：6379 属于这台机器上的另一个项目
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:maipiao123}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3000ms
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.maipiao.user.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      # 实体主键用 MyBatis-Plus 生成的雪花 id。
+      # 业务号（order_no、payment_no）不用它，走我们自己的生成器，
+      # 因为那些得是带固定前缀、人能读的字符串。
+      #
+      # 这套表里没有逻辑删除列：行从来不做软删除，
+      # 所以在这里写 `logic-delete-field` 会悄悄改掉每一条查询。
+      id-type: assign_id
+
+maipiao:
+  jwt:
+    # 必须和其余每个服务一致。按环境覆盖。
+    secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
+    expire-minutes: 120
+    admin-expire-minutes: 60
+  demo:
+    # 启动时演示账号不存在就创建出来。
+    # 任何共享环境都关掉。
+    init-users: true
+
+# G1 里的分支事务参与者：优惠券加锁跟着要求它的那个订单一起回滚。
+# registry/config 为什么是 `file`，见 maipiao-movie。
+seata:
+  enabled: true
+  application-id: ${spring.application.name}
+  tx-service-group: maipiao_tx_group
+  enable-auto-data-source-proxy: true
+  service:
+    vgroup-mapping:
+      maipiao_tx_group: default
+    grouplist:
+      default: ${SEATA_ADDR:127.0.0.1:8091}
+  registry:
+    type: file
+  config:
+    type: file
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug
+    # 取消注释，可以看到每条 SQL 和它的参数：
+    # com.maipiao.user.mapper: debug

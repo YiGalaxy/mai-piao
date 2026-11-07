@@ -1,0 +1,151 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: maipiao-gateway
+
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yaml
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8858}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+    gateway:
+      # 按路径前缀路由。转发之前会把 /api 剥掉，所以下游服务看到的路径
+      # 和它自己在本地暴露的一模一样 —— 一个映射在 /user/login 的 controller，
+      # 从外面用 /api/user/login 就能访问到。
+      routes:
+        - id: maipiao-user
+          uri: lb://maipiao-user
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1
+
+        - id: maipiao-movie
+          uri: lb://maipiao-movie
+          predicates:
+            - Path=/api/movie/**
+          filters:
+            - StripPrefix=1
+
+        - id: maipiao-seat
+          uri: lb://maipiao-seat
+          predicates:
+            - Path=/api/seat/**
+          filters:
+            - StripPrefix=1
+
+        - id: maipiao-order
+          uri: lb://maipiao-order
+          predicates:
+            - Path=/api/order/**
+          filters:
+            - StripPrefix=1
+
+        - id: maipiao-queue
+          uri: lb://maipiao-queue
+          predicates: [ Path=/api/queue/** ]
+          filters: [ StripPrefix=1 ]
+        - id: maipiao-pay
+          uri: lb://maipiao-pay
+          predicates:
+            # 回调不从这里路由。支付方会把通知投到
+            # 入驻时给它的那个 URL，而那个 URL 直接指向 pay-service ——
+            # 支付通知不经过我们的网关，
+            # 把它放到网关后面，就意味着要先用我们自己的认证过滤器
+            # 去验支付方的签名。
+            - Path=/api/pay/**
+          filters:
+            - StripPrefix=1
+
+      # 这里没有独立的后台服务路由，也没有 maipiao-admin 这个服务。
+      # 管理接口挂在 movie-service 下的 /movie/admin/**，走上面那条
+      # maipiao-movie 路由；角色校验在 JwtAuthFilter 里按
+      # `/api/*/admin/**` 统一做。理由见 docs/设计方案.md §19.1。
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            # 能让通配符和 credentials 同时生效的是 allowedOriginPatterns
+            # （而不是 allowedOrigins）—— allowCredentials 变成 true 之后，
+            # allowedOrigins 会直接拒绝 "*"。
+            #
+            # 仅限开发环境。在任何真实环境暴露之前，把来源逐个列出来：
+            # 带 credentials 的通配符等于让任何站点都能拿着用户的 token
+            # 调这个 API。
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:maipiao123}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+maipiao:
+  jwt:
+    secret: ${MAIPIAO_JWT_SECRET:maipiao-ticket-local-dev-secret-key-change-me-in-production-2026}
+    expire-minutes: 120
+    admin-expire-minutes: 60
+
+  gateway:
+    auth:
+      # 没列在这里的，都要求一个有效的 token。
+      # 这些模式带着 /api 前缀，因为网关就是拿这个路径去匹配的 ——
+      # 在 StripPrefix 改写它之前。
+      whitelist:
+        - /api/user/login
+        - /api/user/register
+        # 公开浏览：影片列表、影院列表、场次和座位图不登录也能看，
+        # 和真实产品的行为一致。
+        #
+        # /api/queue/position 是刻意不放进来的。它回答的是「我排在第几位」，
+        # 这是关于调用者本身的问题 —— 放行它，网关就不会去解析 token，
+        # 也就不会注入 X-User-Id，服务端根本不知道是谁在问。
+        - /api/movie/film/list
+        - /api/movie/film/*
+        - /api/movie/cinema/list
+        - /api/movie/schedule/list
+        - /api/movie/schedule/*
+        - /api/seat/map/**
+        - /actuator/health
+      # 每个已认证请求多一次 Redis 往返。关掉它，
+      # 登出就不再有即时效果。
+      check-blacklist: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug

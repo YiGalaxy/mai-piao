@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.maipiao</groupId>
+  <artifactId>maipiao-ticket</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>maipiao-ticket</name>
+  <description>在线电影售票系统 —— 求职作品集项目</description>
+
+  <!--
+    ============================================================
+    版本兼容性 —— 动任何一项之前先读这里
+    ============================================================
+    下面这条链是锁在一起的，必须整体升级：
+
+      Spring Boot 3.2.x  <->  Spring Cloud 2023.0.x  <->  SCA 2023.0.3.2
+
+    几个很容易搞错的事实：
+      - Spring Boot 3.4.x 没有对应的 Spring Cloud Alibaba 版本。
+        SCA 还停在 2023.x 的时候，不要把 Boot 升到 3.4。
+      - SCA 2025.0.x 是 Spring Boot 3.5.x 的分支。挪过去意味着
+        Nacos client 3.0.3 + Seata 2.5.0 也要一起换。
+      - Seata 客户端版本必须等于 Seata 服务端版本。
+        docker/config/seata 跑的是 2.2.0，所以下面的 seata.version 是 2.2.0。
+        版本对不上是在运行时失败，不是在编译时。
+    ============================================================
+  -->
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <spring-boot.version>3.2.12</spring-boot.version>
+    <spring-cloud.version>2023.0.3</spring-cloud.version>
+    <spring-cloud-alibaba.version>2023.0.3.2</spring-cloud-alibaba.version>
+
+    <seata.version>2.2.0</seata.version>
+    <mybatis-plus.version>3.5.7</mybatis-plus.version>
+    <rocketmq-spring.version>2.3.1</rocketmq-spring.version>
+    <redisson.version>3.27.2</redisson.version>
+    <shedlock.version>5.13.0</shedlock.version>
+    <springdoc.version>2.3.0</springdoc.version>
+    <hutool.version>5.8.32</hutool.version>
+    <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <jjwt.version>0.12.6</jjwt.version>
+    <testcontainers.version>1.19.8</testcontainers.version>
+
+    <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+    <lombok.version>1.18.34</lombok.version>
+    <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+  </properties>
+
+  <modules>
+    <module>maipiao-common/common-core</module>
+    <module>maipiao-common/common-redis</module>
+    <module>maipiao-common/common-web</module>
+    <module>maipiao-gateway</module>
+    <module>maipiao-mock-pay</module>
+    <module>maipiao-service/maipiao-user</module>
+    <module>maipiao-service/maipiao-movie</module>
+    <module>maipiao-service/maipiao-seat</module>
+    <module>maipiao-service/maipiao-order</module>
+    <module>maipiao-service/maipiao-pay</module>
+    <module>maipiao-service/maipiao-queue</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- ==================== Spring ==================== -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+        <version>${spring-cloud-alibaba.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- ==================== 分布式事务 ==================== -->
+      <!--
+        Seata 的坐标在 2.x 变了：groupId 从 `io.seata` 挪到了 `org.apache.seata`。
+        旧的 groupId 底下仍然存在较老的 2.x 产物，所以写错 groupId 不会在
+        每个镜像源上都大声报错 —— 它只报 "could not find artifact"，
+        看起来像个仓库问题。
+
+        spring-cloud-starter-alibaba-seata 自带一份 seata-spring-boot-starter，
+        那不是服务端在跑的版本。各服务把它排掉（两个 groupId 都排，以防自带的
+        那份早于这次改名），再在这里显式声明 starter，用 ${seata.version}
+        钉住，这样客户端和服务端永远对得上。
+
+        永远不要在 starter 之外再加 `seata-all` —— 两者提供同一批类，
+        由此导致的启动失败并不会明显地指回这里。
+      -->
+      <dependency>
+        <groupId>org.apache.seata</groupId>
+        <artifactId>seata-spring-boot-starter</artifactId>
+        <version>${seata.version}</version>
+      </dependency>
+
+      <!-- ==================== 持久层 ==================== -->
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+
+      <!-- ==================== 消息 ==================== -->
+      <dependency>
+        <groupId>org.apache.rocketmq</groupId>
+        <artifactId>rocketmq-spring-boot-starter</artifactId>
+        <version>${rocketmq-spring.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <!-- 把客户端钉到 5.x：任意时刻的延时消息（deliverTimeMs）
+           是 5.x 的 broker 才有的能力。 -->
+      <dependency>
+        <groupId>org.apache.rocketmq</groupId>
+        <artifactId>rocketmq-client</artifactId>
+        <version>5.3.1</version>
+      </dependency>
+
+      <!-- ==================== 缓存 / 锁 ==================== -->
+      <dependency>
+        <groupId>org.redisson</groupId>
+        <artifactId>redisson-spring-boot-starter</artifactId>
+        <version>${redisson.version}</version>
+      </dependency>
+
+      <!-- ==================== 定时任务互斥 ==================== -->
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-provider-redis-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+
+      <!-- ==================== API 文档 ==================== -->
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+
+      <!-- ==================== 认证 ==================== -->
+      <!-- jjwt：JWT 签名 / 解析 -->
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <!-- 只要 spring-security-crypto：我们用 BCrypt，不用它的过滤器链 -->
+      <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-crypto</artifactId>
+        <version>6.2.7</version>
+      </dependency>
+
+      <!-- ==================== 工具 ==================== -->
+      <dependency>
+        <groupId>cn.hutool</groupId>
+        <artifactId>hutool-all</artifactId>
+        <version>${hutool.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>${mapstruct.version}</version>
+      </dependency>
+
+      <!-- ==================== 测试 ==================== -->
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- 每个模块共用 -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven-compiler-plugin.version}</version>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+            <parameters>true</parameters>
+            <!--
+              注解处理器的顺序是有讲究的：
+              lombok 必须先于 mapstruct 跑，而且 lombok-mapstruct-binding
+              必须在路径上，否则生成的 mapper 里会缺掉 Lombok 生成的
+              getter/setter。
+            -->
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok-mapstruct-binding</artifactId>
+                <version>${lombok-mapstruct-binding.version}</version>
+              </path>
+              <path>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+          <!--
+            repackage 这个 execution 必须在这里显式声明。
+
+            继承 spring-boot-starter-parent 的项目，这个绑定由父 POM 预先配好了。
+            而我们是把 spring-boot-dependencies 当 BOM 导入的（这样 POM 就不必
+            接受 Boot 那些强加于人的默认值），而 BOM 只携带依赖版本 ——
+            它不贡献任何 plugin 的 execution。
+
+            少了它，`mvn package` 只会产出一个普通的 34 KB 库 jar，
+            没有 Main-Class 也没有 BOOT-INF，而失败要等到运行时才以
+            "no main manifest attribute" 的形式暴露出来。
+          -->
+          <executions>
+            <execution>
+              <id>repackage</id>
+              <goals>
+                <goal>repackage</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>2.43.0</version>
+        <configuration>
+          <java>
+            <googleJavaFormat>
+              <version>1.22.0</version>
+              <style>AOSP</style>
+            </googleJavaFormat>
+            <removeUnusedImports />
+          </java>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,28 @@
+server:
+  port: 9007
+
+spring:
+  application:
+    name: maipiao-mock-pay
+  jackson:
+    default-property-inclusion: non_null
+
+maipiao:
+  mock-pay:
+    # 回调投递到哪。生产环境里这是接入时给服务商的公网 URL；
+    # 这里直接指向 pay-service。
+    notify-url: ${PAY_NOTIFY_URL:http://127.0.0.1:9005/pay/notify/MOCK}
+
+    # 假签名用的共享密钥。两边必须一致，
+    # 所以可以故意填一个错的值，
+    # 用来证明校验路径确实会拒绝非法输入。
+    sign-key: ${MOCK_PAY_SIGN_KEY:maipiao-mock-pay-sign-key-2026}
+
+    # 假收银台在回调前等多久，
+    # 这样 UI 才有时间显示「处理中」的状态。
+    callback-delay-ms: 800
+
+logging:
+  level:
+    root: info
+    com.maipiao: debug

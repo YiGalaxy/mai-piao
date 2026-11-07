@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.maipiao</groupId>
+    <artifactId>maipiao-ticket</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>maipiao-gateway</artifactId>
+  <name>maipiao-gateway</name>
+  <description>网关：路由、JWT 校验、抢购短路</description>
+
+  <dependencies>
+    <!-- Gateway 是 WebFlux 应用。
+         它只依赖 common-core。引入 common-web 会把 spring-boot-starter-web
+         （Servlet 栈）和 WebFlux 一起拖上 classpath，而两者同时在场时
+         Spring Boot 会拒绝启动。 -->
+    <dependency>
+      <groupId>com.maipiao</groupId>
+      <artifactId>common-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway</artifactId>
+    </dependency>
+    <!--
+      `lb://<service-name>` 这种路由 URI 需要它。
+
+      spring-cloud-starter-gateway 并不会把它带进来（以前是经由 Ribbon 来的，
+      而 Ribbon 已经被移除）。少了它，路由照样注册，但没有任何过滤器能把
+      服务名变成地址，所有打到这条路由上的请求都以 503 Service Unavailable
+      失败 —— 日志里还什么都没说，因为在网关看来，那儿就是根本没有实例。
+    -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+    </dependency>
+
+    <!-- 响应式 Redis：token 黑名单检查跑在网关的过滤器链里，而那条链是
+         事件循环驱动的。在那里做一次阻塞的 Redis 调用，会把同一个
+         reactor 线程上其他所有请求一起卡住。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Gateway 没有 servlet 容器；这个 starter 已经把它排除了。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

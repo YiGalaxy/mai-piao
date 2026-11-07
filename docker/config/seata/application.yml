@@ -1,0 +1,91 @@
+# ============================================================
+# Seata Server 2.2.0 配置（本地开发）
+#
+# 这个文件被挂载覆盖到 /seata-server/resources/application.yml，
+# 也就是说它是**替换**镜像里的默认文件，而不是与它合并。服务端需要、
+# 而这里又漏掉的任何一项，都会在启动时以占位符错误的形式失败，
+# 所以下面的结构是刻意照着镜像自带的默认文件抄的，只改必须改的地方。
+#
+# 已经踩过的漏项：
+#   logging.config      -> 少了它，logback 根本不会被配置
+#   console.user.*      -> "Could not resolve placeholder 'console.user.username'"
+#   security.csrf-ignore-urls / ignore.urls -> 控制台会变成打不开
+#
+# 镜像自带的默认文件在 /seata-server/resources/application.yml。
+# 动手删这里任何东西之前，先跟它 diff 一下。
+#
+# 客户端必须对上：
+#   seata.registry.nacos.server-addr  = 127.0.0.1:8858 (宿主机) / nacos:8848 (docker 内)
+#   seata.registry.nacos.group        = SEATA_GROUP
+#   seata.registry.nacos.application  = seata-server
+#   seata.tx-service-group            = maipiao_tx_group
+#   seata.service.vgroupMapping.maipiao_tx_group = default
+#
+# tx-service-group / vgroupMapping 对不上时，报出来的错是：
+#   "can not get cluster name in registry config"
+# ============================================================
+
+server:
+  port: 7091
+
+spring:
+  application:
+    name: seata-server
+
+logging:
+  config: classpath:logback-spring.xml
+  file:
+    path: ${log.home:${user.home}/logs/seata}
+
+# 控制台登录地址 http://localhost:7091 —— 出了本地开发环境就要改掉。
+console:
+  user:
+    username: seata
+    password: seata
+
+seata:
+  # 配置来源：只用这个文件。等你想让 TC 的配置能热更新了，再切到 `nacos`。
+  config:
+    type: file
+
+  # 客户端怎么发现 TC。用 `nacos` 是为了让客户端那边的
+  # seata.registry.nacos.* 自己解析到地址，而不必写死。
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: nacos:8848
+      group: SEATA_GROUP
+      namespace: ""
+      cluster: default
+      username: ""
+      password: ""
+
+  # 事务存储。`file` 把全局事务状态存在容器内的磁盘上——
+  # 单机开发环境够用。
+  # 要做 HA 就切到 mode: db（先建好 `seata` 库），这样状态是共享的，
+  # 容器重建也不会丢。
+  store:
+    mode: file
+    file:
+      dir: /seata-server/sessionStore
+
+  server:
+    # 客户端连接的 TC 服务端口。和控制台端口（7091）不是一回事。
+    service-port: 8091
+    max-commit-retry-timeout: -1
+    max-rollback-retry-timeout: -1
+    rollback-retry-timeout-unlock-enable: false
+    enable-check-auth: true
+    recovery:
+      committing-retry-period: 1000
+      async-committing-retry-period: 1000
+      rollbacking-retry-period: 1000
+      timeout-retry-period: 1000
+
+  security:
+    secretKey: SeataSecretKey0c382ef121d778043159209298fd40bf3850a017
+    tokenValidityInMilliseconds: 1800000
+    csrf-ignore-urls: /metadata/v1/**
+    ignore:
+      urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.jpeg,/**/*.ico,/api/v1/auth/login,/version.json,/health,/error,/vgroup/v1/**
